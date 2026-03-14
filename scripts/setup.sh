@@ -16,6 +16,10 @@ echo "Bun: $(bun --version)"
 echo "Installing dependencies..."
 bun install
 
+# Register randal CLI globally
+echo "Linking randal CLI..."
+bun link
+
 # Build tools
 echo ""
 echo "Setting up tools..."
@@ -70,9 +74,52 @@ echo ""
 echo "Initializing Randal..."
 bun run packages/cli/src/index.ts init "$@"
 
+# Start Meilisearch if selected in config
+if [ -f randal.config.yaml ] && grep -q "store: meilisearch" randal.config.yaml; then
+  echo ""
+  echo "Meilisearch memory selected. Checking status..."
+
+  if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
+    echo "  + Meilisearch already running on :7700"
+  elif command -v docker &> /dev/null; then
+    echo "  Starting Meilisearch via Docker..."
+
+    # Generate a master key if not in .env
+    if ! grep -q "^MEILI_MASTER_KEY=" .env 2>/dev/null; then
+      MEILI_KEY=$(openssl rand -hex 16)
+      echo "" >> .env
+      echo "MEILI_MASTER_KEY=${MEILI_KEY}" >> .env
+      echo "  + Generated MEILI_MASTER_KEY in .env"
+    else
+      MEILI_KEY=$(grep "^MEILI_MASTER_KEY=" .env | cut -d'=' -f2)
+    fi
+
+    # Stop existing container if present
+    docker rm -f randal-meilisearch 2>/dev/null || true
+
+    # Start with persistent storage
+    mkdir -p ~/.randal/meili-data
+    docker run -d \
+      --name randal-meilisearch \
+      --restart unless-stopped \
+      -p 7700:7700 \
+      -v ~/.randal/meili-data:/meili_data \
+      -e MEILI_MASTER_KEY="${MEILI_KEY}" \
+      getmeili/meilisearch:v1.12
+
+    echo "  + Meilisearch started on :7700 (data: ~/.randal/meili-data)"
+  else
+    echo "  ! Docker not found. Install Meilisearch manually:"
+    echo "    brew install meilisearch"
+    echo "    # or: docker run -d -p 7700:7700 getmeili/meilisearch:v1.12"
+  fi
+fi
+
 echo ""
 echo "=== Setup complete ==="
 echo "Next steps:"
-echo "  1. Edit randal.config.yaml"
-echo "  2. Create .env with your API keys"
-echo "  3. Run: bun run packages/cli/src/index.ts serve"
+echo "  1. Edit randal.config.yaml (if needed)"
+echo "  2. Add your API keys to .env"
+echo "  3. Run: randal serve"
+echo ""
+echo "Dashboard: http://localhost:7600"
