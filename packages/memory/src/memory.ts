@@ -1,5 +1,6 @@
 import type { MemoryDoc, RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
+import { FileStore } from "./stores/file.js";
 import type { MemoryStore } from "./stores/index.js";
 import { MeilisearchStore } from "./stores/meilisearch.js";
 
@@ -16,11 +17,18 @@ export class MemoryManager {
 	constructor(options: MemoryManagerOptions) {
 		this.config = options.config;
 
-		this.store = new MeilisearchStore({
-			url: options.config.memory.url,
-			apiKey: options.config.memory.apiKey,
-			index: options.config.memory.index ?? `memory-${options.config.name}`,
-		});
+		if (options.config.memory.store === "file") {
+			this.store = new FileStore({
+				basePath: options.basePath ?? ".",
+				files: options.config.memory.files,
+			});
+		} else {
+			this.store = new MeilisearchStore({
+				url: options.config.memory.url,
+				apiKey: options.config.memory.apiKey,
+				index: options.config.memory.index ?? `memory-${options.config.name}`,
+			});
+		}
 	}
 
 	async init(): Promise<void> {
@@ -28,8 +36,11 @@ export class MemoryManager {
 			await this.store.init();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
+			if (this.config.memory.store === "file") {
+				throw new Error(`Memory initialization failed: ${msg}`);
+			}
 			throw new Error(
-				`Meilisearch connection failed: ${msg}\nMeilisearch is required for Randal v0.2. Ensure it is running:\n  docker run -d -p 7700:7700 getmeili/meilisearch:latest\nOr configure memory.url and memory.apiKey in your config.`,
+				`Meilisearch connection failed: ${msg}\nEnsure Meilisearch is running:\n  docker run -d -p 7700:7700 getmeili/meilisearch:latest\nOr configure memory.url and memory.apiKey in your config.`,
 			);
 		}
 	}
