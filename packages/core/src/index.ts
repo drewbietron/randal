@@ -21,6 +21,7 @@ export type {
 	JobIteration,
 	JobPlanTask,
 	Job,
+	JobOrigin,
 	MemoryDocType,
 	MemoryCategory,
 	MemorySource,

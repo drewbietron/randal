@@ -60,6 +60,10 @@ function buildConfigYaml(opts: {
 	hooksEnabled?: boolean;
 	port?: number;
 	maxIterations?: number;
+	discordEnabled?: boolean;
+	discordAllowFrom?: string[];
+	imessageEnabled?: boolean;
+	imessageAllowFrom?: string[];
 }): string {
 	const lines: string[] = [
 		"# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -94,8 +98,32 @@ function buildConfigYaml(opts: {
 		"    - type: http",
 		`      port: ${opts.port ?? 7600}`,
 		'      auth: "${RANDAL_API_TOKEN}"',
-		"",
 	];
+
+	if (opts.discordEnabled) {
+		lines.push("    - type: discord", '      token: "${DISCORD_BOT_TOKEN}"');
+		if (opts.discordAllowFrom && opts.discordAllowFrom.length > 0) {
+			lines.push(`      allowFrom: [${opts.discordAllowFrom.map((id) => `"${id}"`).join(", ")}]`);
+		} else {
+			lines.push('      # allowFrom: ["your-discord-user-id"]');
+		}
+	}
+
+	if (opts.imessageEnabled) {
+		lines.push(
+			"    - type: imessage",
+			"      provider: bluebubbles",
+			'      url: "${BLUEBUBBLES_URL}"',
+			'      password: "${BLUEBUBBLES_PASSWORD}"',
+		);
+		if (opts.imessageAllowFrom && opts.imessageAllowFrom.length > 0) {
+			lines.push(`      allowFrom: [${opts.imessageAllowFrom.map((p) => `"${p}"`).join(", ")}]`);
+		} else {
+			lines.push('      # allowFrom: ["+15551234567"]');
+		}
+	}
+
+	lines.push("");
 
 	// Memory section
 	if (opts.useMeilisearch) {
@@ -166,23 +194,50 @@ function buildConfigYaml(opts: {
 	return lines.join("\n");
 }
 
-function generateEnvTemplate(): string {
-	return `# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# 🤠 Randal Environment Variables
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function generateEnvTemplate(opts?: {
+	discordEnabled?: boolean;
+	imessageEnabled?: boolean;
+}): string {
+	const lines = [
+		"# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+		"# 🤠 Randal Environment Variables",
+		"# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+		"",
+		"# Required: your Anthropic API key",
+		"ANTHROPIC_API_KEY=",
+		"",
+		"# Gateway auth token (any random string)",
+		"RANDAL_API_TOKEN=",
+		"",
+		"# Meilisearch master key (if using meilisearch memory)",
+		"# MEILI_MASTER_KEY=",
+		"",
+		"# Hook token (for webhook authentication)",
+		"# RANDAL_HOOK_TOKEN=",
+	];
 
-# Required: your Anthropic API key
-ANTHROPIC_API_KEY=
+	if (opts?.discordEnabled) {
+		lines.push(
+			"",
+			"# Discord bot token (create at https://discord.com/developers/applications)",
+			"DISCORD_BOT_TOKEN=",
+		);
+	}
 
-# Gateway auth token (any random string)
-RANDAL_API_TOKEN=
+	if (opts?.imessageEnabled) {
+		lines.push(
+			"",
+			"# BlueBubbles iMessage bridge (macOS only — see docs/deployment-guide.md)",
+			"BLUEBUBBLES_URL=http://localhost:1234",
+			"BLUEBUBBLES_PASSWORD=",
+			"",
+			"# Apple ID for iMessage (ensure Messages.app is signed in with this account)",
+			"APPLE_ID=",
+		);
+	}
 
-# Meilisearch master key (if using meilisearch memory)
-# MEILI_MASTER_KEY=
-
-# Hook token (for webhook authentication)
-# RANDAL_HOOK_TOKEN=
-`;
+	lines.push("");
+	return lines.join("\n");
 }
 
 // ── ASCII Banner ────────────────────────────────────────────────────────
@@ -429,6 +484,71 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		},
 	);
 
+	// ── Messaging Channels ──
+
+	note(
+		"Connect messaging channels for chat-based interaction.\nCommands: run, status, stop, context, jobs, memory, resume, help.\nOr just send a message to start a job.",
+		"Messaging Channels",
+	);
+
+	const discordEnabled = await confirm({
+		message: "Enable Discord channel?",
+		initialValue: false,
+	});
+	handleCancel(discordEnabled);
+
+	let discordAllowFrom: string[] = [];
+	if (discordEnabled) {
+		note(
+			"Create a bot at https://discord.com/developers/applications\nEnable 'Message Content Intent' under Bot settings.\nSet DISCORD_BOT_TOKEN in your .env file.",
+			"Discord Setup",
+		);
+
+		const allowFromInput = await text({
+			message: "Discord user IDs to allow (comma-separated, or leave blank for all)",
+			placeholder: "123456789012345678",
+			defaultValue: "",
+		});
+		handleCancel(allowFromInput);
+		if (typeof allowFromInput === "string" && allowFromInput.trim()) {
+			discordAllowFrom = allowFromInput
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+		}
+	}
+
+	let imessageEnabled = false;
+	let imessageAllowFrom: string[] = [];
+	if (process.platform === "darwin") {
+		const imessageConfirm = await confirm({
+			message: "Enable iMessage channel (via BlueBubbles)?",
+			initialValue: false,
+		});
+		handleCancel(imessageConfirm);
+		imessageEnabled = imessageConfirm as boolean;
+
+		if (imessageEnabled) {
+			note(
+				"Requirements:\n- BlueBubbles Server app running on this Mac\n- Messages.app signed into your Apple ID\n- Mac must stay awake\n- Configure webhook URL in BlueBubbles\n- Set BLUEBUBBLES_URL, BLUEBUBBLES_PASSWORD, APPLE_ID in .env",
+				"iMessage Setup",
+			);
+
+			const allowFromInput = await text({
+				message: "Phone numbers to allow (comma-separated, or leave blank for all)",
+				placeholder: "+15551234567",
+				defaultValue: "",
+			});
+			handleCancel(allowFromInput);
+			if (typeof allowFromInput === "string" && allowFromInput.trim()) {
+				imessageAllowFrom = allowFromInput
+					.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean);
+			}
+		}
+	}
+
 	// ── Memory ──
 
 	note(
@@ -504,6 +624,10 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		hooksEnabled: autonomy.hooksEnabled as boolean,
 		port: Number.parseInt(gateway.port as string, 10),
 		maxIterations: Number.parseInt(runner.maxIterations as string, 10),
+		discordEnabled: discordEnabled as boolean,
+		discordAllowFrom,
+		imessageEnabled,
+		imessageAllowFrom,
 	});
 }
 
@@ -521,6 +645,10 @@ async function writeConfig(opts: {
 	hooksEnabled?: boolean;
 	port?: number;
 	maxIterations?: number;
+	discordEnabled?: boolean;
+	discordAllowFrom?: string[];
+	imessageEnabled?: boolean;
+	imessageAllowFrom?: string[];
 }): Promise<void> {
 	const s = spinner();
 	s.start("Writing configuration...");
@@ -531,7 +659,14 @@ async function writeConfig(opts: {
 
 	let envCreated = false;
 	if (!existsSync(resolve(".env"))) {
-		writeFileSync(resolve(".env"), generateEnvTemplate(), "utf-8");
+		writeFileSync(
+			resolve(".env"),
+			generateEnvTemplate({
+				discordEnabled: opts.discordEnabled,
+				imessageEnabled: opts.imessageEnabled,
+			}),
+			"utf-8",
+		);
 		envCreated = true;
 	}
 
@@ -555,6 +690,12 @@ async function writeConfig(opts: {
 	}
 	if (opts.port && opts.port !== 7600) {
 		summaryLines.push(`Port:     ${opts.port}`);
+	}
+	if (opts.discordEnabled) {
+		summaryLines.push("Discord:  enabled");
+	}
+	if (opts.imessageEnabled) {
+		summaryLines.push("iMessage: enabled (BlueBubbles)");
 	}
 
 	note(summaryLines.join("\n"), "✅ Created");

@@ -144,6 +144,41 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	// Start scheduler after creating routes
 	await scheduler.start();
 
+	// ── Start messaging channel adapters ──
+	const channelDeps: ChannelDeps = {
+		config,
+		runner,
+		eventBus,
+		memoryManager,
+		scheduler,
+		skillManager,
+	};
+	const channelAdapters: ChannelAdapter[] = [];
+
+	for (const channelConfig of config.gateway.channels) {
+		try {
+			if (channelConfig.type === "discord") {
+				const adapter = new DiscordChannel(channelConfig, channelDeps);
+				await adapter.start();
+				channelAdapters.push(adapter);
+				logger.info("Discord channel started");
+			} else if (channelConfig.type === "imessage") {
+				const adapter = new IMessageChannel(channelConfig, channelDeps);
+				// Mount webhook route before start so it's ready for BlueBubbles
+				app.route("/webhooks/imessage", adapter.getWebhookRouter());
+				await adapter.start();
+				channelAdapters.push(adapter);
+				logger.info("iMessage channel started", { provider: channelConfig.provider });
+			}
+		} catch (err) {
+			// Non-fatal — HTTP and other channels continue working
+			logger.error("Channel failed to start", {
+				type: channelConfig.type,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
 	// Determine port
 	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
 	const port = options.port ?? (httpChannel?.type === "http" ? httpChannel.port : 7600);
@@ -165,6 +200,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 
 	return {
 		stop: () => {
+			for (const ch of channelAdapters) {
+				try {
+					ch.stop();
+				} catch {
+					/* already stopping */
+				}
+			}
 			skillWatcher?.stop();
 			scheduler.stop();
 			server.stop();
