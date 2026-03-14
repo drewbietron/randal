@@ -46,6 +46,32 @@ See [Init Modes](#-init-modes) for details on each mode.
 
 ---
 
+### 🧹 `randal reset`
+
+Clear all Randal config and state. Returns to a fresh state ready for `randal init`.
+
+```bash
+randal reset          # Remove config + job/cron state (preserves .env and memory data)
+randal reset --all    # Full wipe: config, .env, jobs, cron, Meilisearch data + container
+randal reset --yes    # Skip confirmation prompts
+```
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Also removes `.env` (with confirmation), stops `randal-meilisearch` Docker container, clears `~/.randal/meili-data/` |
+| `--yes` | Skip all confirmation prompts (for scripting). Combinable with `--all`. |
+
+**Default reset removes:**
+- `randal.config.yaml` in current directory
+- `~/.randal/jobs/` (all persisted job files)
+- `~/.randal/cron.yaml` (cron scheduler state)
+
+**Default reset preserves:**
+- `.env` (contains your API keys)
+- `~/.randal/meili-data/` (Meilisearch indexes and memory data)
+
+---
+
 ### 🎯 `randal run <prompt|file>`
 
 Run an agent locally in one-shot mode. If the argument is a path to an existing `.md` file, its contents are used as the prompt.

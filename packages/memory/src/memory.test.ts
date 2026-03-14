@@ -13,8 +13,7 @@ runner:
 		expect(config.memory.apiKey).toBe("");
 	});
 
-	test("config strips unknown store field", () => {
-		// Zod strips unknown fields - store: file is silently ignored
+	test("config accepts store field with file value", () => {
 		const config = parseConfig(`
 name: test
 runner:
@@ -22,10 +21,19 @@ runner:
 memory:
   store: file
 `);
-		// The 'store' field doesn't exist in the new schema
-		expect((config.memory as Record<string, unknown>).store).toBeUndefined();
-		// Meilisearch defaults are applied
+		// The 'store' field is now a valid schema field
+		expect(config.memory.store).toBe("file");
+		// Meilisearch defaults are still applied (for fallback)
 		expect(config.memory.url).toBe("http://localhost:7700");
+	});
+
+	test("config defaults store to meilisearch", () => {
+		const config = parseConfig(`
+name: test
+runner:
+  workdir: /tmp
+`);
+		expect(config.memory.store).toBe("meilisearch");
 	});
 
 	test("config accepts explicit meilisearch url/apiKey", () => {

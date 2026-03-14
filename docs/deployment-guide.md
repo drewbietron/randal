@@ -19,28 +19,28 @@ All deployments require:
 
 A Mac Mini is the simplest deployment: Randal runs as a background process with `launchd` or a process manager.
 
-### 1. Install Dependencies
+### 1. Install
 
 ```bash
-# Install Bun
-curl -fsSL https://bun.sh/install | bash
-
-# Install Meilisearch
-brew install meilisearch
-
-# Install your agent CLI (example: Claude Code)
-npm install -g @anthropic-ai/claude-code
+curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
 ```
 
-### 2. Clone and Build
+This single command:
+- Installs Bun (if not present)
+- Clones the Randal repo to `~/randal`
+- Installs dependencies and links the `randal` CLI
+- Runs the interactive setup wizard
+- Starts Meilisearch via Docker (if selected and Docker is available)
+
+Or manually:
 
 ```bash
 git clone <repo-url> ~/randal
 cd ~/randal
-bun install
+bash scripts/setup.sh
 ```
 
-### 3. Configure
+### 2. Configure
 
 ```bash
 cd ~/randal  # use examples/local-mac/ as a starting point
@@ -70,17 +70,25 @@ memory:
   apiKey: "${MEILI_MASTER_KEY}"
 ```
 
-### 4. Start Meilisearch
+### 3. Meilisearch
+
+> **Note:** If you used `install.sh` or `scripts/setup.sh`, Meilisearch is already running via Docker with persistent storage at `~/.randal/meili-data/`.
+
+To manage manually:
 
 ```bash
-# Start with a master key
-meilisearch --master-key="${MEILI_MASTER_KEY}" --db-path ~/meilisearch-data
+# Start via Docker (recommended — data persists at ~/.randal/meili-data/)
+docker run -d --name randal-meilisearch --restart unless-stopped \
+  -p 7700:7700 \
+  -v ~/.randal/meili-data:/meili_data \
+  -e MEILI_MASTER_KEY="${MEILI_MASTER_KEY}" \
+  getmeili/meilisearch:v1.12
 
-# Or run in background
-nohup meilisearch --master-key="${MEILI_MASTER_KEY}" --db-path ~/meilisearch-data &
+# Or via Homebrew (use --db-path for persistence)
+meilisearch --master-key="${MEILI_MASTER_KEY}" --db-path ~/.randal/meili-data
 ```
 
-### 5. Start Randal
+### 4. Start Randal
 
 ```bash
 cd ~/randal
@@ -122,7 +130,7 @@ cp com.randal.agent.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.randal.agent.plist
 ```
 
-### 6. Verify
+### 5. Verify
 
 ```bash
 curl http://localhost:7600/health

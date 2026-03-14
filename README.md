@@ -30,19 +30,19 @@ Randal wraps agent CLIs — [OpenCode](https://github.com/nickthecook/opencode),
 ## ⚡ Quick Start
 
 ```bash
-# Clone and install
-git clone https://github.com/your-org/randal && cd randal
-bun install
-bun link    # Makes 'randal' command available globally
-
-# Set up your agent (interactive wizard)
-randal init
-
-# Let it ride
-randal serve
+curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
 ```
 
-That's it. Dashboard at [`http://localhost:7600`](http://localhost:7600). Your agent is live.
+One command. Installs Bun (if needed), clones the repo, links the CLI, runs the setup wizard, and starts Meilisearch if selected.
+
+Or clone and set up manually:
+
+```bash
+git clone https://github.com/your-org/randal && cd randal
+bash scripts/setup.sh
+```
+
+Dashboard at [`http://localhost:7600`](http://localhost:7600). Your agent is live.
 
 ---
 
@@ -220,6 +220,7 @@ Full setup instructions: [📖 docs/deployment-guide.md](docs/deployment-guide.m
 | Command | Description |
 |---------|-------------|
 | `randal init` | 🔧 Scaffold config (supports `--wizard`, `--from`, `--yes`) |
+| `randal reset` | 🧹 Clean slate — remove config and state (`--all`, `--yes`) |
 | `randal run <prompt\|file>` | 🎯 Run agent locally (one-shot) |
 | `randal serve` | 🏗️ Start daemon (gateway + runner + scheduler) |
 | `randal send <prompt\|file>` | 📨 Submit job to running instance |
@@ -241,20 +242,13 @@ Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
 <details>
 <summary>🍎 <strong>Local Mac</strong></summary>
 
-1. Install [Bun](https://bun.sh): `curl -fsSL https://bun.sh/install | bash`
-2. Install an agent CLI: `npm install -g @anthropic-ai/claude-code`
-3. Install Meilisearch (optional): `brew install meilisearch`
-4. Clone and setup:
-   ```bash
-   git clone <repo> && cd randal
-   bun install
-   bun link
-   ```
-5. Initialize and run:
-   ```bash
-   randal init
-   randal serve
-   ```
+```bash
+curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
+```
+
+The installer handles Bun, dependencies, CLI registration, Meilisearch, and runs the setup wizard.
+
+To start fresh: `randal reset && randal init`
 
 See [`examples/local-mac/`](examples/local-mac/) for a full-featured local setup with heartbeat, cron, and active hours.
 

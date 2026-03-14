@@ -109,6 +109,7 @@ export const configSchema = z.object({
 
 	memory: z
 		.object({
+			store: z.enum(["meilisearch", "file"]).default("meilisearch"),
 			url: z.string().default("http://localhost:7700"),
 			apiKey: z.string().default(""),
 			index: z.string().optional(),
