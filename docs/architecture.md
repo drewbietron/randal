@@ -3,38 +3,48 @@
 ## 🗺️ System Overview
 
 ```
-                           ┌──────────────────┐
-                           │    📡 Dashboard   │
-                           │  (single HTML)    │
-                           └────────┬─────────┘
-                                    │ SSE / REST
-                                    ▼
-┌──────────┐    HTTP     ┌──────────────────┐
-│  💻 CLI  │ ─────────▶  │    🏗️ Gateway    │
-│ (randal) │   or stdin  │  - HTTP API      │
-└──────────┘             │  - EventBus      │
-                         │  - Job Persist   │
-                         └────────┬─────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-           ┌──────────────────┐        ┌──────────────────┐
-           │    🎯 Runner     │        │   ⏰ Scheduler   │
-           │  - Ralph Loop    │        │  - Heartbeat     │
-           │  - Adapters      │        │  - Cron          │
-           │  - Sentinel      │        │  - Hooks         │
-           │  - Struggle Det. │        │  (webhooks)      │
-           └───┬──────────┬───┘        └──────────────────┘
-               │          │
-      ┌────────┘          └────────┐
-      ▼                            ▼
-┌──────────────────┐      ┌──────────────────┐
-│  🔐 Credentials  │      │    🧠 Memory     │
-│ - .env parsing   │      │ - File / Meili   │
-│ - Allowlist      │      │ - Sync (chokidar)│
-│ - Inheritance    │      │ - Cross-agent    │
-└──────────────────┘      │ - Auto-inject    │
-                          └──────────────────┘
+                                         ┌──────────────────┐
+                                         │    📡 Dashboard   │
+                                         │  (single HTML)    │
+                                         └────────┬─────────┘
+                                                  │ SSE / REST
+                                                  ▼
+┌──────────┐                          ┌──────────────────────┐
+│  💻 CLI  │ ── HTTP ────────────────▶│                      │
+└──────────┘                          │    🏗️ Gateway        │
+                                      │                      │
+┌──────────┐                          │  ┌────────────────┐  │
+│ 💬 Discord│ ── discord.js ─────────▶│  │  📡 Channels   │  │
+│          │◀─────────────────────────│  │  - HTTP API    │  │
+└──────────┘                          │  │  - Discord     │  │
+                                      │  │  - iMessage    │  │
+┌──────────┐                          │  └───────┬────────┘  │
+│ 📱 iMessage── BB webhook ──────────▶│          │           │
+│          │◀── BB REST ──────────────│  ┌───────┴────────┐  │
+└──────────┘                          │  │  🔀 EventBus   │  │
+                                      │  │  📂 Job Persist│  │
+                                      │  └───────┬────────┘  │
+                                      └──────────┼───────────┘
+                                                 │
+                                   ┌─────────────┴─────────────┐
+                                   ▼                           ▼
+                          ┌──────────────────┐        ┌──────────────────┐
+                          │    🎯 Runner     │        │   ⏰ Scheduler   │
+                          │  - Ralph Loop    │        │  - Heartbeat     │
+                          │  - Adapters      │        │  - Cron          │
+                          │  - Sentinel      │        │  - Hooks         │
+                          │  - Struggle Det. │        │  (webhooks)      │
+                          └───┬──────────┬───┘        └──────────────────┘
+                              │          │
+                     ┌────────┘          └────────┐
+                     ▼                            ▼
+               ┌──────────────────┐      ┌──────────────────┐
+               │  🔐 Credentials  │      │    🧠 Memory     │
+               │ - .env parsing   │      │ - File / Meili   │
+               │ - Allowlist      │      │ - Sync (chokidar)│
+               │ - Inheritance    │      │ - Cross-agent    │
+               └──────────────────┘      │ - Auto-inject    │
+                                         └──────────────────┘
 ```
 
 ---
@@ -109,7 +119,30 @@ Orchestrates the daemon mode:
 3. Creates Runner with an event handler that emits to EventBus and persists job state.
 4. Detects configured tools (checks `which` for each binary).
 5. Creates Hono HTTP app with REST endpoints + SSE.
-6. Starts `Bun.serve`.
+6. Starts messaging channel adapters (Discord, iMessage) from config.
+7. Starts `Bun.serve`.
+
+### 📡 Channel Adapters
+
+Channel adapters provide inbound/outbound messaging for chat-based interaction. Each adapter implements the `ChannelAdapter` interface:
+
+```typescript
+interface ChannelAdapter {
+  readonly name: string;
+  start(): Promise<void>;
+  stop(): void;
+}
+```
+
+All adapters share `handleCommand()` for parsing and executing commands, and `formatEvent()` for formatting job notifications. Channel-aware event routing uses `JobOrigin` — when a channel starts a job, it stamps the origin so notifications route back only to the originating channel/chat.
+
+| Channel | Transport | Platform | Auth |
+|---------|-----------|----------|------|
+| HTTP | REST + SSE | All | Bearer token |
+| Discord | discord.js WebSocket | All | Bot token |
+| iMessage | BlueBubbles REST + Webhook | macOS only | Server password |
+
+**Adding a new channel:** Implement `ChannelAdapter`, add a config schema to `config.ts`, and add a case to the gateway startup loop. `handleCommand()` and `formatEvent()` are reusable.
 
 ### 🔐 Credentials
 
@@ -151,6 +184,26 @@ Client                Gateway              Runner              Agent
 3. Runner loops: spawns agent, collects output, emits events.
 4. Gateway forwards events to EventBus (SSE) and persists job state to `~/.randal/jobs/`.
 5. Dashboard receives events via SSE and updates in real time.
+
+### Chat Channel Flow (Discord / iMessage)
+
+```
+User (Discord/iMessage)    Gateway              Runner              Agent
+  |                          |                    |                   |
+  |── "refactor auth" ──────▶|                    |                   |
+  |                          |── parseCommand ──▶ |                   |
+  |◀── "Job abc1 started" ──|── execute(req) ───▶|                   |
+  |                          |                    |── spawn ─────────▶|
+  |                          |                    |◀── stdout/exit ───|
+  |                          |◀── event ──────────|                   |
+  |◀── "Job abc1 complete" ──|                    |                   |
+```
+
+1. User sends a message via Discord DM or iMessage text.
+2. Channel adapter parses the command (or treats as implicit `run:`).
+3. `handleCommand()` executes against Runner/Memory/Jobs with a `JobOrigin` stamp.
+4. Job events route back to the originating channel/chat only (no cross-channel spam).
+5. Other channels pick up context via shared memory search.
 
 ### Memory Flow
 

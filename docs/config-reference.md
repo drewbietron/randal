@@ -86,7 +86,9 @@ Server and channel configuration. Defaults to `{}` if omitted.
 |-------|------|---------|----------|-------------|
 | `type` | `"discord"` | — | Yes | Channel type discriminator. |
 | `token` | string | — | Yes | Discord bot token. |
-| `allowFrom` | string[] | — | No | Discord user/channel allowlist. |
+| `allowFrom` | string[] | — | No | Discord user ID allowlist. |
+
+**Setup:** Create a bot at [Discord Developer Portal](https://discord.com/developers/applications). Enable the **Message Content Intent** under Bot settings. The bot needs **Send Messages**, **Read Message History**, and **View Channels** permissions. `allowFrom` uses Discord user IDs (numeric strings like `"123456789012345678"`), not usernames. If `allowFrom` is omitted, the bot accepts all DMs; in guild channels, it only responds when mentioned.
 
 ### 💬 iMessage Channel
 
@@ -96,7 +98,9 @@ Server and channel configuration. Defaults to `{}` if omitted.
 | `provider` | `"bluebubbles"` | — | Yes | iMessage bridge provider. |
 | `url` | string | — | Yes | BlueBubbles server URL. |
 | `password` | string | — | Yes | BlueBubbles password. |
-| `allowFrom` | string[] | — | No | Phone number / contact allowlist. |
+| `allowFrom` | string[] | — | No | Phone number allowlist. |
+
+**Setup:** Requires **macOS 12+** with a Mac that stays awake. Messages.app must be signed into an Apple ID with iMessage active. Install and run [BlueBubbles Server](https://bluebubbles.app). Configure the webhook URL as `http://<host>:<port>/webhooks/imessage`. Set `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, and `APPLE_ID` in your `.env` file. `allowFrom` uses phone numbers (E.164 format recommended, e.g., `"+15551234567"`); numbers are normalized during comparison (spaces, dashes, and parentheses are stripped). **Cannot run in Docker or Railway** — macOS with Messages.app is required.
 
 ---
 
@@ -390,4 +394,41 @@ tracking:
     "anthropic/claude-sonnet-4":
       input: 0.000003
       output: 0.000015
+```
+
+### 💬 Personal Assistant with Multi-Channel
+
+```yaml
+name: assistant
+identity:
+  persona: "Personal dev assistant reachable via any channel."
+runner:
+  defaultAgent: claude-code
+  defaultModel: claude-sonnet-4
+  workdir: ~/dev
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY]
+  inherit: [PATH, HOME, SHELL, TERM]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+    - type: discord
+      token: "${DISCORD_BOT_TOKEN}"
+      allowFrom: ["123456789012345678"]
+    - type: imessage
+      provider: bluebubbles
+      url: "${BLUEBUBBLES_URL}"
+      password: "${BLUEBUBBLES_PASSWORD}"
+      allowFrom: ["+15551234567"]
+memory:
+  store: meilisearch
+  url: http://localhost:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-assistant
+  autoInject:
+    enabled: true
+    maxResults: 5
 ```

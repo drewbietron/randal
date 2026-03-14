@@ -33,6 +33,7 @@ Randal wraps agent CLIs — [OpenCode](https://github.com/nickthecook/opencode),
 # Clone and install
 git clone https://github.com/your-org/randal && cd randal
 bun install
+bun link    # Makes 'randal' command available globally
 
 # Set up your agent (interactive wizard)
 randal init
@@ -156,6 +157,64 @@ Full reference: [📖 docs/config-reference.md](docs/config-reference.md)
 
 ---
 
+## 💬 Messaging Channels
+
+Agents are reachable via HTTP, Discord DMs, or iMessage texts. Each channel uses the same prefix commands. Channel-aware routing ensures job notifications only go back to the originating channel. Cross-channel context is seamless via shared memory.
+
+### Discord
+
+```yaml
+gateway:
+  channels:
+    - type: discord
+      token: "${DISCORD_BOT_TOKEN}"
+      allowFrom: ["123456789012345678"]
+```
+
+**Setup:**
+1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Enable **Message Content Intent** under Bot settings
+3. Invite the bot to your server with Send Messages, Read Message History, View Channels permissions
+4. Set `DISCORD_BOT_TOKEN` in your `.env` file
+
+### iMessage (macOS only)
+
+```yaml
+gateway:
+  channels:
+    - type: imessage
+      provider: bluebubbles
+      url: "${BLUEBUBBLES_URL}"
+      password: "${BLUEBUBBLES_PASSWORD}"
+      allowFrom: ["+15551234567"]
+```
+
+> **macOS only.** Requires a Mac with Messages.app signed into an Apple ID and [BlueBubbles Server](https://bluebubbles.app) running.
+
+**Setup:**
+1. Install BlueBubbles Server on your Mac
+2. Configure a webhook pointing to `http://<host>:<port>/webhooks/imessage`
+3. Set `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, and `APPLE_ID` in your `.env` file
+
+### Prefix Commands
+
+| Command | Description |
+|---------|-------------|
+| `run: <prompt>` | Start a new job |
+| `status` / `status: <id>` | Check job status |
+| `stop` / `stop: <id>` | Stop a running job |
+| `context: <text>` | Inject context into running job |
+| `jobs` | List all jobs |
+| `memory: <query>` | Search memory |
+| `resume: <id>` | Resume a failed job |
+| `help` | Show available commands |
+
+Or just send a message without a prefix to start a job (implicit `run:`).
+
+Full setup instructions: [📖 docs/deployment-guide.md](docs/deployment-guide.md)
+
+---
+
 ## 💻 CLI Reference
 
 | Command | Description |
@@ -189,6 +248,7 @@ Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
    ```bash
    git clone <repo> && cd randal
    bun install
+   bun link
    ```
 5. Initialize and run:
    ```bash
@@ -261,38 +321,48 @@ agent.stop();
 <summary>Click to expand system diagram</summary>
 
 ```
-                           ┌──────────────────┐
-                           │    📡 Dashboard   │
-                           │  (single HTML)    │
-                           └────────┬─────────┘
-                                    │ SSE / REST
-                                    ▼
-┌──────────┐    HTTP     ┌──────────────────┐
-│  💻 CLI  │ ─────────▶  │    🏗️ Gateway    │
-│ (randal) │   or stdin  │  - HTTP API      │
-└──────────┘             │  - EventBus      │
-                         │  - Job Persist   │
-                         └────────┬─────────┘
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-           ┌──────────────────┐        ┌──────────────────┐
-           │    🎯 Runner     │        │   ⏰ Scheduler   │
-           │  - Ralph Loop    │        │  - Heartbeat     │
-           │  - Adapters      │        │  - Cron          │
-           │  - Sentinel      │        │  - Hooks         │
-           │  - Struggle Det. │        │  (webhooks)      │
-           └───┬──────────┬───┘        └──────────────────┘
-               │          │
-      ┌────────┘          └────────┐
-      ▼                            ▼
-┌──────────────────┐      ┌──────────────────┐
-│  🔐 Credentials  │      │    🧠 Memory     │
-│ - .env parsing   │      │ - File / Meili   │
-│ - Allowlist      │      │ - Sync (chokidar)│
-│ - Inheritance    │      │ - Cross-agent    │
-└──────────────────┘      │ - Auto-inject    │
-                          └──────────────────┘
+                                         ┌──────────────────┐
+                                         │    📡 Dashboard   │
+                                         │  (single HTML)    │
+                                         └────────┬─────────┘
+                                                  │ SSE / REST
+                                                  ▼
+┌──────────┐                          ┌──────────────────────┐
+│  💻 CLI  │ ── HTTP ────────────────▶│                      │
+└──────────┘                          │    🏗️ Gateway        │
+                                      │                      │
+┌──────────┐                          │  ┌────────────────┐  │
+│ 💬 Discord│ ── discord.js ─────────▶│  │  📡 Channels   │  │
+│          │◀─────────────────────────│  │  - HTTP API    │  │
+└──────────┘                          │  │  - Discord     │  │
+                                      │  │  - iMessage    │  │
+┌──────────┐                          │  └───────┬────────┘  │
+│ 📱 iMessage── BB webhook ──────────▶│          │           │
+│          │◀── BB REST ──────────────│  ┌───────┴────────┐  │
+└──────────┘                          │  │  🔀 EventBus   │  │
+                                      │  │  📂 Job Persist│  │
+                                      │  └───────┬────────┘  │
+                                      └──────────┼───────────┘
+                                                 │
+                                   ┌─────────────┴─────────────┐
+                                   ▼                           ▼
+                          ┌──────────────────┐        ┌──────────────────┐
+                          │    🎯 Runner     │        │   ⏰ Scheduler   │
+                          │  - Ralph Loop    │        │  - Heartbeat     │
+                          │  - Adapters      │        │  - Cron          │
+                          │  - Sentinel      │        │  - Hooks         │
+                          │  - Struggle Det. │        │  (webhooks)      │
+                          └───┬──────────┬───┘        └──────────────────┘
+                              │          │
+                     ┌────────┘          └────────┐
+                     ▼                            ▼
+               ┌──────────────────┐      ┌──────────────────┐
+               │  🔐 Credentials  │      │    🧠 Memory     │
+               │ - .env parsing   │      │ - File / Meili   │
+               │ - Allowlist      │      │ - Sync (chokidar)│
+               │ - Inheritance    │      │ - Cross-agent    │
+               └──────────────────┘      │ - Auto-inject    │
+                                         └──────────────────┘
 ```
 
 9 packages. Clean separation. See [📖 docs/architecture.md](docs/architecture.md) for the full breakdown.
