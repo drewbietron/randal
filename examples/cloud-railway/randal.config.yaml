@@ -1,0 +1,60 @@
+# Railway cloud deployment
+# See Dockerfile and railway.toml in this directory
+#
+# This example shows how to deploy Randal on Railway with:
+# - Cloud-hosted Meilisearch (Railway internal networking)
+# - Heartbeat for autonomous check-ins
+# - Hooks for CI/CD integration
+name: cloud-agent
+version: "0.1"
+
+# Identity: cloud agent with security-focused rules
+identity:
+  persona: |
+    You are a cloud-hosted agent running on Railway.
+  knowledge:
+    - ./knowledge/*.md
+  rules:
+    - "NEVER delete production data"
+    - "NEVER expose PII in logs or responses"
+    - "ALWAYS escalate payment-related issues"
+
+# Runner: uses claude-code in a Docker container
+runner:
+  defaultAgent: claude-code
+  defaultModel: claude-sonnet-4
+  workdir: /home/bun/workspace
+
+# Credentials: minimal env exposure
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY]
+
+# Gateway: single HTTP channel
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+
+# Memory: Meilisearch on Railway internal network
+memory:
+  store: meilisearch
+  url: http://meilisearch.internal:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-cloud-agent
+  embedder:
+    type: builtin
+
+# Heartbeat: check in every 30 minutes, stay quiet if nothing needs attention
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: |
+    Check for pending tasks, failed jobs, or items needing attention.
+    Stay silent if nothing requires action.
+
+# Hooks: accept webhooks from CI/CD, monitoring, etc.
+hooks:
+  enabled: true
+  token: "${RANDAL_HOOK_TOKEN}"

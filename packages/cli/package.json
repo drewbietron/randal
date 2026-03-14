@@ -1,0 +1,19 @@
+{
+	"name": "randal",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"randal": "./src/index.ts"
+	},
+	"main": "src/index.ts",
+	"dependencies": {
+		"@clack/prompts": "^0.10.0",
+		"@randal/core": "workspace:*",
+		"@randal/credentials": "workspace:*",
+		"@randal/runner": "workspace:*",
+		"@randal/scheduler": "workspace:*",
+		"@randal/gateway": "workspace:*",
+		"@randal/memory": "workspace:*"
+	}
+}

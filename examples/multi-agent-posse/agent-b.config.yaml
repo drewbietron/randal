@@ -1,0 +1,30 @@
+# Agent B in a multi-agent posse
+# Reads from Agent A's memory and the shared index.
+#
+# This is the counterpart to agent-a.config.yaml.
+# Run both agents on the same machine with different ports.
+name: agent-beta
+posse: research-team
+
+# Runner: uses claude-code (different from Agent A)
+runner:
+  defaultAgent: claude-code
+  defaultModel: claude-sonnet-4
+  workdir: ~/dev/project-b
+
+# Memory: cross-agent sharing via Meilisearch
+memory:
+  store: meilisearch
+  url: http://localhost:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-beta
+  sharing:
+    publishTo: shared
+    readFrom: [shared, memory-alpha]
+
+# Gateway: different port since both run on same machine
+gateway:
+  channels:
+    - type: http
+      port: 7601
+      auth: "${RANDAL_API_TOKEN}"

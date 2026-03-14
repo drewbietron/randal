@@ -1,0 +1,31 @@
+{
+	"name": "randal",
+	"version": "0.1.0",
+	"private": true,
+	"workspaces": ["packages/*"],
+	"bin": {
+		"randal": "packages/cli/src/index.ts"
+	},
+	"scripts": {
+		"test": "bun test",
+		"test:unit": "bun test packages/",
+		"test:integration": "bun test tests/integration/",
+		"test:e2e": "bun test tests/e2e/",
+		"typecheck": "bunx tsc --noEmit",
+		"lint": "bunx biome check .",
+		"check": "bun run typecheck && bun run lint && bun run test"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^1.9.0",
+		"@types/bun": "^1.2.0",
+		"typescript": "^5.7.0"
+	},
+	"dependencies": {
+		"chokidar": "^4.0.0",
+		"gray-matter": "^4.0.3",
+		"hono": "^4.7.0",
+		"meilisearch": "^0.48.0",
+		"yaml": "^2.7.0",
+		"zod": "^3.24.0"
+	}
+}

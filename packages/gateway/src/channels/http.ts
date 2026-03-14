@@ -1,0 +1,484 @@
+import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
+import { auditCredentials } from "@randal/credentials";
+import type { MemoryManager, SkillManager } from "@randal/memory";
+import { type Runner, writeContext } from "@randal/runner";
+import type { Scheduler } from "@randal/scheduler";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
+import type { EventBus } from "../events.js";
+import { listJobs, loadJob, saveJob } from "../jobs.js";
+
+export interface HttpChannelOptions {
+	config: RandalConfig;
+	runner: Runner;
+	eventBus: EventBus;
+	memoryManager?: MemoryManager;
+	scheduler?: Scheduler;
+	skillManager?: SkillManager;
+}
+
+export function createHttpApp(options: HttpChannelOptions): Hono {
+	const { config, runner, eventBus, memoryManager, scheduler, skillManager } = options;
+	const app = new Hono();
+
+	// CORS
+	app.use("*", cors());
+
+	// Auth middleware
+	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
+	const authToken = httpChannel?.type === "http" ? httpChannel.auth : undefined;
+
+	// Protect all routes except root dashboard
+	app.use("*", async (c, next) => {
+		const path = c.req.path;
+		// Dashboard root is public
+		if (path === "/") {
+			return next();
+		}
+		if (authToken) {
+			const header = c.req.header("Authorization");
+			const token = header?.replace("Bearer ", "");
+			if (token !== authToken) {
+				return c.json({ error: "Unauthorized" }, 401);
+			}
+		}
+		await next();
+	});
+
+	// Health check
+	app.get("/health", (c) => {
+		return c.json({
+			status: "ok",
+			uptime: process.uptime(),
+			version: config.version,
+		});
+	});
+
+	// Instance info
+	app.get("/instance", (c) => {
+		const activeJobs = runner.getActiveJobs();
+		const schedulerStatus = scheduler?.getStatus();
+		return c.json({
+			name: config.name,
+			posse: config.posse,
+			status: activeJobs.length > 0 ? "busy" : "idle",
+			version: config.version,
+			jobs: {
+				active: activeJobs.length,
+				total: listJobs().length,
+			},
+			capabilities: {
+				tools: config.tools.map((t) => t.name),
+				agent: config.runner.defaultAgent,
+			},
+			scheduler: schedulerStatus,
+		});
+	});
+
+	// Submit job
+	app.post("/job", async (c) => {
+		const body = await c.req.json<{
+			prompt?: string;
+			specFile?: string;
+			agent?: string;
+			model?: string;
+			maxIterations?: number;
+			workdir?: string;
+		}>();
+
+		if (!body.prompt && !body.specFile) {
+			return c.json({ error: "prompt or specFile required" }, 400);
+		}
+
+		// Start job in background
+		const jobPromise = runner.execute({
+			prompt: body.prompt,
+			specFile: body.specFile,
+			agent: body.agent,
+			model: body.model,
+			maxIterations: body.maxIterations,
+			workdir: body.workdir,
+		});
+
+		// Wait briefly to get the job ID from the queued event
+		await new Promise((r) => setTimeout(r, 50));
+		const active = runner.getActiveJobs();
+		const latestJob = active[active.length - 1];
+
+		if (latestJob) {
+			// Persist to disk
+			saveJob(latestJob);
+
+			// When job completes, update disk
+			jobPromise.then((job) => saveJob(job)).catch(() => {});
+
+			return c.json({ id: latestJob.id, status: latestJob.status }, 201);
+		}
+
+		return c.json({ error: "Failed to create job" }, 500);
+	});
+
+	// Get job
+	app.get("/job/:id", (c) => {
+		const id = c.req.param("id");
+
+		// Check active jobs first
+		const activeJob = runner.getJob(id);
+		if (activeJob) return c.json(activeJob);
+
+		// Check disk
+		const diskJob = loadJob(id);
+		if (diskJob) return c.json(diskJob);
+
+		return c.json({ error: "Job not found" }, 404);
+	});
+
+	// List jobs
+	app.get("/jobs", (c) => {
+		const statusFilter = c.req.query("status") as Job["status"] | undefined;
+		const jobs = listJobs(statusFilter);
+
+		// Merge with active jobs for latest state
+		const active = runner.getActiveJobs();
+		const activeIds = new Set(active.map((j) => j.id));
+
+		const merged = [...active, ...jobs.filter((j) => !activeIds.has(j.id))];
+
+		return c.json(merged);
+	});
+
+	// Stop job
+	app.delete("/job/:id", (c) => {
+		const id = c.req.param("id");
+		const stopped = runner.stop(id);
+
+		if (stopped) {
+			return c.json({ id, status: "stopped" });
+		}
+
+		return c.json({ error: "Job not found or not running" }, 404);
+	});
+
+	// Inject context
+	app.post("/job/:id/context", async (c) => {
+		const id = c.req.param("id");
+		const body = await c.req.json<{ text: string }>();
+
+		if (!body.text) {
+			return c.json({ error: "text required" }, 400);
+		}
+
+		const job = runner.getJob(id) ?? loadJob(id);
+		if (!job) {
+			return c.json({ error: "Job not found" }, 404);
+		}
+
+		writeContext(job.workdir, body.text);
+		return c.json({ ok: true });
+	});
+
+	// SSE events
+	app.get("/events", (c) => {
+		return streamSSE(c, async (stream) => {
+			const unsub = eventBus.subscribe((event: RunnerEvent) => {
+				stream.writeSSE({
+					event: event.type,
+					data: JSON.stringify({
+						jobId: event.jobId,
+						...event.data,
+					}),
+				});
+			});
+
+			// Keep connection alive
+			const keepAlive = setInterval(() => {
+				stream.writeSSE({ event: "ping", data: "" });
+			}, 30000);
+
+			stream.onAbort(() => {
+				unsub();
+				clearInterval(keepAlive);
+			});
+
+			// Block to keep stream open
+			await new Promise(() => {});
+		});
+	});
+
+	// ---- Scheduler endpoints ----
+
+	// Scheduler status
+	app.get("/scheduler", (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		return c.json(scheduler.getStatus());
+	});
+
+	// Force heartbeat tick
+	app.post("/heartbeat/trigger", async (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		const heartbeat = scheduler.getHeartbeat();
+		await heartbeat.triggerNow();
+		return c.json({ ok: true });
+	});
+
+	// List cron jobs
+	app.get("/cron", (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		return c.json(scheduler.getCron().listJobs());
+	});
+
+	// Add cron job
+	app.post("/cron", async (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		const body = await c.req.json<{
+			name: string;
+			schedule: string | { every: string } | { at: string };
+			prompt: string;
+			execution?: "main" | "isolated";
+			model?: string;
+			announce?: boolean;
+		}>();
+
+		if (!body.name || !body.prompt) {
+			return c.json({ error: "name and prompt are required" }, 400);
+		}
+
+		scheduler.getCron().addJob({
+			name: body.name,
+			schedule: body.schedule ?? { every: "1h" },
+			prompt: body.prompt,
+			execution: body.execution ?? "isolated",
+			model: body.model,
+			announce: body.announce ?? false,
+		});
+
+		return c.json({ ok: true, name: body.name }, 201);
+	});
+
+	// Remove cron job
+	app.delete("/cron/:name", (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		const name = c.req.param("name");
+		const removed = scheduler.getCron().removeJob(name);
+		if (removed) return c.json({ ok: true, name });
+		return c.json({ error: "Cron job not found" }, 404);
+	});
+
+	// ---- Memory endpoints ----
+
+	// Memory search
+	app.get("/memory/search", async (c) => {
+		const q = c.req.query("q");
+		if (!q) return c.json({ error: "q parameter required" }, 400);
+
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (memoryManager) {
+			const results = await memoryManager.search(q, limit);
+			return c.json(results);
+		}
+		return c.json([]);
+	});
+
+	// Memory recent
+	app.get("/memory/recent", async (c) => {
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (memoryManager) {
+			const results = await memoryManager.recent(limit);
+			return c.json(results);
+		}
+		return c.json([]);
+	});
+
+	// ---- Skills endpoints ----
+
+	// List all skills
+	app.get("/skills", async (c) => {
+		if (!skillManager) {
+			return c.json([]);
+		}
+		const skills = await skillManager.list();
+		return c.json(
+			skills.map((s) => ({
+				name: s.meta.name,
+				description: s.meta.description,
+				tags: s.meta.tags ?? [],
+				version: s.meta.version,
+				updated: s.updated,
+			})),
+		);
+	});
+
+	// Search skills
+	app.get("/skills/search", async (c) => {
+		const q = c.req.query("q");
+		if (!q) return c.json({ error: "q parameter required" }, 400);
+
+		const limit = Number.parseInt(c.req.query("limit") ?? "5", 10);
+
+		if (!skillManager) {
+			return c.json([]);
+		}
+
+		const results = await skillManager.search(q, limit);
+		return c.json(
+			results.map((s) => ({
+				name: s.meta.name,
+				description: s.meta.description,
+				tags: s.meta.tags ?? [],
+				content: s.content,
+				updated: s.updated,
+			})),
+		);
+	});
+
+	// Get skill by name
+	app.get("/skills/:name", async (c) => {
+		const name = c.req.param("name");
+
+		if (!skillManager) {
+			return c.json({ error: "Skills not available" }, 400);
+		}
+
+		const skill = await skillManager.getByName(name);
+		if (!skill) {
+			return c.json({ error: "Skill not found" }, 404);
+		}
+
+		return c.json({
+			name: skill.meta.name,
+			description: skill.meta.description,
+			tags: skill.meta.tags ?? [],
+			requires: skill.meta.requires,
+			version: skill.meta.version,
+			content: skill.content,
+			filePath: skill.filePath,
+			updated: skill.updated,
+		});
+	});
+
+	// Create skill (write to disk)
+	app.post("/skills", async (c) => {
+		if (!skillManager) {
+			return c.json({ error: "Skills not available" }, 400);
+		}
+
+		const body = await c.req.json<{
+			name: string;
+			description: string;
+			content: string;
+			tags?: string[];
+		}>();
+
+		if (!body.name || !body.description || !body.content) {
+			return c.json({ error: "name, description, and content are required" }, 400);
+		}
+
+		// Write skill file to disk
+		const { mkdirSync, writeFileSync } = require("node:fs");
+		const { resolve, join } = require("node:path");
+		const { stringify: stringifyYaml } = require("yaml");
+
+		const skillsDir = resolve(config.skills.dir);
+		const skillDir = join(skillsDir, body.name);
+		mkdirSync(skillDir, { recursive: true });
+
+		const fm: Record<string, unknown> = {
+			name: body.name,
+			description: body.description,
+		};
+		if (body.tags) fm.tags = body.tags;
+
+		const fileContent = `---\n${stringifyYaml(fm)}---\n\n${body.content}`;
+		writeFileSync(join(skillDir, "SKILL.md"), fileContent);
+
+		// Re-scan to pick up the new skill
+		await skillManager.scanDirectory();
+
+		return c.json({ ok: true, name: body.name }, 201);
+	});
+
+	// Delete skill
+	app.delete("/skills/:name", async (c) => {
+		const name = c.req.param("name");
+
+		if (!skillManager) {
+			return c.json({ error: "Skills not available" }, 400);
+		}
+
+		const skill = await skillManager.getByName(name);
+		if (!skill) {
+			return c.json({ error: "Skill not found" }, 404);
+		}
+
+		// Remove skill directory
+		const { rmSync } = require("node:fs");
+		const { dirname } = require("node:path");
+		const skillDir = dirname(skill.filePath);
+
+		try {
+			rmSync(skillDir, { recursive: true, force: true });
+		} catch {
+			return c.json({ error: "Failed to delete skill" }, 500);
+		}
+
+		// Re-scan
+		await skillManager.scanDirectory();
+
+		return c.json({ ok: true, name });
+	});
+
+	// Config (sanitized, read-only)
+	app.get("/config", (c) => {
+		const audit = auditCredentials(config);
+		return c.json({
+			name: config.name,
+			version: config.version,
+			posse: config.posse,
+			runner: {
+				defaultAgent: config.runner.defaultAgent,
+				defaultModel: config.runner.defaultModel,
+				defaultMaxIterations: config.runner.defaultMaxIterations,
+				workdir: config.runner.workdir,
+			},
+			memory: {
+				url: config.memory.url,
+				index: config.memory.index,
+			},
+			skills: {
+				dir: config.skills.dir,
+				autoDiscover: config.skills.autoDiscover,
+				maxPerPrompt: config.skills.maxPerPrompt,
+			},
+			tools: config.tools.map((t) => ({ name: t.name, binary: t.binary })),
+			credentials: audit,
+		});
+	});
+
+	// Dashboard - serve static HTML at root
+	app.get("/", (c) => {
+		try {
+			const { getDashboardHtml } = require("@randal/dashboard");
+			return c.html(getDashboardHtml());
+		} catch {
+			// Fallback minimal dashboard
+			return c.html(
+				`<!DOCTYPE html><html><head><title>Randal</title></head><body><h1>${config.name} Dashboard</h1><p>Dashboard package not available.</p></body></html>`,
+			);
+		}
+	});
+
+	return app;
+}

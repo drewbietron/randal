@@ -1,0 +1,87 @@
+# Local macOS development setup
+# Prerequisites: bun, meilisearch (brew install meilisearch), an agent CLI
+#
+# This example shows a full-featured local development agent with:
+# - Meilisearch-backed memory for search and cross-agent sharing
+# - Heartbeat for periodic check-ins during active hours
+# - Cron for scheduled tasks
+# - Hooks for external triggers (CI, email, etc.)
+name: dev-agent
+version: "0.1"
+
+# Identity: who is this agent and what are its constraints?
+identity:
+  persona: |
+    You are a development assistant running on a local Mac.
+  rules:
+    - "ALWAYS verify your work before marking complete"
+    - "NEVER modify files outside the allowed workdirs"
+
+# Runner: how the agent executes tasks
+runner:
+  defaultAgent: opencode         # or claude-code, codex
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 20
+  workdir: ~/dev
+  allowedWorkdirs: [~/dev]
+  completionPromise: "DONE"
+
+# Credentials: environment variables available to the agent
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY]
+  inherit: [PATH, HOME, SHELL, TERM]
+
+# Gateway: HTTP API for remote control and dashboard
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+
+# Memory: searchable memory with Meilisearch for fast retrieval
+memory:
+  store: meilisearch
+  url: http://localhost:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-dev-agent
+  embedder:
+    type: builtin
+  sharing:
+    publishTo: shared
+    readFrom: [shared]
+  autoInject:
+    enabled: true
+    maxResults: 5
+
+# Heartbeat: periodic check-in with judgment
+# Agent wakes every 30 minutes, reads a checklist, decides what needs attention
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: ./HEARTBEAT.md
+  activeHours:
+    start: "08:00"
+    end: "22:00"
+  model: anthropic/claude-haiku-4
+
+# Cron: precise scheduled tasks
+cron:
+  jobs:
+    morning-briefing:
+      schedule: "0 8 * * *"
+      prompt: "Review recent memory and pending tasks. Compile a brief morning status."
+      execution: isolated
+      announce: true
+
+# Hooks: external event triggers via HTTP webhooks
+hooks:
+  enabled: true
+  token: "${RANDAL_HOOK_TOKEN}"
+
+tools: []
+
+tracking:
+  tokenPricing:
+    claude-sonnet-4: { input: 3.00, output: 15.00 }
+    claude-haiku-4: { input: 0.80, output: 4.00 }

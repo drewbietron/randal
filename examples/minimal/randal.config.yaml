@@ -1,0 +1,10 @@
+# Minimal Randal config — only the required fields.
+# Everything else uses sensible defaults.
+#
+# This is the simplest possible config to get an agent running.
+# Default agent: opencode
+# Default model: anthropic/claude-sonnet-4
+# Default memory: file store (local MEMORY.md)
+name: my-agent
+runner:
+  workdir: .

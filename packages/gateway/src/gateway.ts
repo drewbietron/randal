@@ -1,0 +1,175 @@
+import type { RandalConfig, RunnerEvent } from "@randal/core";
+import { createLogger } from "@randal/core";
+import { MemoryManager, SkillManager } from "@randal/memory";
+import { Runner } from "@randal/runner";
+import { Scheduler } from "@randal/scheduler";
+import { createHttpApp } from "./channels/http.js";
+import { EventBus } from "./events.js";
+import { saveJob } from "./jobs.js";
+
+export interface GatewayOptions {
+	config: RandalConfig;
+	port?: number;
+	configBasePath?: string;
+}
+
+export interface Gateway {
+	stop: () => void;
+	port: number;
+}
+
+const logger = createLogger({ context: { component: "gateway" } });
+
+export async function startGateway(options: GatewayOptions): Promise<Gateway> {
+	const { config, configBasePath } = options;
+	const eventBus = new EventBus();
+
+	// Initialize memory manager
+	let memoryManager: MemoryManager | undefined;
+	try {
+		memoryManager = new MemoryManager({
+			config,
+			basePath: configBasePath ?? ".",
+		});
+		await memoryManager.init();
+		logger.info("Memory manager initialized", { url: config.memory.url });
+	} catch (err) {
+		logger.warn("Memory manager initialization failed, continuing without memory", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
+	// Initialize skill manager
+	let skillManager: SkillManager | undefined;
+	try {
+		skillManager = new SkillManager({
+			config,
+			basePath: configBasePath ?? ".",
+			memoryManager,
+		});
+		await skillManager.init();
+		const skills = await skillManager.list();
+		logger.info("Skill manager initialized", { skillCount: skills.length });
+	} catch (err) {
+		logger.warn("Skill manager initialization failed, continuing without skills", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
+	// Start skill watcher if auto-discover is enabled
+	let skillWatcher: { stop: () => void } | undefined;
+	if (config.skills.autoDiscover && skillManager) {
+		try {
+			skillWatcher = skillManager.startWatcher();
+			logger.info("Skill watcher started");
+		} catch (err) {
+			logger.warn("Skill watcher failed to start", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	// Event handler shared by runner and scheduler
+	const onEvent = (event: RunnerEvent) => {
+		eventBus.emit(event);
+
+		// Persist job state on key events
+		if (
+			event.type === "iteration.end" ||
+			event.type === "job.complete" ||
+			event.type === "job.failed" ||
+			event.type === "job.stopped"
+		) {
+			const job = runner.getJob(event.jobId);
+			if (job) saveJob(job);
+		}
+	};
+
+	// Create runner with event forwarding to event bus
+	const runner = new Runner({
+		config,
+		configBasePath,
+		onEvent,
+		memorySearch: memoryManager
+			? (query: string) => memoryManager?.searchForContext(query)
+			: undefined,
+		skillSearch: skillManager
+			? (query: string) => skillManager?.searchWithOutcomes(query)
+			: undefined,
+	});
+
+	// Create scheduler
+	const scheduler = new Scheduler({
+		config,
+		runner,
+		onEvent,
+		configBasePath,
+		memorySearch: memoryManager
+			? (query: string) => memoryManager?.searchForContext(query)
+			: undefined,
+	});
+
+	// Detect tools
+	for (const tool of config.tools) {
+		if (tool.platforms.includes(process.platform as "darwin" | "linux" | "win32")) {
+			try {
+				const proc = Bun.spawnSync(["which", tool.binary]);
+				if (proc.exitCode === 0) {
+					logger.info("Tool detected", { tool: tool.name, binary: tool.binary });
+				} else {
+					logger.warn("Tool not found", { tool: tool.name, binary: tool.binary });
+				}
+			} catch {
+				logger.warn("Tool detection failed", { tool: tool.name });
+			}
+		}
+	}
+
+	// Create HTTP app — pass scheduler and skillManager
+	const app = createHttpApp({
+		config,
+		runner,
+		eventBus,
+		memoryManager,
+		scheduler,
+		skillManager,
+	});
+
+	// Mount hooks router if enabled
+	if (config.hooks.enabled) {
+		const hooksRouter = scheduler.getHooksRouter();
+		app.route(config.hooks.path, hooksRouter);
+	}
+
+	// Start scheduler after creating routes
+	await scheduler.start();
+
+	// Determine port
+	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
+	const port = options.port ?? (httpChannel?.type === "http" ? httpChannel.port : 7600);
+
+	// Start server
+	const server = Bun.serve({
+		port,
+		fetch: app.fetch,
+	});
+
+	logger.info("Gateway started", {
+		name: config.name,
+		port,
+		posse: config.posse,
+	});
+
+	console.log(`Randal gateway started: http://localhost:${port}`);
+	console.log(`Dashboard: http://localhost:${port}/`);
+
+	return {
+		stop: () => {
+			skillWatcher?.stop();
+			scheduler.stop();
+			server.stop();
+			logger.info("Gateway stopped");
+		},
+		port,
+	};
+}

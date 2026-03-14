@@ -1,0 +1,79 @@
+# Customer support agent example
+# Demonstrates identity, knowledge base, rules, and scheduled reporting.
+#
+# This example shows a production-like agent setup with:
+# - Rich identity (persona, knowledge base, strict rules)
+# - Frequent heartbeat for checking unresolved tickets
+# - Daily and weekly cron jobs for reports
+# - Webhook hooks for external ticket system integration
+name: support-agent
+version: "0.1"
+
+# Identity: customer support persona with strict guardrails
+identity:
+  persona: |
+    You are a customer support agent. You help users with their questions,
+    troubleshoot issues, and escalate complex problems appropriately.
+  knowledge:
+    - ./knowledge/*.md
+  rules:
+    - "NEVER delete production data"
+    - "NEVER expose PII in logs or responses"
+    - "ALWAYS escalate payment-related issues to a human"
+    - "Be concise and helpful in responses"
+
+# Runner: claude-code with moderate iteration limit
+runner:
+  defaultAgent: claude-code
+  defaultModel: claude-sonnet-4
+  workdir: /workspace
+
+# Credentials: API keys and database access
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY, DATABASE_URL]
+
+# Gateway: HTTP API for ticket system integration
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+
+# Memory: Meilisearch for fast knowledge retrieval
+memory:
+  store: meilisearch
+  url: http://localhost:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-support
+  embedder:
+    type: builtin
+
+# Heartbeat: frequent check-ins to catch unresolved tickets
+heartbeat:
+  enabled: true
+  every: 15m
+  prompt: |
+    Check for unresolved support tickets or follow-ups needed.
+    Review any new knowledge base articles that may need indexing.
+  model: anthropic/claude-haiku-4
+
+# Cron: daily summaries and weekly reports
+cron:
+  jobs:
+    daily-summary:
+      schedule: "0 18 * * 1-5"
+      prompt: "Compile a daily support summary: tickets resolved, common issues, escalations."
+      execution: isolated
+      announce: true
+    weekly-report:
+      schedule: "0 9 * * 1"
+      prompt: "Generate a weekly support metrics report."
+      execution: isolated
+      model: anthropic/claude-sonnet-4
+      announce: true
+
+# Hooks: accept triggers from ticket system, monitoring, etc.
+hooks:
+  enabled: true
+  token: "${RANDAL_HOOK_TOKEN}"

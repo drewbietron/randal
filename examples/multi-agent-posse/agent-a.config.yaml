@@ -1,0 +1,32 @@
+# Agent A in a multi-agent posse
+# Both agents share a Meilisearch instance and cross-read each other's memory.
+#
+# This example shows how to set up two agents that collaborate:
+# - Each agent has its own memory index
+# - Both publish to a shared index
+# - Each reads from the shared index and the other agent's index
+name: agent-alpha
+posse: research-team
+
+# Runner: uses opencode
+runner:
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  workdir: ~/dev/project-a
+
+# Memory: cross-agent sharing via Meilisearch
+memory:
+  store: meilisearch
+  url: http://localhost:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-alpha
+  sharing:
+    publishTo: shared
+    readFrom: [shared, memory-beta]
+
+# Gateway: HTTP API on port 7600
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"

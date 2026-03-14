@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Randal Dashboard</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		:root {
+			--bg: #0f0f0f;
+			--bg-card: #1a1a1a;
+			--border: #333;
+			--text: #e0e0e0;
+			--text-muted: #888;
+			--text-dim: #666;
+			--accent: #3b82f6;
+			--accent-hover: #2563eb;
+			--success: #4ade80;
+			--success-bg: #1a3a1a;
+			--warning: #fbbf24;
+			--warning-bg: #3a2a1a;
+			--danger: #f87171;
+			--danger-bg: #3a1a1a;
+		}
+		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+		a { color: var(--accent); text-decoration: none; }
+		a:hover { text-decoration: underline; }
+
+		.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+
+		/* Header */
+		header { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+		header h1 { font-size: 24px; color: #fff; }
+		header .meta { color: var(--text-dim); font-size: 12px; }
+		.instance-status { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+		.instance-status.idle { background: var(--success-bg); color: var(--success); }
+		.instance-status.busy { background: var(--warning-bg); color: var(--warning); }
+
+		/* Navigation */
+		nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+		nav button { padding: 8px 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; }
+		nav button:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+		nav button.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+
+		/* Pages */
+		.page { display: none; }
+		.page.active { display: block; }
+
+		/* Section */
+		.section { margin-bottom: 30px; }
+		.section h2 { font-size: 18px; margin-bottom: 12px; color: #aaa; }
+
+		/* Job Card */
+		.job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+		.job-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: border-color 0.2s; }
+		.job-card:hover { border-color: var(--accent); }
+		.job-card h3 { font-size: 14px; color: #fff; margin-bottom: 8px; word-break: break-word; }
+		.job-card .meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
+		.job-card .progress { margin-top: 8px; height: 4px; background: var(--border); border-radius: 2px; }
+		.job-card .progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+
+		/* Badges */
+		.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+		.badge.running { background: #1e3a5f; color: #60a5fa; }
+		.badge.complete { background: var(--success-bg); color: var(--success); }
+		.badge.failed { background: var(--danger-bg); color: var(--danger); }
+		.badge.queued { background: var(--warning-bg); color: var(--warning); }
+		.badge.stopped { background: #2a2a2a; color: #aaa; }
+
+		/* Cost Badge */
+		.cost-badge { font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 3px; }
+
+		/* New Job Form */
+		.new-job { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+		.new-job textarea { width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; }
+		.new-job textarea:focus { outline: none; border-color: var(--accent); }
+		.new-job .controls { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+		.new-job select, .new-job input[type="number"] { padding: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 13px; }
+		.btn { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+		.btn:hover { background: var(--accent-hover); }
+		.btn.danger { background: var(--danger-bg); color: var(--danger); }
+		.btn.danger:hover { background: #4a1a1a; }
+
+		/* Tables */
+		table { width: 100%; border-collapse: collapse; }
+		th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+		th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+
+		/* Events Log */
+		.events-log { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+		.event-line { padding: 2px 0; color: var(--text-muted); }
+		.event-line .type { color: #60a5fa; }
+		.event-line .time { color: var(--text-dim); }
+
+		/* Iteration Timeline */
+		.timeline { display: flex; flex-direction: column; gap: 8px; }
+		.timeline-item { display: flex; gap: 12px; padding: 8px 12px; background: var(--bg); border-radius: 4px; font-size: 13px; }
+		.timeline-item .iter-num { color: var(--accent); font-weight: 600; min-width: 60px; }
+		.timeline-item .iter-duration { color: var(--text-muted); min-width: 50px; }
+		.timeline-item .iter-summary { flex: 1; }
+
+		/* Context Input */
+		.context-input { display: flex; gap: 8px; margin-top: 12px; }
+		.context-input input { flex: 1; padding: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 13px; }
+
+		/* Spec Viewer */
+		.spec-viewer { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; }
+
+		/* Memory */
+		.memory-search { display: flex; gap: 8px; margin-bottom: 16px; }
+		.memory-search input { flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
+		.memory-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 8px; }
+		.memory-item .category { font-size: 11px; color: var(--accent); font-weight: 600; }
+		.memory-item .content { margin-top: 4px; font-size: 13px; }
+
+		/* Settings */
+		.settings-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+		.settings-group h3 { font-size: 14px; margin-bottom: 12px; color: #fff; }
+		.setting-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+		.setting-row .label { color: var(--text-muted); }
+		.setting-row .value { color: var(--text); font-family: monospace; }
+		.cred-loaded { color: var(--success); }
+		.cred-missing { color: var(--danger); }
+
+		/* Empty State */
+		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<header>
+			<div>
+				<h1 id="instance-name">Randal</h1>
+				<span class="meta" id="instance-meta"></span>
+			</div>
+			<span class="instance-status idle" id="instance-status">idle</span>
+		</header>
+
+		<nav id="nav">
+			<button class="active" data-page="home">Home</button>
+			<button data-page="history">History</button>
+			<button data-page="memory">Memory</button>
+			<button data-page="settings">Settings</button>
+		</nav>
+
+		<!-- Home Page -->
+		<div class="page active" id="page-home">
+			<div class="section">
+				<h2>New Job</h2>
+				<div class="new-job">
+					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..."></textarea>
+					<div class="controls">
+						<button class="btn" onclick="submitJob()">Submit Job</button>
+					</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Active Jobs</h2>
+				<div class="job-grid" id="active-jobs">
+					<div class="empty">No active jobs</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Events</h2>
+				<div class="events-log" id="events-log"></div>
+			</div>
+		</div>
+
+		<!-- Job Detail Page -->
+		<div class="page" id="page-job-detail">
+			<div class="section">
+				<button class="btn" onclick="showPage('home')" style="margin-bottom: 16px;">Back</button>
+				<h2 id="job-detail-title">Job Detail</h2>
+			</div>
+			<div class="section">
+				<h2>Spec</h2>
+				<div class="spec-viewer" id="job-spec"></div>
+			</div>
+			<div class="section">
+				<h2>Plan</h2>
+				<div id="job-plan"></div>
+			</div>
+			<div class="section">
+				<h2>Iterations</h2>
+				<div class="timeline" id="job-timeline"></div>
+			</div>
+			<div class="section">
+				<h2>Inject Context</h2>
+				<div class="context-input">
+					<input type="text" id="context-text" placeholder="Type context to inject..." />
+					<button class="btn" onclick="injectContext()">Inject</button>
+				</div>
+			</div>
+			<div class="section">
+				<button class="btn danger" onclick="stopJob()">Stop Job</button>
+			</div>
+		</div>
+
+		<!-- History Page -->
+		<div class="page" id="page-history">
+			<div class="section">
+				<h2>Job History</h2>
+				<table id="history-table">
+					<thead>
+						<tr><th>ID</th><th>Status</th><th>Agent</th><th>Iterations</th><th>Duration</th><th>Prompt</th></tr>
+					</thead>
+					<tbody id="history-body"></tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- Memory Page -->
+		<div class="page" id="page-memory">
+			<div class="section">
+				<h2>Memory Search</h2>
+				<div class="memory-search">
+					<input type="text" id="memory-query" placeholder="Search memories..." />
+					<button class="btn" onclick="searchMemory()">Search</button>
+				</div>
+				<div id="memory-results"></div>
+			</div>
+		</div>
+
+		<!-- Settings Page -->
+		<div class="page" id="page-settings">
+			<div class="section">
+				<h2>Settings</h2>
+				<div id="settings-content"></div>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		// Auth
+		var API_TOKEN = localStorage.getItem('randal_token') || prompt('Enter API token:') || '';
+		if (API_TOKEN) localStorage.setItem('randal_token', API_TOKEN);
+		var headers = { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' };
+
+		var currentJobId = null;
+
+		// Navigation
+		document.getElementById('nav').addEventListener('click', function(e) {
+			if (e.target.tagName === 'BUTTON') showPage(e.target.dataset.page);
+		});
+
+		function showPage(name) {
+			document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+			document.querySelectorAll('nav button').forEach(function(b) { b.classList.remove('active'); });
+			document.getElementById('page-' + name).classList.add('active');
+			var navBtn = document.querySelector('nav button[data-page="' + name + '"]');
+			if (navBtn) navBtn.classList.add('active');
+
+			if (name === 'history') loadHistory();
+			if (name === 'settings') loadSettings();
+		}
+
+		function showJobDetail(id) {
+			currentJobId = id;
+			showPage('job-detail');
+			loadJobDetail(id);
+		}
+
+		// Instance info
+		async function loadInstance() {
+			try {
+				var res = await fetch('/instance', { headers: headers });
+				var data = await res.json();
+				document.getElementById('instance-name').textContent = data.name;
+				document.getElementById('instance-meta').textContent = (data.posse ? 'posse: ' + data.posse + ' | ' : '') + 'v' + data.version;
+				var statusEl = document.getElementById('instance-status');
+				statusEl.textContent = data.status;
+				statusEl.className = 'instance-status ' + data.status;
+			} catch(e) {}
+		}
+
+		// Submit job
+		async function submitJob() {
+			var prompt = document.getElementById('prompt-input').value;
+			if (!prompt) return;
+			try {
+				await fetch('/job', { method: 'POST', headers: headers, body: JSON.stringify({ prompt: prompt }) });
+				document.getElementById('prompt-input').value = '';
+				refreshJobs();
+			} catch(e) { console.error(e); }
+		}
+
+		// Refresh active jobs
+		async function refreshJobs() {
+			try {
+				var res = await fetch('/jobs', { headers: headers });
+				var jobs = await res.json();
+				var container = document.getElementById('active-jobs');
+				var active = jobs.filter(function(j) { return j.status === 'running' || j.status === 'queued'; });
+				if (active.length === 0) {
+					container.innerHTML = '<div class="empty">No active jobs</div>';
+					return;
+				}
+				container.innerHTML = active.map(function(j) {
+					var pct = (j.iterations.current / j.maxIterations) * 100;
+					var preview = j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : '');
+					return '<div class="job-card" onclick="showJobDetail(\'' + j.id + '\')">' +
+						'<h3>' + preview + '</h3>' +
+						'<div class="meta"><span class="badge ' + j.status + '">' + j.status + '</span>' +
+						'<span>' + j.agent + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
+						'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
+						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
+				}).join('');
+				loadInstance();
+			} catch(e) { console.error(e); }
+		}
+
+		// Load job detail
+		async function loadJobDetail(id) {
+			try {
+				var res = await fetch('/job/' + id, { headers: headers });
+				var job = await res.json();
+				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + job.status + '">' + job.status + '</span> Job ' + job.id;
+				document.getElementById('job-spec').textContent = job.spec ? job.spec.content || job.prompt : job.prompt;
+
+				// Plan
+				var planHtml = job.plan.length > 0 ? '<table><thead><tr><th>Task</th><th>Status</th></tr></thead><tbody>' +
+					job.plan.map(function(p) { return '<tr><td>' + p.task + '</td><td><span class="badge ' + p.status + '">' + p.status + '</span></td></tr>'; }).join('') +
+					'</tbody></table>' : '<div class="empty">No plan extracted</div>';
+				document.getElementById('job-plan').innerHTML = planHtml;
+
+				// Timeline
+				var timelineHtml = job.iterations.history.length > 0 ?
+					job.iterations.history.map(function(h) {
+						return '<div class="timeline-item"><span class="iter-num">Iter ' + h.number + '</span>' +
+							'<span class="iter-duration">' + h.duration + 's</span>' +
+							'<span class="iter-summary">' + (h.summary || 'No summary') + '</span></div>';
+					}).join('') : '<div class="empty">No iterations yet</div>';
+				document.getElementById('job-timeline').innerHTML = timelineHtml;
+			} catch(e) { console.error(e); }
+		}
+
+		// Inject context
+		async function injectContext() {
+			if (!currentJobId) return;
+			var text = document.getElementById('context-text').value;
+			if (!text) return;
+			try {
+				await fetch('/job/' + currentJobId + '/context', {
+					method: 'POST', headers: headers, body: JSON.stringify({ text: text })
+				});
+				document.getElementById('context-text').value = '';
+			} catch(e) { console.error(e); }
+		}
+
+		// Stop job
+		async function stopJob() {
+			if (!currentJobId) return;
+			if (!confirm('Stop this job?')) return;
+			try {
+				await fetch('/job/' + currentJobId, { method: 'DELETE', headers: headers });
+				showPage('home');
+				refreshJobs();
+			} catch(e) { console.error(e); }
+		}
+
+		// History
+		async function loadHistory() {
+			try {
+				var res = await fetch('/jobs', { headers: headers });
+				var jobs = await res.json();
+				var body = document.getElementById('history-body');
+				body.innerHTML = jobs.map(function(j) {
+					return '<tr onclick="showJobDetail(\'' + j.id + '\')" style="cursor:pointer">' +
+						'<td>' + j.id + '</td>' +
+						'<td><span class="badge ' + j.status + '">' + j.status + '</span></td>' +
+						'<td>' + j.agent + '</td>' +
+						'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
+						'<td>' + (j.duration || '-') + 's</td>' +
+						'<td>' + j.prompt.slice(0, 50) + '</td></tr>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		// Memory
+		async function searchMemory() {
+			var q = document.getElementById('memory-query').value;
+			if (!q) return;
+			try {
+				var res = await fetch('/memory/search?q=' + encodeURIComponent(q), { headers: headers });
+				var docs = await res.json();
+				var container = document.getElementById('memory-results');
+				if (docs.length === 0) {
+					container.innerHTML = '<div class="empty">No results</div>';
+					return;
+				}
+				container.innerHTML = docs.map(function(d) {
+					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' +
+						'<div class="content">' + d.content + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		// Settings
+		async function loadSettings() {
+			try {
+				var res = await fetch('/config', { headers: headers });
+				var cfg = await res.json();
+				var html = '<div class="settings-group"><h3>Instance</h3>' +
+					'<div class="setting-row"><span class="label">Name</span><span class="value">' + cfg.name + '</span></div>' +
+					'<div class="setting-row"><span class="label">Version</span><span class="value">' + cfg.version + '</span></div>' +
+					'<div class="setting-row"><span class="label">Posse</span><span class="value">' + (cfg.posse || '-') + '</span></div></div>';
+
+				html += '<div class="settings-group"><h3>Runner</h3>' +
+					'<div class="setting-row"><span class="label">Agent</span><span class="value">' + cfg.runner.defaultAgent + '</span></div>' +
+					'<div class="setting-row"><span class="label">Model</span><span class="value">' + cfg.runner.defaultModel + '</span></div>' +
+					'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + cfg.runner.defaultMaxIterations + '</span></div>' +
+					'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + cfg.runner.workdir + '</span></div></div>';
+
+				html += '<div class="settings-group"><h3>Memory</h3>' +
+					'<div class="setting-row"><span class="label">Store</span><span class="value">' + cfg.memory.store + '</span></div>' +
+					'<div class="setting-row"><span class="label">Index</span><span class="value">' + (cfg.memory.index || '-') + '</span></div></div>';
+
+				html += '<div class="settings-group"><h3>Credentials</h3>';
+				if (cfg.credentials.loaded) {
+					cfg.credentials.loaded.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value cred-loaded">loaded</span></div>';
+					});
+				}
+				if (cfg.credentials.missing) {
+					cfg.credentials.missing.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value cred-missing">missing</span></div>';
+					});
+				}
+				if (cfg.credentials.inherited) {
+					cfg.credentials.inherited.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value">inherited</span></div>';
+					});
+				}
+				html += '</div>';
+
+				if (cfg.tools && cfg.tools.length > 0) {
+					html += '<div class="settings-group"><h3>Tools</h3>';
+					cfg.tools.forEach(function(t) {
+						html += '<div class="setting-row"><span class="label">' + t.name + '</span><span class="value">' + t.binary + '</span></div>';
+					});
+					html += '</div>';
+				}
+
+				document.getElementById('settings-content').innerHTML = html;
+			} catch(e) { console.error(e); }
+		}
+
+		// SSE
+		var evtSource = new EventSource('/events');
+		var eventsLog = document.getElementById('events-log');
+
+		function addEvent(type, data) {
+			var line = document.createElement('div');
+			line.className = 'event-line';
+			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + type + '</span> ' + data;
+			eventsLog.prepend(line);
+			if (eventsLog.children.length > 100) eventsLog.lastChild.remove();
+			refreshJobs();
+		}
+
+		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected'].forEach(function(type) {
+			evtSource.addEventListener(type, function(e) {
+				addEvent(type, e.data);
+				if (currentJobId) loadJobDetail(currentJobId);
+			});
+		});
+
+		// Init
+		loadInstance();
+		refreshJobs();
+		setInterval(refreshJobs, 10000);
+	</script>
+</body>
+</html>

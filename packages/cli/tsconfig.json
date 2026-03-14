@@ -1,0 +1,17 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"rootDir": "./src"
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist", "**/*.test.ts"],
+	"references": [
+		{ "path": "../core" },
+		{ "path": "../credentials" },
+		{ "path": "../runner" },
+		{ "path": "../scheduler" },
+		{ "path": "../gateway" },
+		{ "path": "../memory" }
+	]
+}
