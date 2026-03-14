@@ -106,6 +106,14 @@ export interface Job {
 	updates: string[];
 	error: string | null;
 	exitCode: number | null;
+	origin?: JobOrigin;
+}
+
+// ---- Job Origin (channel-aware routing) ----
+export interface JobOrigin {
+	channel: string; // "http" | "discord" | "imessage"
+	replyTo: string; // Discord channelId, iMessage chatGuid, or "http"
+	from: string; // Discord userId, phone number, or "api"
 }
 
 // ---- Memory ----
