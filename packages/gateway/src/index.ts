@@ -11,3 +11,8 @@ export { parseCommand, formatHelp } from "./router.js";
 export type { ParsedCommand } from "./router.js";
 
 export { saveJob, loadJob, listJobs, updateJob } from "./jobs.js";
+
+export type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
+export { handleCommand, formatEvent } from "./channels/channel.js";
+export { DiscordChannel } from "./channels/discord.js";
+export { IMessageChannel } from "./channels/imessage.js";
