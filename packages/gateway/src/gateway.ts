@@ -3,7 +3,10 @@ import { createLogger } from "@randal/core";
 import { MemoryManager, SkillManager } from "@randal/memory";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
+import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
+import { DiscordChannel } from "./channels/discord.js";
 import { createHttpApp } from "./channels/http.js";
+import { IMessageChannel } from "./channels/imessage.js";
 import { EventBus } from "./events.js";
 import { saveJob } from "./jobs.js";
 
