@@ -32,13 +32,16 @@ async function checkIMessageActive(): Promise<boolean> {
 	if (process.platform !== "darwin") return false;
 
 	try {
-		const proc = Bun.spawnSync([
-			"osascript",
-			"-e",
-			'tell application "Messages" to count of (accounts whose service type is iMessage)',
-		]);
-		const count = Number.parseInt(proc.stdout.toString().trim(), 10);
-		return !Number.isNaN(count) && count > 0;
+		const proc = Bun.spawnSync(
+			[
+				"osascript",
+				"-e",
+				'tell application "System Events" to (name of processes) contains "Messages"',
+			],
+			{ timeout: 3000 },
+		);
+		const output = proc.stdout.toString().trim().toLowerCase();
+		return output === "true";
 	} catch {
 		return false;
 	}
@@ -112,9 +115,14 @@ export class IMessageChannel implements ChannelAdapter {
 			}
 		}
 
-		// Ping BlueBubbles server
+		// Ping BlueBubbles server (with 3s timeout)
 		try {
-			const resp = await fetch(`${this.url}/api/v1/ping?password=${this.password}`);
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), 3000);
+			const resp = await fetch(`${this.url}/api/v1/ping?password=${this.password}`, {
+				signal: controller.signal,
+			});
+			clearTimeout(timeout);
 			if (resp.ok) {
 				this.logger.info("BlueBubbles server reachable", { url: this.url });
 			} else {

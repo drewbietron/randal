@@ -6,9 +6,13 @@ import {
 	Events,
 	GatewayIntentBits,
 	Partials,
-	type TextBasedChannel,
 } from "discord.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+
+/** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
+interface SendableChannel {
+	send(content: string): Promise<unknown>;
+}
 
 // Extract discord channel config type from the discriminated union
 type DiscordChannelConfig = Extract<
@@ -88,7 +92,7 @@ export class DiscordChannel implements ChannelAdapter {
 
 		try {
 			const response = await handleCommand(text, this.deps, origin);
-			await this.sendReply(msg.channel as TextBasedChannel, response);
+			await this.sendReply(msg.channel as SendableChannel, response);
 		} catch (err) {
 			this.logger.error("Discord message handling failed", {
 				error: err instanceof Error ? err.message : String(err),
@@ -104,7 +108,7 @@ export class DiscordChannel implements ChannelAdapter {
 	/**
 	 * Send a reply, splitting messages that exceed Discord's 2000 char limit.
 	 */
-	async sendReply(channel: TextBasedChannel, text: string): Promise<void> {
+	async sendReply(channel: SendableChannel, text: string): Promise<void> {
 		if (text.length <= DISCORD_MAX_LENGTH) {
 			await channel.send(text);
 			return;
@@ -146,13 +150,12 @@ export class DiscordChannel implements ChannelAdapter {
 		const job = this.deps.runner.getJob(event.jobId);
 		if (!job?.origin || job.origin.channel !== "discord") return;
 
-		const channel = this.client.channels.cache.get(job.origin.replyTo) as
-			| TextBasedChannel
-			| undefined;
-		if (!channel) return;
+		const channel = this.client.channels.cache.get(job.origin.replyTo);
+		if (!channel || !("send" in channel)) return;
 
+		const sendable = channel as SendableChannel;
 		const message = formatEvent(event);
-		channel.send(message).catch((err) => {
+		sendable.send(message).catch((err: unknown) => {
 			this.logger.warn("Failed to send Discord notification", {
 				error: err instanceof Error ? err.message : String(err),
 				jobId: event.jobId,
