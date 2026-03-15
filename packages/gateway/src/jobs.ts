@@ -14,7 +14,21 @@ import { parse, stringify } from "yaml";
 
 const logger = createLogger({ context: { component: "jobs" } });
 
-const JOBS_DIR = join(homedir(), ".randal", "jobs");
+let JOBS_DIR = join(homedir(), ".randal", "jobs");
+
+/**
+ * Set the jobs directory (for testing).
+ */
+export function setJobsDir(dir: string): void {
+	JOBS_DIR = dir;
+}
+
+/**
+ * Get the current jobs directory.
+ */
+export function getJobsDir(): string {
+	return JOBS_DIR;
+}
 
 function ensureDir(): void {
 	if (!existsSync(JOBS_DIR)) {

@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "@randal/core";
-import { listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
+import { listJobs, loadJob, saveJob, setJobsDir, updateJob } from "./jobs.js";
 
 function makeJob(id: string, status: Job["status"] = "running"): Job {
 	return {
@@ -28,23 +28,23 @@ function makeJob(id: string, status: Job["status"] = "running"): Job {
 }
 
 describe("jobs", () => {
-	const testIds: string[] = [];
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "randal-jobs-test-"));
+		setJobsDir(tempDir);
+	});
 
 	afterEach(() => {
-		// Clean up test jobs
-		const jobsDir = join(homedir(), ".randal", "jobs");
-		for (const id of testIds) {
-			const path = join(jobsDir, `${id}.yaml`);
-			if (existsSync(path)) {
-				rmSync(path);
-			}
+		try {
+			rmSync(tempDir, { recursive: true });
+		} catch {
+			// Ignore cleanup errors
 		}
-		testIds.length = 0;
 	});
 
 	test("save and load job", () => {
 		const job = makeJob("test-save-001");
-		testIds.push(job.id);
 
 		saveJob(job);
 		const loaded = loadJob(job.id);
@@ -62,7 +62,6 @@ describe("jobs", () => {
 	test("listJobs returns saved jobs", () => {
 		const job1 = makeJob("test-list-001", "running");
 		const job2 = makeJob("test-list-002", "complete");
-		testIds.push(job1.id, job2.id);
 
 		saveJob(job1);
 		saveJob(job2);
@@ -75,7 +74,6 @@ describe("jobs", () => {
 	test("listJobs filters by status", () => {
 		const job1 = makeJob("test-filter-001", "running");
 		const job2 = makeJob("test-filter-002", "complete");
-		testIds.push(job1.id, job2.id);
 
 		saveJob(job1);
 		saveJob(job2);
@@ -87,7 +85,6 @@ describe("jobs", () => {
 
 	test("updateJob modifies job", () => {
 		const job = makeJob("test-update-001");
-		testIds.push(job.id);
 
 		saveJob(job);
 		const updated = updateJob(job.id, { status: "complete" });
