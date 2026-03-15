@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { MemoryDoc } from "@randal/core";
 import type { MemoryStore } from "./index.js";
@@ -50,20 +50,27 @@ export class FileStore implements MemoryStore {
 	}
 
 	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+		// Deduplication: skip if a doc with the same contentHash already exists
+		if (doc.contentHash && this.docs.some((d) => d.contentHash === doc.contentHash)) {
+			return;
+		}
+
 		const fullDoc: MemoryDoc = {
 			...doc,
 			id: randomUUID(),
 		};
 		this.docs.push(fullDoc);
 
-		// Append to file
+		// Append to file using atomic write (write to temp, then rename)
 		const path = join(this.basePath, doc.file || "MEMORY.md");
 		const dir = dirname(path);
 		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
 		const line = `- [${doc.category}] ${doc.content}\n`;
 		const existing = existsSync(path) ? readFileSync(path, "utf-8") : "";
-		writeFileSync(path, existing + line, "utf-8");
+		const tmp = `${path}.tmp`;
+		writeFileSync(tmp, existing + line, "utf-8");
+		renameSync(tmp, path);
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {
