@@ -1,4 +1,5 @@
-import { RANDAL_VERSION } from "@randal/core";
+import { timingSafeEqual } from "node:crypto";
+import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
 import type { MemoryManager, SkillManager } from "@randal/memory";
@@ -9,6 +10,32 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type { EventBus } from "../events.js";
 import { listJobs, loadJob, saveJob } from "../jobs.js";
+
+/**
+ * Constant-time string comparison to prevent timing attacks on auth tokens.
+ */
+function safeCompare(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	try {
+		return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Escape HTML special characters to prevent XSS.
+ */
+function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+/** Skill name validation pattern */
+const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 export interface HttpChannelOptions {
 	config: RandalConfig;
@@ -23,12 +50,29 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	const { config, runner, eventBus, memoryManager, scheduler, skillManager } = options;
 	const app = new Hono();
 
-	// CORS
-	app.use("*", cors());
+	// CORS — configurable origin
+	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
+	const corsOrigin = httpChannel?.type === "http" ? httpChannel.corsOrigin : undefined;
+	app.use("*", cors({ origin: corsOrigin ?? "*" }));
+
+	// Request body size limit (1MB)
+	app.use("*", async (c, next) => {
+		const contentLength = Number(c.req.header("content-length") ?? 0);
+		if (contentLength > 1_048_576) {
+			return c.json({ error: "Request body too large" }, 413);
+		}
+		await next();
+	});
 
 	// Auth middleware
-	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
 	const authToken = httpChannel?.type === "http" ? httpChannel.auth : undefined;
+
+	if (!authToken) {
+		const logger = createLogger({ context: { component: "gateway" } });
+		logger.warn(
+			"HTTP API running without authentication. Set gateway.channels[http].auth in config.",
+		);
+	}
 
 	// Protect all routes except root dashboard
 	app.use("*", async (c, next) => {
@@ -40,7 +84,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		if (authToken) {
 			const header = c.req.header("Authorization");
 			const token = header?.replace("Bearer ", "");
-			if (token !== authToken) {
+			if (!token || !safeCompare(token, authToken)) {
 				return c.json({ error: "Unauthorized" }, 401);
 			}
 		}
@@ -99,13 +143,24 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return c.json({ error: "prompt or specFile required" }, 400);
 		}
 
+		// Input validation
+		if (body.prompt && typeof body.prompt !== "string") {
+			return c.json({ error: "prompt must be a string" }, 400);
+		}
+		if (body.maxIterations !== undefined) {
+			const max = Number(body.maxIterations);
+			if (Number.isNaN(max) || max < 1 || max > 100) {
+				return c.json({ error: "maxIterations must be between 1 and 100" }, 400);
+			}
+		}
+
 		// Submit job — returns immediately with job ID
 		const { jobId, done } = runner.submit({
 			prompt: body.prompt,
 			specFile: body.specFile,
 			agent: body.agent,
 			model: body.model,
-			maxIterations: body.maxIterations,
+			maxIterations: body.maxIterations ? Math.min(Number(body.maxIterations), 100) : undefined,
 			workdir: body.workdir,
 		});
 
@@ -388,6 +443,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return c.json({ error: "name, description, and content are required" }, 400);
 		}
 
+		// Validate skill name to prevent path traversal
+		if (!SKILL_NAME_RE.test(body.name)) {
+			return c.json({ error: "Skill name must match /^[a-z0-9][a-z0-9-]*$/" }, 400);
+		}
+
 		// Write skill file to disk
 		const { mkdirSync, writeFileSync } = require("node:fs");
 		const { resolve, join } = require("node:path");
@@ -475,9 +535,10 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			const { getDashboardHtml } = require("@randal/dashboard");
 			return c.html(getDashboardHtml());
 		} catch {
-			// Fallback minimal dashboard
+			// Fallback minimal dashboard — escape config.name to prevent XSS
+			const safeName = escapeHtml(config.name);
 			return c.html(
-				`<!DOCTYPE html><html><head><title>Randal</title></head><body><h1>${config.name} Dashboard</h1><p>Dashboard package not available.</p></body></html>`,
+				`<!DOCTYPE html><html><head><title>Randal</title></head><body><h1>${safeName} Dashboard</h1><p>Dashboard package not available.</p></body></html>`,
 			);
 		}
 	});

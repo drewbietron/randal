@@ -9,6 +9,7 @@ const httpChannelSchema = z.object({
 	type: z.literal("http"),
 	port: z.number().default(7600),
 	auth: z.string(),
+	corsOrigin: z.string().optional(),
 });
 
 const discordChannelSchema = z.object({
@@ -23,6 +24,7 @@ const imessageChannelSchema = z.object({
 	url: z.string(),
 	password: z.string(),
 	allowFrom: z.array(z.string()).optional(),
+	webhookSecret: z.string().optional(),
 });
 
 const channelSchema = z.discriminatedUnion("type", [

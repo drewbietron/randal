@@ -12,8 +12,20 @@ function ensureDir(): void {
 	}
 }
 
+/**
+ * Sanitize a job ID for use in file paths, preventing directory traversal.
+ */
+function sanitizeJobId(id: string): string {
+	// Strip any path separators and parent directory references
+	const sanitized = id.replace(/[/\\]/g, "").replace(/\.\./g, "");
+	if (!sanitized || sanitized !== id) {
+		throw new Error(`Invalid job ID: ${id}`);
+	}
+	return sanitized;
+}
+
 function jobPath(id: string): string {
-	return join(JOBS_DIR, `${id}.yaml`);
+	return join(JOBS_DIR, `${sanitizeJobId(id)}.yaml`);
 }
 
 /**

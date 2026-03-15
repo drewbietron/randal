@@ -1,7 +1,20 @@
+import { timingSafeEqual } from "node:crypto";
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { Hono } from "hono";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+
+/**
+ * Constant-time string comparison for webhook secret validation.
+ */
+function safeCompare(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	try {
+		return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+	} catch {
+		return false;
+	}
+}
 
 // Extract imessage channel config type from the discriminated union
 type IMessageChannelConfig = Extract<
@@ -82,6 +95,15 @@ export class IMessageChannel implements ChannelAdapter {
 		const router = new Hono();
 
 		router.post("/", async (c) => {
+			// Validate webhook secret if configured
+			const secret = this.channelConfig.webhookSecret;
+			if (secret) {
+				const provided = c.req.header("X-Webhook-Secret");
+				if (!provided || !safeCompare(provided, secret)) {
+					return c.json({ error: "Unauthorized" }, 401);
+				}
+			}
+
 			try {
 				const body = await c.req.json<BlueBubblesWebhook>();
 				// Process in background — always return 200 to BlueBubbles
