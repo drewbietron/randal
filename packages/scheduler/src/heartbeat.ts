@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { createLogger } from "@randal/core";
 import type { RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 // ---- Duration parsing ----
 
@@ -136,6 +138,51 @@ export function isWithinActiveHours(
 	return true;
 }
 
+// ---- Heartbeat state persistence ----
+
+let heartbeatStateDir = join(homedir(), ".randal");
+let heartbeatStateFile = join(heartbeatStateDir, "heartbeat-state.yaml");
+
+/**
+ * Set the heartbeat state file directory (for testing).
+ */
+export function setHeartbeatStateDir(dir: string): void {
+	heartbeatStateDir = dir;
+	heartbeatStateFile = join(dir, "heartbeat-state.yaml");
+}
+
+interface PersistedHeartbeatState {
+	tickCount: number;
+	lastTick: string | null;
+	wakeQueue: Array<{ text: string; source: string; timestamp: string }>;
+}
+
+function loadPersistedHeartbeatState(): PersistedHeartbeatState | null {
+	try {
+		if (existsSync(heartbeatStateFile)) {
+			const raw = readFileSync(heartbeatStateFile, "utf-8");
+			return parseYaml(raw) as PersistedHeartbeatState;
+		}
+	} catch {
+		// Ignore read errors
+	}
+	return null;
+}
+
+function savePersistedHeartbeatState(state: PersistedHeartbeatState): void {
+	try {
+		if (!existsSync(heartbeatStateDir)) {
+			mkdirSync(heartbeatStateDir, { recursive: true });
+		}
+		// Atomic write: write to temp file then rename
+		const tmp = `${heartbeatStateFile}.tmp`;
+		writeFileSync(tmp, stringifyYaml(state), "utf-8");
+		renameSync(tmp, heartbeatStateFile);
+	} catch {
+		// Ignore write errors — persistence is best-effort
+	}
+}
+
 // ---- Heartbeat class ----
 
 const logger = createLogger({ context: { component: "heartbeat" } });
@@ -163,6 +210,24 @@ export class Heartbeat {
 		this.configBasePath = options.configBasePath ?? ".";
 		this.memorySearch = options.memorySearch;
 		this.intervalMs = parseDuration(this.config.every);
+
+		// Restore persisted state
+		const persisted = loadPersistedHeartbeatState();
+		if (persisted) {
+			this.state.tickCount = persisted.tickCount ?? 0;
+			this.state.lastTick = persisted.lastTick ?? null;
+			if (persisted.wakeQueue && Array.isArray(persisted.wakeQueue)) {
+				this.state.pendingWakeItems = persisted.wakeQueue.map((w) => ({
+					text: w.text,
+					source: w.source as WakeItem["source"],
+					timestamp: w.timestamp,
+				}));
+			}
+			logger.info("Heartbeat state restored", {
+				tickCount: this.state.tickCount,
+				pendingWakeItems: this.state.pendingWakeItems.length,
+			});
+		}
 	}
 
 	/**
@@ -208,6 +273,7 @@ export class Heartbeat {
 	queueWakeItem(item: WakeItem): void {
 		this.state.pendingWakeItems.push(item);
 		logger.info("Wake item queued", { source: item.source, text: item.text.slice(0, 100) });
+		this.persistState();
 	}
 
 	/**
@@ -294,6 +360,9 @@ export class Heartbeat {
 
 		const duration = Date.now() - tickStart;
 
+		// Persist state after tick
+		this.persistState();
+
 		this.emitEvent("heartbeat.tick", {
 			heartbeatTickNumber: tickNumber,
 			duration: Math.round(duration / 1000),
@@ -323,6 +392,21 @@ export class Heartbeat {
 
 		// Treat as inline prompt
 		return promptValue;
+	}
+
+	/**
+	 * Persist heartbeat state to disk (atomic write).
+	 */
+	private persistState(): void {
+		savePersistedHeartbeatState({
+			tickCount: this.state.tickCount,
+			lastTick: this.state.lastTick,
+			wakeQueue: this.state.pendingWakeItems.map((w) => ({
+				text: w.text,
+				source: w.source,
+				timestamp: w.timestamp,
+			})),
+		});
 	}
 
 	private emitEvent(

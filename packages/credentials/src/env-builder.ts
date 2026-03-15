@@ -34,8 +34,11 @@ export async function buildProcessEnv(
 		const fileVars = parseEnvFile(content);
 		const allowed = filterAllowed(fileVars, config.credentials.allow);
 		Object.assign(env, allowed);
-	} catch {
-		// Env file doesn't exist — that's fine, just use inherited
+	} catch (err) {
+		// ENOENT is expected (no .env file), other errors are worth noting
+		if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+			// Non-ENOENT error reading env file — may indicate permissions issue
+		}
 	}
 
 	// 2. Add inherited vars from parent process

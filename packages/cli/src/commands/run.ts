@@ -4,8 +4,20 @@ import type { RunnerEvent } from "@randal/core";
 import { Runner } from "@randal/runner";
 import type { CliContext } from "../cli.js";
 
-export async function runCommand(args: string[], ctx: CliContext): Promise<void> {
-	// Parse args
+export interface ParsedRunArgs {
+	prompt?: string;
+	agent?: string;
+	model?: string;
+	maxIterations?: number;
+	workdir?: string;
+	verbose: boolean;
+}
+
+/**
+ * Parse run command arguments into a structured object.
+ * Exported for testing.
+ */
+export function parseRunArgs(args: string[]): ParsedRunArgs {
 	let prompt: string | undefined;
 	let agent: string | undefined;
 	let model: string | undefined;
@@ -25,8 +37,10 @@ export async function runCommand(args: string[], ctx: CliContext): Promise<void>
 			workdir = args[++i];
 		} else if (arg === "--verbose" || arg === "-v") {
 			verbose = true;
-		} else if (arg === "--config" || arg === "--url" || arg === "--no-memory") {
-			i++; // skip value for global flags
+		} else if (arg === "--config" || arg === "--url") {
+			i++; // skip value for global flags that take a value
+		} else if (arg === "--no-memory") {
+			// Boolean flag — do not increment i
 		} else if (!arg.startsWith("-") && !prompt) {
 			// Check if it's a file path
 			const resolved = resolve(arg);
@@ -37,6 +51,12 @@ export async function runCommand(args: string[], ctx: CliContext): Promise<void>
 			}
 		}
 	}
+
+	return { prompt, agent, model, maxIterations, workdir, verbose };
+}
+
+export async function runCommand(args: string[], ctx: CliContext): Promise<void> {
+	const { prompt, agent, model, maxIterations, workdir, verbose } = parseRunArgs(args);
 
 	if (!prompt) {
 		console.error("Usage: randal run <prompt|file> [options]");

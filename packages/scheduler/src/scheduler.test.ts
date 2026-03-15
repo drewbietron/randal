@@ -1,6 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { configSchema } from "@randal/core";
 import type { Runner } from "@randal/runner";
+import { setHeartbeatStateDir } from "./heartbeat.js";
 import { Scheduler } from "./scheduler.js";
 
 function createMockRunner() {
@@ -21,6 +25,21 @@ function createMinimalConfig(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Scheduler", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "randal-scheduler-test-"));
+		setHeartbeatStateDir(tempDir);
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(tempDir, { recursive: true });
+		} catch {
+			// Ignore cleanup errors
+		}
+	});
+
 	test("creates with minimal config (all defaults)", () => {
 		const runner = createMockRunner();
 		const config = createMinimalConfig();

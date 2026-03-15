@@ -1,10 +1,34 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Job, JobStatus } from "@randal/core";
+import { createLogger } from "@randal/core";
 import { parse, stringify } from "yaml";
 
-const JOBS_DIR = join(homedir(), ".randal", "jobs");
+const logger = createLogger({ context: { component: "jobs" } });
+
+let JOBS_DIR = join(homedir(), ".randal", "jobs");
+
+/**
+ * Set the jobs directory (for testing).
+ */
+export function setJobsDir(dir: string): void {
+	JOBS_DIR = dir;
+}
+
+/**
+ * Get the current jobs directory.
+ */
+export function getJobsDir(): string {
+	return JOBS_DIR;
+}
 
 function ensureDir(): void {
 	if (!existsSync(JOBS_DIR)) {
@@ -12,16 +36,31 @@ function ensureDir(): void {
 	}
 }
 
+/**
+ * Sanitize a job ID for use in file paths, preventing directory traversal.
+ */
+function sanitizeJobId(id: string): string {
+	// Strip any path separators and parent directory references
+	const sanitized = id.replace(/[/\\]/g, "").replace(/\.\./g, "");
+	if (!sanitized || sanitized !== id) {
+		throw new Error(`Invalid job ID: ${id}`);
+	}
+	return sanitized;
+}
+
 function jobPath(id: string): string {
-	return join(JOBS_DIR, `${id}.yaml`);
+	return join(JOBS_DIR, `${sanitizeJobId(id)}.yaml`);
 }
 
 /**
- * Save a job to disk as YAML.
+ * Save a job to disk as YAML. Uses atomic write (temp + rename) to prevent corruption.
  */
 export function saveJob(job: Job): void {
 	ensureDir();
-	writeFileSync(jobPath(job.id), stringify(job), "utf-8");
+	const target = jobPath(job.id);
+	const tmp = `${target}.tmp`;
+	writeFileSync(tmp, stringify(job), "utf-8");
+	renameSync(tmp, target);
 }
 
 /**
@@ -63,8 +102,9 @@ export function listJobs(status?: JobStatus): Job[] {
 
 /**
  * Update a job on disk. Loads, applies updates, saves.
+ * Prevents overwriting immutable fields (id, createdAt).
  */
-export function updateJob(id: string, updates: Partial<Job>): Job | null {
+export function updateJob(id: string, updates: Partial<Omit<Job, "id" | "createdAt">>): Job | null {
 	const job = loadJob(id);
 	if (!job) return null;
 

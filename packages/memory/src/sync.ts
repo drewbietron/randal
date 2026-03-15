@@ -33,6 +33,19 @@ export function startSync(options: SyncOptions): { stop: () => void } {
 	// Watch configured memory files
 	const watchPaths = config.memory.files.map((f) => join(basePath, f));
 
+	// Pre-populate hashes from existing files to prevent re-indexing on restart
+	for (const file of watchPaths) {
+		if (existsSync(file)) {
+			try {
+				const content = readFileSync(file, "utf-8");
+				const hash = hashContent(content);
+				hashes.set(file, hash);
+			} catch {
+				// Ignore read errors on startup
+			}
+		}
+	}
+
 	const watcher = watch(watchPaths, {
 		persistent: true,
 		ignoreInitial: false,

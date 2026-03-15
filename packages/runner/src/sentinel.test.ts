@@ -114,5 +114,42 @@ describe("sentinel", () => {
 			expect(result?.output).toBe("line1\nline2\nline3");
 			expect(result?.exitCode).toBe(0);
 		});
+
+		test("handles empty output between markers", () => {
+			const full = "__START_abcd1234\n__DONE_abcd1234:0\n";
+			const result = parseOutput(full, "abcd1234");
+			expect(result).not.toBeNull();
+			expect(result?.output).toBe("");
+			expect(result?.exitCode).toBe(0);
+		});
+
+		test("handles markers appearing in agent output (nested discussion)", () => {
+			// Agent discusses sentinel protocol — the first markers should be used
+			const full =
+				"__START_abcd1234\nThe sentinel uses __START_ and __DONE_ markers\n__DONE_abcd1234:0\n";
+			const result = parseOutput(full, "abcd1234");
+			expect(result).not.toBeNull();
+			expect(result?.output).toContain("sentinel uses __START_");
+			expect(result?.exitCode).toBe(0);
+		});
+
+		test("handles non-zero exit code", () => {
+			const full = "__START_abcd1234\nerror output\n__DONE_abcd1234:127\n";
+			const result = parseOutput(full, "abcd1234");
+			expect(result?.exitCode).toBe(127);
+		});
+
+		test("returns exitCode 1 for invalid exit code string", () => {
+			const full = "__START_abcd1234\noutput\n__DONE_abcd1234:xyz\n";
+			const result = parseOutput(full, "abcd1234");
+			expect(result?.exitCode).toBe(1);
+		});
+
+		test("handles output with binary-like content", () => {
+			const full = "__START_abcd1234\n\x00\x01\x02 some text\n__DONE_abcd1234:0\n";
+			const result = parseOutput(full, "abcd1234");
+			expect(result).not.toBeNull();
+			expect(result?.exitCode).toBe(0);
+		});
 	});
 });

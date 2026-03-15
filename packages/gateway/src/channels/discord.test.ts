@@ -23,6 +23,10 @@ function makeDeps(overrides: Record<string, unknown> = {}): ChannelDeps {
 		} as unknown as ChannelDeps["config"],
 		runner: {
 			execute: mock(() => Promise.resolve({ id: "abc1", status: "complete" })),
+			submit: mock(() => ({
+				jobId: "abc1",
+				done: Promise.resolve({ id: "abc1", status: "complete" }),
+			})),
 			getActiveJobs: mock(() => [
 				{ id: "abc1", status: "running", iterations: { current: 1 }, maxIterations: 5 },
 			]),
@@ -52,7 +56,7 @@ describe("handleCommand", () => {
 		const result = await handleCommand("run: hello world", deps, origin);
 		expect(result).toContain("Job `abc1`");
 		expect(result).toContain("started");
-		expect(deps.runner.execute).toHaveBeenCalledTimes(1);
+		expect(deps.runner.submit).toHaveBeenCalledTimes(1);
 	});
 
 	test("treats unrecognized text as implicit run", async () => {
@@ -60,7 +64,7 @@ describe("handleCommand", () => {
 		const origin = { channel: "discord", replyTo: "ch-1", from: "user-1" };
 		const result = await handleCommand("refactor the auth module", deps, origin);
 		expect(result).toContain("Job `abc1`");
-		expect(deps.runner.execute).toHaveBeenCalledTimes(1);
+		expect(deps.runner.submit).toHaveBeenCalledTimes(1);
 	});
 
 	test("handles status command", async () => {

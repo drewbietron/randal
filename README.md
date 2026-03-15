@@ -30,7 +30,7 @@ Randal wraps agent CLIs — [OpenCode](https://github.com/nickthecook/opencode),
 ## ⚡ Quick Start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drewbietron/randal/main/install.sh | bash
 ```
 
 One command. Installs Bun (if needed), clones the repo, links the CLI, runs the setup wizard, and starts Meilisearch if selected.
@@ -38,7 +38,7 @@ One command. Installs Bun (if needed), clones the repo, links the CLI, runs the 
 Or clone and set up manually:
 
 ```bash
-git clone https://github.com/your-org/randal && cd randal
+git clone https://github.com/drewbietron/randal && cd randal
 bash scripts/setup.sh
 ```
 
@@ -243,7 +243,7 @@ Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
 <summary>🍎 <strong>Local Mac</strong></summary>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drewbietron/randal/main/install.sh | bash
 ```
 
 The installer handles Bun, dependencies, CLI registration, Meilisearch, and runs the setup wizard.

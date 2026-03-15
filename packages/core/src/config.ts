@@ -9,6 +9,7 @@ const httpChannelSchema = z.object({
 	type: z.literal("http"),
 	port: z.number().default(7600),
 	auth: z.string(),
+	corsOrigin: z.string().optional(),
 });
 
 const discordChannelSchema = z.object({
@@ -23,6 +24,7 @@ const imessageChannelSchema = z.object({
 	url: z.string(),
 	password: z.string(),
 	allowFrom: z.array(z.string()).optional(),
+	webhookSecret: z.string().optional(),
 });
 
 const channelSchema = z.discriminatedUnion("type", [
@@ -164,10 +166,12 @@ export const configSchema = z.object({
 		workdir: z.string(),
 		allowedWorkdirs: z.array(z.string()).optional(),
 		completionPromise: z.string().default("DONE"),
+		iterationTimeout: z.number().positive().default(600),
 		struggle: z
 			.object({
 				noChangeThreshold: z.number().default(3),
 				maxRepeatedErrors: z.number().default(3),
+				action: z.enum(["warn", "stop"]).default("warn"),
 			})
 			.default({}),
 	}),

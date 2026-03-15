@@ -1,5 +1,8 @@
-import { describe, expect, mock, test } from "bun:test";
-import { isWithinActiveHours, parseDuration } from "./heartbeat.js";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { isWithinActiveHours, parseDuration, setHeartbeatStateDir } from "./heartbeat.js";
 
 describe("parseDuration", () => {
 	test("parses minutes", () => {
@@ -143,6 +146,21 @@ describe("isWithinActiveHours", () => {
 });
 
 describe("Heartbeat", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "randal-heartbeat-test-"));
+		setHeartbeatStateDir(tempDir);
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(tempDir, { recursive: true });
+		} catch {
+			// Ignore cleanup errors
+		}
+	});
+
 	// Test wake item queueing
 	test("queues and retrieves wake items", async () => {
 		const { Heartbeat } = await import("./heartbeat.js");

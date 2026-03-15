@@ -321,7 +321,7 @@ Cost tracking configuration. Defaults to `{}`.
 
 | Field | Type | Default | Required | Description |
 |-------|------|---------|----------|-------------|
-| `tracking.tokenPricing` | `Record<string, { input: number, output: number }>` | `{}` | No | Per-model token pricing. Keys are model identifiers, values are cost-per-token for input and output. |
+| `tracking.tokenPricing` | `Record<string, { input: number, output: number }>` | `{}` | No | Per-model token pricing in **dollars per million tokens**. Keys are model identifiers. Example: Claude Sonnet at $3/M input, $15/M output → `input: 3.00, output: 15.00`. |
 
 ---
 

@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { RandalConfig } from "@randal/core";
+import { createLogger } from "@randal/core";
+
+const logger = createLogger({ context: { component: "prompt-assembly" } });
 
 export interface PromptParts {
 	persona?: string;
@@ -27,8 +30,11 @@ export async function loadKnowledgeFiles(patterns: string[], basePath: string): 
 				try {
 					const content = readFileSync(filePath as string, "utf-8");
 					results.push(`--- ${filePath} ---\n${content}`);
-				} catch {
-					// Skip unreadable files
+				} catch (err) {
+					logger.debug("Failed to read knowledge file", {
+						path: filePath,
+						error: err instanceof Error ? err.message : String(err),
+					});
 				}
 			}
 		} catch {
