@@ -1,0 +1,9 @@
+{
+	"name": "randal-imported-example",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@randal/harness": "file:../../packages/harness"
+	}
+}

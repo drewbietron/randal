@@ -1,7 +1,8 @@
+import { existsSync } from "node:fs";
 import type { RandalConfig } from "@randal/core";
-import { configSchema, loadConfig, parseConfig } from "@randal/core";
+import { configSchema, createLogger, loadConfig, parseConfig } from "@randal/core";
 import { type Gateway, startGateway } from "@randal/gateway";
-import { MemoryManager } from "@randal/memory";
+import { MemoryManager, type MemoryStore } from "@randal/memory";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
 
@@ -45,6 +46,10 @@ export interface CreateRandalOptions {
 
 	/** Skip starting the gateway HTTP server */
 	skipGateway?: boolean;
+
+	/** Provide a custom MemoryStore implementation (advanced).
+	 *  When provided, this store is used instead of the config-driven default. */
+	memoryStore?: MemoryStore;
 }
 
 // ---- Implementation ----
@@ -71,19 +76,37 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 		throw new Error("createRandal requires one of: configPath, configYaml, or config object");
 	}
 
-	// 2. Initialize memory manager
+	// 2. Warn if running outside a container without sandbox enforcement
+	if (config.sandbox.enforcement === "none") {
+		const inContainer =
+			existsSync("/.dockerenv") ||
+			!!process.env.RAILWAY_ENVIRONMENT ||
+			!!process.env.KUBERNETES_SERVICE_HOST;
+
+		if (!inContainer) {
+			const logger = createLogger({ context: { component: "harness" } });
+			logger.warn(
+				"Running without container isolation and sandbox.enforcement is 'none'. " +
+					"The agent will have full access to this machine's filesystem and credentials. " +
+					"Set sandbox.enforcement to 'env-scrub' or run inside a container for production use.",
+			);
+		}
+	}
+
+	// 3. Initialize memory manager
 	let memoryManager: MemoryManager | undefined;
 	try {
 		memoryManager = new MemoryManager({
 			config,
 			basePath: ".",
+			store: opts.memoryStore,
 		});
 		await memoryManager.init();
 	} catch {
 		// Memory init failed, continue without it
 	}
 
-	// 3. Create Runner
+	// 4. Create Runner
 	const runner = new Runner({
 		config,
 		onEvent: () => {},
@@ -92,7 +115,7 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 			: undefined,
 	});
 
-	// 4. Create Scheduler
+	// 5. Create Scheduler
 	const scheduler = new Scheduler({
 		config,
 		runner,
@@ -101,7 +124,7 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 			: undefined,
 	});
 
-	// 5. Start gateway (if not skipped)
+	// 6. Start gateway (if not skipped)
 	let gateway: Gateway | undefined;
 	if (!opts.skipGateway) {
 		gateway = await startGateway({
@@ -110,12 +133,12 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 		});
 	}
 
-	// 6. Start scheduler (if not skipped)
+	// 7. Start scheduler (if not skipped)
 	if (!opts.skipScheduler) {
 		await scheduler.start();
 	}
 
-	// 7. Return instance with stop()
+	// 8. Return instance with stop()
 	return {
 		config,
 		runner,

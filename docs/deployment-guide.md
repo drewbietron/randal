@@ -1,6 +1,6 @@
 # 🚀 Deployment Guide
 
-Randal runs anywhere Bun runs. This guide covers two primary deployment targets: a local Mac Mini and Railway (cloud).
+Randal runs anywhere Bun runs. This guide covers three deployment patterns: a local Mac Mini, Railway (cloud), and importing Randal as a library into an existing project.
 
 ---
 
@@ -234,6 +234,143 @@ railway up
 # Or push to your connected Git repo for auto-deploy
 git push origin main
 ```
+
+---
+
+## 📦 Importing Randal as a Library
+
+You can embed Randal into an existing application by importing `@randal/harness` programmatically. This is ideal for adding an AI agent to a project that already has its own Dockerfile, deployment pipeline, and codebase.
+
+### How It Works
+
+1. Your Dockerfile clones Randal into the image
+2. Your `package.json` references `@randal/harness` as a `file:` dependency pointing to the cloned Randal
+3. Your TypeScript entry point calls `createRandal()` to boot the engine
+4. You ship whatever files your agent needs (codebase, knowledge, data) in the same image
+
+Randal has no opinion about what ships alongside it. Your Dockerfile controls the contents. Randal just needs its config file and a working directory.
+
+### 1. Project Structure
+
+```
+your-project/
+  package.json          # depends on @randal/harness
+  index.ts              # createRandal() entry point
+  randal.config.yaml    # agent configuration
+  Dockerfile            # clones Randal, installs agent CLI, copies your code
+  knowledge/            # optional: files your agent needs
+```
+
+### 2. package.json
+
+```json
+{
+  "name": "my-agent-service",
+  "type": "module",
+  "dependencies": {
+    "@randal/harness": "file:/opt/randal/packages/harness"
+  }
+}
+```
+
+The `file:` path points to where Randal is cloned in the Docker image. Bun resolves the workspace dependencies automatically.
+
+### 3. Entry Point
+
+```typescript
+import { createRandal } from "@randal/harness";
+
+const randal = await createRandal({
+  configPath: "./randal.config.yaml",
+});
+
+console.log(`Agent "${randal.config.name}" is running`);
+```
+
+`createRandal()` boots the full engine: gateway (HTTP server + channels), runner, scheduler, and memory. Options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `configPath` | string | Path to a `randal.config.yaml` file |
+| `configYaml` | string | Raw YAML string to parse |
+| `config` | object | Inline config object |
+| `port` | number | Override the gateway port |
+| `skipScheduler` | boolean | Don't start heartbeat/cron/hooks |
+| `skipGateway` | boolean | Don't start the HTTP server |
+| `memoryStore` | MemoryStore | Custom memory store implementation (advanced) |
+
+### 4. Dockerfile
+
+```dockerfile
+FROM oven/bun:1
+WORKDIR /app
+
+# Install agent CLI
+RUN npm install -g @anthropic-ai/claude-code
+
+# Clone Randal (pin to a tag or commit for reproducibility)
+RUN git clone --depth 1 https://github.com/your-org/randal.git /opt/randal
+WORKDIR /opt/randal
+RUN bun install --frozen-lockfile
+
+# Set up the consumer application
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+COPY . .
+
+# Ship whatever your agent needs
+RUN mkdir -p /app/workspace
+
+EXPOSE 7600
+CMD ["bun", "run", "index.ts"]
+```
+
+### 5. Security
+
+When importing Randal, the Docker container is the isolation boundary. The agent can only access files and credentials you explicitly ship in the image.
+
+Recommended config for imported usage:
+
+```yaml
+sandbox:
+  enforcement: env-scrub
+
+runner:
+  workdir: /app/workspace
+  allowedWorkdirs:
+    - /app/workspace
+
+credentials:
+  allow: [ANTHROPIC_API_KEY]  # only what the agent needs
+```
+
+Randal logs a warning if it detects it's running outside a container with `sandbox.enforcement: "none"`. See [SECURITY.md](../SECURITY.md) for the full security model.
+
+### 6. Custom Memory Store
+
+If you need a memory backend other than Meilisearch or file, you can inject a custom `MemoryStore` implementation:
+
+```typescript
+import { createRandal } from "@randal/harness";
+import type { MemoryStore } from "@randal/memory";
+
+const myStore: MemoryStore = {
+  async init() { /* ... */ },
+  async search(query, limit) { /* ... */ },
+  async index(doc) { /* ... */ },
+  async recent(limit) { /* ... */ },
+};
+
+const randal = await createRandal({
+  configPath: "./randal.config.yaml",
+  memoryStore: myStore,
+});
+```
+
+The custom store replaces the config-driven default. You own its performance characteristics.
+
+See [`examples/imported-service/`](../examples/imported-service/) for a complete working example.
 
 ---
 
