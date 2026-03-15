@@ -257,13 +257,12 @@ See [`examples/local-mac/`](examples/local-mac/) for a full-featured local setup
 <details>
 <summary>🚂 <strong>Railway (Cloud)</strong></summary>
 
-```bash
-cp examples/cloud-railway/* .
-# Edit randal.config.yaml for your deployment
-railway up
+```dockerfile
+FROM ghcr.io/drewbietron/randal:latest
+COPY randal.config.yaml /app/randal.config.yaml
 ```
 
-See [`examples/cloud-railway/`](examples/cloud-railway/) for Dockerfile and `railway.toml`.
+The official Docker image includes Bun, Meilisearch, Claude Code, and Randal. Just provide your config. See [`examples/cloud-railway/`](examples/cloud-railway/) for the full setup with `railway.toml`.
 
 </details>
 
@@ -271,10 +270,10 @@ See [`examples/cloud-railway/`](examples/cloud-railway/) for Dockerfile and `rai
 <summary>🐳 <strong>Docker Compose</strong></summary>
 
 ```bash
-docker compose up
+docker compose up --build
 ```
 
-One command. Includes Randal + Meilisearch. Mount your config:
+One command. Meilisearch is bundled in the image. Mount your config:
 
 ```bash
 # docker-compose.yml is included at the repo root
@@ -311,31 +310,17 @@ agent.stop();
 
 ### Importing into an existing project
 
-Clone Randal into your Docker image and reference `@randal/harness` as a local dependency:
+Extend the official Docker image with your config and files:
 
 ```dockerfile
-# Your Dockerfile
-FROM oven/bun:1
-RUN git clone --depth 1 https://github.com/your-org/randal.git /opt/randal
-WORKDIR /opt/randal && RUN bun install --frozen-lockfile
-
-WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
-COPY . .
-CMD ["bun", "run", "index.ts"]
+FROM ghcr.io/drewbietron/randal:latest
+COPY randal.config.yaml /app/randal.config.yaml
+COPY knowledge/ /app/knowledge/
 ```
 
-```json
-// Your package.json
-{
-  "dependencies": {
-    "@randal/harness": "file:/opt/randal/packages/harness"
-  }
-}
-```
+The image includes Bun, Meilisearch, Claude Code, and Randal — ready to run. Your Dockerfile controls what ships alongside it: codebase, knowledge files, data. For custom pre-start logic (e.g., database sync), add a `pre-start.sh` that the entrypoint will source automatically.
 
-Your Dockerfile controls what ships in the container — codebase, knowledge files, tools, data. Randal just needs its config and a workdir. See [`examples/imported-service/`](examples/imported-service/) for the full pattern and [SECURITY.md](SECURITY.md) for deployment mode guidance.
+See [`examples/imported-service/`](examples/imported-service/) for the full pattern and [SECURITY.md](SECURITY.md) for deployment mode guidance.
 
 ---
 

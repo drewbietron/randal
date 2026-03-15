@@ -37,14 +37,12 @@ gateway:
       port: 7600
       auth: "${RANDAL_API_TOKEN}"
 
-# Memory: Meilisearch on Railway internal network
+# Memory: embedded Meilisearch (bundled in the official Randal image)
 memory:
   store: meilisearch
-  url: http://meilisearch.internal:7700
+  url: http://127.0.0.1:7700
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-cloud-agent
-  embedder:
-    type: builtin
 
 # Heartbeat: check in every 30 minutes, stay quiet if nothing needs attention
 heartbeat:

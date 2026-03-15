@@ -144,7 +144,7 @@ open http://localhost:7600/
 
 ## 🚂 Railway (Cloud)
 
-Railway provides a simple container hosting platform. Randal can be deployed as a service alongside a Meilisearch instance.
+Railway provides a simple container hosting platform. The official Randal Docker image bundles everything — Bun, Meilisearch, Claude Code, and Randal — so you only need a single service.
 
 ### 1. Project Structure
 
@@ -153,54 +153,44 @@ Create a deployment directory with:
 ```
 my-deployment/
   randal.config.yaml
-  .env              # (Railway manages env vars; this is for local testing)
   Dockerfile
+  railway.toml
 ```
 
 ### 2. Dockerfile
 
 ```dockerfile
-FROM oven/bun:1 AS base
-WORKDIR /app
+FROM ghcr.io/drewbietron/randal:latest
 
-# Install agent CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Copy your config
+COPY randal.config.yaml /app/randal.config.yaml
 
-# Copy and install
-COPY package.json bun.lock ./
-COPY packages/ packages/
-RUN bun install --frozen-lockfile
-
-# Copy deployment config
-COPY randal.config.yaml ./randal.config.yaml
-
-EXPOSE 7600
-CMD ["bun", "packages/cli/src/index.ts", "serve"]
+# Copy knowledge files (if any)
+# COPY knowledge/ /app/knowledge/
 ```
+
+The official image includes an embedded Meilisearch instance for agent memory. No separate Meilisearch service is needed.
 
 ### 3. Railway Configuration
 
 In the Railway dashboard:
 
 1. Create a new project.
-2. Add a **Meilisearch** service from the Railway template library.
-3. Add a **custom service** pointing to your repo.
-4. Set environment variables:
+2. Add a **custom service** pointing to your repo.
+3. Set environment variables:
 
 | Variable | Value |
 |----------|-------|
 | `ANTHROPIC_API_KEY` | Your API key |
 | `RANDAL_API_TOKEN` | A generated secret for API auth |
-| `MEILI_MASTER_KEY` | Match the Meilisearch service key |
-| `PORT` | `7600` (or let Railway assign) |
+| `MEILI_MASTER_KEY` | A generated secret for the embedded Meilisearch |
 
-5. Set the deploy config to use your Dockerfile.
+4. Set the deploy config to use your Dockerfile.
 
 ### 4. Config for Railway
 
 ```yaml
 name: my-cloud-agent
-posse: production
 runner:
   defaultAgent: claude-code
   defaultModel: claude-sonnet-4
@@ -215,15 +205,12 @@ gateway:
       auth: "${RANDAL_API_TOKEN}"
 memory:
   store: meilisearch
-  url: http://meilisearch.internal:7700
+  url: http://127.0.0.1:7700
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-cloud-agent
-  sharing:
-    publishTo: shared
-    readFrom: [shared]
 ```
 
-> **Note**: Railway internal networking uses `*.internal` hostnames for service-to-service communication.
+> **Note**: The embedded Meilisearch binds to `127.0.0.1:7700` inside the container. For an external Meilisearch instance, set `RANDAL_SKIP_MEILISEARCH=true` and point the URL to your Meilisearch service.
 
 ### 5. Deploy
 
@@ -237,100 +224,60 @@ git push origin main
 
 ---
 
-## 📦 Importing Randal as a Library
+## 📦 Importing Randal into an Existing Project
 
-You can embed Randal into an existing application by importing `@randal/harness` programmatically. This is ideal for adding an AI agent to a project that already has its own Dockerfile, deployment pipeline, and codebase.
+You can add a Randal agent to an existing project by extending the official Docker image. This is ideal for adding an AI agent alongside your own codebase, knowledge base, or application.
 
 ### How It Works
 
-1. Your Dockerfile clones Randal into the image
-2. Your `package.json` references `@randal/harness` as a `file:` dependency pointing to the cloned Randal
-3. Your TypeScript entry point calls `createRandal()` to boot the engine
-4. You ship whatever files your agent needs (codebase, knowledge, data) in the same image
-
-Randal has no opinion about what ships alongside it. Your Dockerfile controls the contents. Randal just needs its config file and a working directory.
+1. Your Dockerfile extends `ghcr.io/drewbietron/randal:latest` (includes Bun, Meilisearch, Claude Code, Randal)
+2. You copy your `randal.config.yaml` into the image
+3. You ship whatever files your agent needs (codebase, knowledge, data)
+4. The official entrypoint handles Meilisearch startup and `randal serve`
+5. For custom pre-start logic, add a `pre-start.sh` hook
 
 ### 1. Project Structure
 
 ```
 your-project/
-  package.json          # depends on @randal/harness
-  index.ts              # createRandal() entry point
   randal.config.yaml    # agent configuration
-  Dockerfile            # clones Randal, installs agent CLI, copies your code
+  Dockerfile            # extends the official Randal image
   knowledge/            # optional: files your agent needs
+  pre-start.sh          # optional: custom startup logic
 ```
 
-### 2. package.json
-
-```json
-{
-  "name": "my-agent-service",
-  "type": "module",
-  "dependencies": {
-    "@randal/harness": "file:/opt/randal/packages/harness"
-  }
-}
-```
-
-The `file:` path points to where Randal is cloned in the Docker image. Bun resolves the workspace dependencies automatically.
-
-### 3. Entry Point
-
-```typescript
-import { createRandal } from "@randal/harness";
-
-const randal = await createRandal({
-  configPath: "./randal.config.yaml",
-});
-
-console.log(`Agent "${randal.config.name}" is running`);
-```
-
-`createRandal()` boots the full engine: gateway (HTTP server + channels), runner, scheduler, and memory. Options:
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `configPath` | string | Path to a `randal.config.yaml` file |
-| `configYaml` | string | Raw YAML string to parse |
-| `config` | object | Inline config object |
-| `port` | number | Override the gateway port |
-| `skipScheduler` | boolean | Don't start heartbeat/cron/hooks |
-| `skipGateway` | boolean | Don't start the HTTP server |
-| `memoryStore` | MemoryStore | Custom memory store implementation (advanced) |
-
-### 4. Dockerfile
+### 2. Dockerfile
 
 ```dockerfile
-FROM oven/bun:1
-WORKDIR /app
+FROM ghcr.io/drewbietron/randal:latest
 
-# Install agent CLI
-RUN npm install -g @anthropic-ai/claude-code
-
-# Clone Randal (pin to a tag or commit for reproducibility)
-RUN git clone --depth 1 https://github.com/your-org/randal.git /opt/randal
-WORKDIR /opt/randal
-RUN bun install --frozen-lockfile
-
-# Set up the consumer application
-WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
-COPY . .
+# Copy your config
+COPY randal.config.yaml /app/randal.config.yaml
 
 # Ship whatever your agent needs
-RUN mkdir -p /app/workspace
+COPY knowledge/ /app/knowledge/
 
-EXPOSE 7600
-CMD ["bun", "run", "index.ts"]
+# Optional: custom pre-start logic (e.g., DB sync)
+# COPY pre-start.sh /app/pre-start.sh
 ```
 
-### 5. Security
+The official image handles everything else — Meilisearch starts automatically, Randal serves on port 7600.
 
-When importing Randal, the Docker container is the isolation boundary. The agent can only access files and credentials you explicitly ship in the image.
+### 3. Pre-Start Hook
 
-Recommended config for imported usage:
+If you need custom logic before Randal starts (database sync, file setup, etc.), create a `pre-start.sh`. The Randal entrypoint sources this automatically:
+
+```bash
+#!/bin/bash
+# pre-start.sh — runs before Randal starts
+
+echo "Pulling data from my database..."
+bun /app/scripts/sync-data.mjs || echo "Sync failed, continuing"
+```
+
+### 4. Security
+
+The Docker container is the isolation boundary. Recommended config for imported usage:
 
 ```yaml
 sandbox:
@@ -345,30 +292,33 @@ credentials:
   allow: [ANTHROPIC_API_KEY]  # only what the agent needs
 ```
 
-Randal logs a warning if it detects it's running outside a container with `sandbox.enforcement: "none"`. See [SECURITY.md](../SECURITY.md) for the full security model.
+See [SECURITY.md](../SECURITY.md) for the full security model.
 
-### 6. Custom Memory Store
+### 5. External Meilisearch (Optional)
 
-If you need a memory backend other than Meilisearch or file, you can inject a custom `MemoryStore` implementation:
+By default, the official image runs an embedded Meilisearch instance at `127.0.0.1:7700`. If you want to use an external Meilisearch instance instead:
+
+1. Set `RANDAL_SKIP_MEILISEARCH=true` to skip the embedded instance
+2. Point `memory.url` in your config to the external instance
+
+### 6. Programmatic Usage (Advanced)
+
+For full programmatic control, override the CMD to run your own entry point:
+
+```dockerfile
+FROM ghcr.io/drewbietron/randal:latest
+COPY randal.config.yaml /app/randal.config.yaml
+COPY index.ts /app/index.ts
+CMD ["bun", "run", "/app/index.ts"]
+```
 
 ```typescript
 import { createRandal } from "@randal/harness";
-import type { MemoryStore } from "@randal/memory";
-
-const myStore: MemoryStore = {
-  async init() { /* ... */ },
-  async search(query, limit) { /* ... */ },
-  async index(doc) { /* ... */ },
-  async recent(limit) { /* ... */ },
-};
 
 const randal = await createRandal({
   configPath: "./randal.config.yaml",
-  memoryStore: myStore,
 });
 ```
-
-The custom store replaces the config-driven default. You own its performance characteristics.
 
 See [`examples/imported-service/`](../examples/imported-service/) for a complete working example.
 

@@ -1,31 +1,40 @@
-FROM oven/bun:1 AS base
+FROM oven/bun:1
 WORKDIR /app
 
-# Install agent CLIs (configurable via build args)
-ARG INSTALL_CLAUDE_CODE=true
-ARG INSTALL_OPENCODE=false
-RUN if [ "$INSTALL_CLAUDE_CODE" = "true" ]; then npm install -g @anthropic-ai/claude-code; fi
-RUN if [ "$INSTALL_OPENCODE" = "true" ]; then npm install -g opencode; fi
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy monorepo source
+# Install Meilisearch (embedded for agent memory)
+RUN curl -L https://install.meilisearch.com | sh && \
+    mv ./meilisearch /usr/local/bin/meilisearch
+
+# Install Claude Code (default agent CLI)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Copy Randal source and install dependencies
 COPY package.json bun.lock ./
 COPY packages/ packages/
 RUN bun install --frozen-lockfile
 
-# Config can be:
-# 1. Baked in at build: COPY your-config.yaml /app/randal.config.yaml
-# 2. Mounted at runtime: -v ./config.yaml:/app/randal.config.yaml
-# 3. Passed via env var: RANDAL_CONFIG_PATH=/path/to/config.yaml
-ARG CONFIG_PATH=""
-RUN if [ -n "$CONFIG_PATH" ]; then cp "$CONFIG_PATH" /app/randal.config.yaml; fi
+# Create directories
+RUN mkdir -p /app/meili-data /app/workspace /app/knowledge
 
-# Create workspace
-RUN mkdir -p /home/bun/workspace
+# Copy entrypoint
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Config can be:
+#   1. Baked in by consumer: COPY your-config.yaml /app/randal.config.yaml
+#   2. Mounted at runtime:  -v ./config.yaml:/app/randal.config.yaml
+#   3. Passed via env var:  RANDAL_CONFIG_PATH=/path/to/config.yaml
 
 EXPOSE 7600
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:7600/health || exit 1
 
-CMD ["bun", "run", "packages/cli/src/index.ts", "serve"]
+ENTRYPOINT ["/app/entrypoint.sh"]
