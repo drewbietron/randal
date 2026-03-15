@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseConfig } from "@randal/core";
-import { buildProcessEnv } from "@randal/credentials";
+import { buildProcessEnvSync } from "@randal/credentials";
 
 describe("credential scoping", () => {
 	test("only allowed vars are passed through", async () => {
@@ -19,7 +19,7 @@ credentials:
   allow: [ALLOWED]
   inherit: []
 `);
-		const env = buildProcessEnv(config, dir);
+		const env = buildProcessEnvSync(config, dir);
 		expect(env.ALLOWED).toBe("yes");
 		expect(env.SECRET).toBeUndefined();
 		expect(env.ANOTHER).toBeUndefined();
@@ -35,7 +35,7 @@ credentials:
   allow: []
   inherit: [PATH, HOME]
 `);
-		const env = buildProcessEnv(config, "/nonexistent");
+		const env = buildProcessEnvSync(config, "/nonexistent");
 		expect(env.PATH).toBeDefined();
 		expect(env.HOME).toBeDefined();
 	});

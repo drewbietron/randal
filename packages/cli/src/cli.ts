@@ -1,4 +1,4 @@
-import { loadConfig } from "@randal/core";
+import { RANDAL_VERSION, loadConfig } from "@randal/core";
 import type { RandalConfig } from "@randal/core";
 
 export interface CliContext {
@@ -9,7 +9,7 @@ export interface CliContext {
 
 function printHelp(): void {
 	console.log(`
-  🤠 \x1b[1mrandal\x1b[0m v0.2 — agent harness
+  🤠 \x1b[1mrandal\x1b[0m v${RANDAL_VERSION} — agent harness
   \x1b[2mThe composable harness for autonomous AI agent posses.\x1b[0m
 
   \x1b[1mUsage:\x1b[0m
@@ -30,6 +30,8 @@ function printHelp(): void {
     \x1b[36mskills\x1b[0m <sub>           📚 Skill management (list, search, show)
     \x1b[36mcron\x1b[0m <sub>             📅 Cron job management (list, add, remove)
     \x1b[36mheartbeat\x1b[0m <sub>        💓 Heartbeat control (status, trigger)
+    \x1b[36maudit\x1b[0m                   🔍 Audit ambient host auth (--json)
+    \x1b[36mupdate\x1b[0m                  ⬆️  Self-update (--check, --pin, --dry-run)
 
   \x1b[1mGlobal options:\x1b[0m
     --config <path>       Path to config file
@@ -42,7 +44,7 @@ function printHelp(): void {
 }
 
 function printVersion(): void {
-	console.log("🤠 randal v0.2.0");
+	console.log(`🤠 randal v${RANDAL_VERSION}`);
 }
 
 export async function run(argv: string[]): Promise<void> {
@@ -78,6 +80,22 @@ export async function run(argv: string[]): Promise<void> {
 	if (command === "reset") {
 		const { resetCommand } = await import("./commands/reset.js");
 		await resetCommand(args.slice(1));
+		return;
+	}
+
+	if (command === "audit") {
+		// Audit can run without config (it probes the host, not the config)
+		const { auditCommand } = await import("./commands/audit.js");
+		const ctx: CliContext = { config: null as unknown as RandalConfig, configPath, url };
+		await auditCommand(args.slice(1), ctx);
+		return;
+	}
+
+	if (command === "update") {
+		// Update doesn't need config
+		const { updateCommand } = await import("./commands/update.js");
+		const ctx: CliContext = { config: null as unknown as RandalConfig, configPath, url };
+		await updateCommand(args.slice(1), ctx);
 		return;
 	}
 

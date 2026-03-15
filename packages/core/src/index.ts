@@ -9,6 +9,8 @@ export {
 } from "./config.js";
 export type { RandalConfig, ConfigValidation } from "./config.js";
 
+export { RANDAL_VERSION } from "./version.js";
+
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
 

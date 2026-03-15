@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RandalConfig } from "@randal/core";
 import { parseConfig } from "@randal/core";
-import { auditCredentials, buildProcessEnv } from "./env-builder.js";
+import { auditCredentials, buildProcessEnvSync } from "./env-builder.js";
 
 async function createTempEnv(content: string): Promise<{ dir: string; envPath: string }> {
 	const dir = await mkdtemp(join(tmpdir(), "randal-test-"));
@@ -25,25 +25,25 @@ credentials:
 `);
 }
 
-describe("buildProcessEnv", () => {
+describe("buildProcessEnvSync", () => {
 	test("includes allowed vars from env file", async () => {
 		const { dir } = await createTempEnv("API_KEY=secret123\nOTHER=leak");
 		const config = makeConfig({ allow: ["API_KEY"] });
-		const env = buildProcessEnv(config, dir);
+		const env = buildProcessEnvSync(config, dir);
 		expect(env.API_KEY).toBe("secret123");
 		expect(env.OTHER).toBeUndefined();
 	});
 
 	test("includes inherited vars from process", () => {
 		const config = makeConfig({ allow: [], inherit: ["PATH"] });
-		const env = buildProcessEnv(config, "/nonexistent");
+		const env = buildProcessEnvSync(config, "/nonexistent");
 		expect(env.PATH).toBeDefined();
 	});
 
 	test("no leaking of unspecified vars", async () => {
 		const { dir } = await createTempEnv("ALLOWED=yes\nSECRET=no\nLEAK=no");
 		const config = makeConfig({ allow: ["ALLOWED"], inherit: [] });
-		const env = buildProcessEnv(config, dir);
+		const env = buildProcessEnvSync(config, dir);
 		expect(env.ALLOWED).toBe("yes");
 		expect(env.SECRET).toBeUndefined();
 		expect(env.LEAK).toBeUndefined();
@@ -53,7 +53,7 @@ describe("buildProcessEnv", () => {
 
 	test("handles missing env file gracefully", () => {
 		const config = makeConfig({ allow: ["API_KEY"], inherit: ["PATH"] });
-		const env = buildProcessEnv(config, "/nonexistent/path");
+		const env = buildProcessEnvSync(config, "/nonexistent/path");
 		// Should still have inherited vars
 		expect(env.PATH).toBeDefined();
 		expect(env.API_KEY).toBeUndefined();

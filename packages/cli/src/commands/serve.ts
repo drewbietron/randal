@@ -10,5 +10,19 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 		}
 	}
 
+	// Startup update check
+	if (ctx.config.updates?.autoCheck) {
+		try {
+			const { checkForUpdate } = await import("./update.js");
+			const update = await checkForUpdate(ctx.config.updates.channel);
+			if (update.available) {
+				console.log(`\x1b[33mUpdate available: ${update.current} -> ${update.latest}\x1b[0m`);
+				console.log("\x1b[2mRun 'randal update' to apply.\x1b[0m\n");
+			}
+		} catch {
+			// Update check failed -- don't block startup
+		}
+	}
+
 	await startGateway({ config: ctx.config, port });
 }

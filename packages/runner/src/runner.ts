@@ -10,7 +10,7 @@ import type {
 	SkillDeployment,
 } from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
-import { buildProcessEnv } from "@randal/credentials";
+import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { type AgentAdapter, getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
@@ -299,7 +299,15 @@ export class Runner {
 		this.emit("job.started", job);
 
 		const adapter = getAdapter(job.agent);
-		const env = buildProcessEnv(this.config, this.configBasePath);
+		const { env, tempHome, auditLog } = await buildProcessEnv(this.config, this.configBasePath);
+
+		// Log service audit entries
+		if (auditLog.length > 0) {
+			this.logger.info("Service credentials resolved", {
+				services: auditLog.map((e) => `${e.service} (${e.type})`),
+			});
+		}
+
 		const struggleConfig: StruggleConfig = {
 			noChangeThreshold: this.config.runner.struggle.noChangeThreshold,
 			maxRepeatedErrors: this.config.runner.struggle.maxRepeatedErrors,
@@ -440,6 +448,9 @@ export class Runner {
 					});
 				}
 			}
+
+			// Cleanup sandbox temp HOME
+			cleanupTempHome(tempHome);
 		}
 
 		return job;

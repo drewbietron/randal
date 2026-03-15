@@ -64,6 +64,149 @@ Environment and secret management. Defaults to `{}` if omitted.
 
 ---
 
+## 🔗 `services`
+
+Named external service bindings with declarative credential delivery. Defaults to `{}` if omitted.
+
+Each service is a named entry with a credential delivery mechanism and optional audit logging.
+
+| Field | Type | Default | Required | Description |
+|-------|------|---------|----------|-------------|
+| `services.<name>.description` | string | — | No | Human-readable purpose of this service. |
+| `services.<name>.credentials.type` | `"env"` \| `"file"` \| `"ambient"` \| `"script"` \| `"none"` | — | Yes | Credential delivery mechanism. |
+| `services.<name>.audit` | boolean | `false` | No | Log when agent spawns with this service's credentials. |
+
+### Credential Types
+
+**`type: env`** — Inject environment variables directly.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `vars` | `Record<string, string>` | Key-value map of env vars to inject. Supports `${ENV_VAR}` substitution. |
+
+**`type: file`** — Copy a credential file and set env vars pointing to it.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `file` | string | Source file path (relative to config). |
+| `mountAs` | string | Destination path where the file is copied. |
+| `vars` | `Record<string, string>` | Env vars to inject (typically pointing to the mounted file). |
+
+**`type: ambient`** — Keep existing host binaries and config dirs available.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `binaries` | string[] | Binary names to ensure stay in PATH. |
+| `paths` | string[] | Config directories the agent needs access to. |
+
+**`type: script`** — Run a script before each job and capture output as credentials.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Script to execute (relative to config). |
+| `vars` | `Record<string, string>` | Map of var names. Use `"stdout"` as the value to capture script output. |
+| `ttl` | number | Re-run interval in seconds. Cached until expired. |
+
+**`type: none`** — Explicitly block access to a service.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `binaries` | string[] | Binary names to strip from PATH. |
+| `vars` | string[] | Env var names to remove from the child process environment. |
+
+Example:
+
+```yaml
+services:
+  github:
+    description: "GitHub via provisioned PAT"
+    credentials:
+      type: env
+      vars:
+        GH_TOKEN: ${GITHUB_PAT}
+        GITHUB_TOKEN: ${GITHUB_PAT}
+    audit: true
+
+  gcloud:
+    description: "Google Cloud via service account"
+    credentials:
+      type: file
+      file: ./secrets/gcp-sa-key.json
+      mountAs: /tmp/gcp-creds.json
+      vars:
+        GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-creds.json
+
+  aws:
+    description: "AWS explicitly blocked"
+    credentials:
+      type: none
+      binaries: [aws, aws-vault]
+      vars: [AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN]
+
+  internal-api:
+    description: "Internal API via rotating token"
+    credentials:
+      type: script
+      command: ./scripts/get-api-token.sh
+      vars:
+        INTERNAL_API_TOKEN: stdout
+      ttl: 3600
+```
+
+---
+
+## 🔒 `sandbox`
+
+Process isolation configuration. Controls how aggressively Randal restricts the agent child process environment. Defaults to `{ enforcement: "none" }` (current behavior preserved).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `sandbox.enforcement` | `"none"` \| `"env-scrub"` | `"none"` | Enforcement level. `none` = no restrictions. `env-scrub` = apply PATH filtering, home access restrictions, and env scrubbing. |
+| `sandbox.pathFilter.mode` | `"inherit"` \| `"allowlist"` \| `"blocklist"` | `"inherit"` | How to filter the PATH variable. |
+| `sandbox.pathFilter.allow` | string[] | `[]` | PATH prefixes to keep (when mode is `allowlist`). Supports `~` expansion. |
+| `sandbox.pathFilter.block` | string[] | `[]` | Binary names whose containing dirs are removed (when mode is `blocklist`). |
+| `sandbox.homeAccess.ssh` | boolean | `true` | Allow `~/.ssh` access. When false: sets `GIT_SSH_COMMAND=/bin/false`, unsets `SSH_AUTH_SOCK`. |
+| `sandbox.homeAccess.gitconfig` | boolean | `true` | Allow `~/.gitconfig` credential helpers. When false: sets `GIT_CONFIG_GLOBAL=/dev/null`. |
+| `sandbox.homeAccess.docker` | boolean | `true` | Allow `~/.docker/config.json`. When false: sets `DOCKER_CONFIG=/dev/null`. |
+| `sandbox.homeAccess.aws` | boolean | `true` | Allow `~/.aws`. When false: unsets all `AWS_*` vars, sets null config paths. |
+
+When any `homeAccess` flag is `false`, a temporary HOME directory is created with only the allowed config dirs symlinked in. The temp dir is cleaned up after the job completes.
+
+Example:
+
+```yaml
+sandbox:
+  enforcement: env-scrub
+  pathFilter:
+    mode: allowlist
+    allow: [/usr/bin, /usr/local/bin, ~/.bun/bin]
+  homeAccess:
+    ssh: false
+    gitconfig: false
+    aws: false
+```
+
+---
+
+## ⬆️ `updates`
+
+Self-update configuration. Defaults to `{ autoCheck: false, channel: "stable" }`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `updates.autoCheck` | boolean | `false` | Check for updates on `randal serve` startup. |
+| `updates.channel` | `"stable"` \| `"latest"` | `"stable"` | `stable` = follow semver tags. `latest` = follow main HEAD. |
+
+Example:
+
+```yaml
+updates:
+  autoCheck: true
+  channel: stable
+```
+
+---
+
 ## 📡 `gateway`
 
 Server and channel configuration. Defaults to `{}` if omitted.
