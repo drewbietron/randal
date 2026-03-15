@@ -7,6 +7,7 @@ export {
 	type WakeItem,
 	parseDuration,
 	isWithinActiveHours,
+	setHeartbeatStateDir,
 } from "./heartbeat.js";
 export {
 	CronScheduler,

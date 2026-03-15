@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@randal/core";
@@ -152,9 +152,12 @@ function savePersistedState(state: PersistedCronState): void {
 		if (!existsSync(CRON_STATE_DIR)) {
 			mkdirSync(CRON_STATE_DIR, { recursive: true });
 		}
-		writeFileSync(CRON_STATE_FILE, stringifyYaml(state), "utf-8");
+		// Atomic write: write to temp file then rename
+		const tmp = `${CRON_STATE_FILE}.tmp`;
+		writeFileSync(tmp, stringifyYaml(state), "utf-8");
+		renameSync(tmp, CRON_STATE_FILE);
 	} catch {
-		// Ignore write errors
+		// Ignore write errors — persistence is best-effort
 	}
 }
 
