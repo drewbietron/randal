@@ -1,6 +1,6 @@
 #!/bin/bash
 # Randal — One-liner installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/drewbietron/randal/main/install.sh | bash
 #
 # Environment variables:
 #   RANDAL_DIR — install location (default: ~/randal)
@@ -9,7 +9,7 @@
 set -e
 
 RANDAL_DIR="${RANDAL_DIR:-$HOME/randal}"
-REPO_URL="https://github.com/your-org/randal.git"
+REPO_URL="https://github.com/drewbietron/randal.git"
 
 echo ""
 echo "  🤠 Randal Installer"

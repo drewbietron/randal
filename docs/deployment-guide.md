@@ -22,7 +22,7 @@ A Mac Mini is the simplest deployment: Randal runs as a background process with 
 ### 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/randal/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/drewbietron/randal/main/install.sh | bash
 ```
 
 This single command:
