@@ -62,6 +62,85 @@ const toolSchema = z.object({
 	platforms: z.array(z.enum(["darwin", "linux", "win32"])).default(["darwin", "linux"]),
 });
 
+// ---- Service credential schemas ----
+
+const envCredentialSchema = z.object({
+	type: z.literal("env"),
+	vars: z.record(z.string()).default({}),
+});
+
+const fileCredentialSchema = z.object({
+	type: z.literal("file"),
+	file: z.string(),
+	mountAs: z.string(),
+	vars: z.record(z.string()).default({}),
+});
+
+const ambientCredentialSchema = z.object({
+	type: z.literal("ambient"),
+	binaries: z.array(z.string()).default([]),
+	paths: z.array(z.string()).default([]),
+});
+
+const scriptCredentialSchema = z.object({
+	type: z.literal("script"),
+	command: z.string(),
+	vars: z.record(z.string()).default({}),
+	ttl: z.number().optional(),
+});
+
+const noneCredentialSchema = z.object({
+	type: z.literal("none"),
+	binaries: z.array(z.string()).default([]),
+	vars: z.array(z.string()).default([]),
+});
+
+const serviceCredentialSchema = z.discriminatedUnion("type", [
+	envCredentialSchema,
+	fileCredentialSchema,
+	ambientCredentialSchema,
+	scriptCredentialSchema,
+	noneCredentialSchema,
+]);
+
+const serviceSchema = z.object({
+	description: z.string().optional(),
+	credentials: serviceCredentialSchema,
+	audit: z.boolean().default(false),
+});
+
+// ---- Sandbox schema ----
+
+const sandboxSchema = z
+	.object({
+		enforcement: z.enum(["none", "env-scrub"]).default("none"),
+		pathFilter: z
+			.object({
+				mode: z.enum(["inherit", "allowlist", "blocklist"]).default("inherit"),
+				allow: z.array(z.string()).default([]),
+				block: z.array(z.string()).default([]),
+			})
+			.default({}),
+		homeAccess: z
+			.object({
+				ssh: z.boolean().default(true),
+				gitconfig: z.boolean().default(true),
+				docker: z.boolean().default(true),
+				aws: z.boolean().default(true),
+			})
+			.default({}),
+	})
+	.default({});
+
+// ---- Updates schema ----
+
+const updatesSchema = z
+	.object({
+		autoCheck: z.boolean().default(false),
+		channel: z.enum(["stable", "latest"]).default("stable"),
+	})
+	.default({});
+
 // ---- Main config schema ----
 
 export const configSchema = z.object({
@@ -100,6 +179,12 @@ export const configSchema = z.object({
 			inherit: z.array(z.string()).default(["PATH", "HOME", "SHELL", "TERM"]),
 		})
 		.default({}),
+
+	services: z.record(serviceSchema).default({}),
+
+	sandbox: sandboxSchema,
+
+	updates: updatesSchema,
 
 	gateway: z
 		.object({

@@ -242,6 +242,46 @@ randal memory add "User prefers tabs over spaces" --category preference
 
 ---
 
+## 🔍 `randal audit`
+
+Detect and report ambient host authentication. Scans for SSH keys, GitHub CLI auth, git credential stores, Google Cloud auth, AWS credentials, Docker registry auth, and npm/bun auth tokens.
+
+```bash
+randal audit              # Human-readable report
+randal audit --json       # Machine-readable JSON output
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--json` | flag | Output JSON format instead of human-readable text. |
+
+Does not require a config file. Probes run in subprocesses with short timeouts and are non-destructive (read-only).
+
+---
+
+## ⬆️ `randal update`
+
+Self-update for git-based installs. Fetches latest tags, compares versions, and optionally applies the update.
+
+```bash
+randal update              # Fetch, compare, pull if available, reinstall
+randal update --check      # Just report if an update is available (exit 0/1)
+randal update --pin v0.3.0 # Checkout a specific tag
+randal update --dry-run    # Show what would change without applying
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--check` | flag | Report availability and exit with code 0 (available) or 1 (up to date). |
+| `--pin <version>` | string | Checkout a specific tag version. |
+| `--dry-run` | flag | Show commits that would be applied without making changes. |
+
+In container mode, reports the available update and suggests rebuilding the image. Does not modify the container filesystem.
+
+Does not require a config file.
+
+---
+
 ## 📚 Skills Commands
 
 ### `randal skills list`
@@ -265,7 +305,8 @@ When running in daemon mode (`randal serve`), the following REST endpoints are a
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | 📡 Dashboard (HTML) |
-| `GET` | `/health` | 💚 Health check: `{ status, uptime, version }` |
+| `GET` | `/health` | 💚 Health check: `{ status, uptime, version, updateChannel }` |
+| `GET` | `/audit` | 🔍 Ambient auth audit report (JSON) |
 | `GET` | `/instance` | 🪪 Instance info: name, posse, status, version, capabilities |
 | `POST` | `/job` | 📨 Submit job: `{ prompt, specFile?, agent?, model?, maxIterations?, workdir? }` |
 | `GET` | `/job/:id` | 📊 Get job details |

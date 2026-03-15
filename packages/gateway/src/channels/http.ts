@@ -1,5 +1,6 @@
+import { RANDAL_VERSION } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
-import { auditCredentials } from "@randal/credentials";
+import { auditCredentials, runAudit } from "@randal/credentials";
 import type { MemoryManager, SkillManager } from "@randal/memory";
 import { type Runner, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
@@ -51,8 +52,15 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json({
 			status: "ok",
 			uptime: process.uptime(),
-			version: config.version,
+			version: RANDAL_VERSION,
+			updateChannel: config.updates.channel,
 		});
+	});
+
+	// Ambient auth audit
+	app.get("/audit", async (c) => {
+		const report = await runAudit();
+		return c.json(report);
 	});
 
 	// Instance info
