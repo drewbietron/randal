@@ -1,30 +1,18 @@
-FROM oven/bun:1
-WORKDIR /app
+# Extends the official Randal image.
+# Meilisearch, Claude Code, and Randal are all included in the base image.
+#
+# Before publishing to GHCR, build locally:
+#   docker build -t randal ../.. && docker build -t my-service .
+FROM ghcr.io/drewbietron/randal:latest
 
-# Install agent CLI
-RUN npm install -g @anthropic-ai/claude-code
-
-# Clone Randal (pinned to a tag or commit for reproducibility)
-RUN git clone --depth 1 https://github.com/your-org/randal.git /opt/randal
-WORKDIR /opt/randal
-RUN bun install --frozen-lockfile
-
-# Set up the consumer application
-WORKDIR /app
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
-COPY . .
+# Copy your Randal config
+COPY randal.config.yaml /app/randal.config.yaml
 
 # Ship whatever files your agent needs — codebase, knowledge, data, etc.
-# Examples:
-#   COPY ../my-codebase/ /app/workspace/
-#   COPY ./knowledge/ /app/knowledge/
+# COPY knowledge/ /app/knowledge/
+# COPY my-codebase/ /app/workspace/
 
-RUN mkdir -p /app/workspace
-
-EXPOSE 7600
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD curl -f http://localhost:7600/health || exit 1
-
-CMD ["bun", "run", "index.ts"]
+# If you have custom pre-start logic (e.g., DB sync, setup scripts),
+# place it in pre-start.sh — the Randal entrypoint will source it
+# automatically before starting the agent.
+# COPY pre-start.sh /app/pre-start.sh

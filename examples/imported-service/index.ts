@@ -1,3 +1,18 @@
+/**
+ * Programmatic usage example.
+ *
+ * This file shows how to import @randal/harness and boot Randal from
+ * your own TypeScript code. This is useful when you need custom startup
+ * logic beyond what the CLI + pre-start.sh hook provides.
+ *
+ * For most deployments, you don't need this file — just extend the
+ * official Docker image and provide a randal.config.yaml. The image's
+ * entrypoint runs `randal serve` automatically.
+ *
+ * To use this instead, override the CMD in your Dockerfile:
+ *   CMD ["bun", "run", "index.ts"]
+ */
+
 import { createRandal } from "@randal/harness";
 
 const randal = await createRandal({

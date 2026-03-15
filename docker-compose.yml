@@ -6,27 +6,11 @@ services:
     volumes:
       - ./randal.config.yaml:/app/randal.config.yaml:ro
       - ./.env:/app/.env:ro
-      - ./workspace:/home/bun/workspace
+      - ./workspace:/app/workspace
+      - meili_data:/app/meili-data
     environment:
       - RANDAL_API_TOKEN=${RANDAL_API_TOKEN}
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-    depends_on:
-      meilisearch:
-        condition: service_healthy
-
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    ports:
-      - "7700:7700"
-    environment:
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-    volumes:
-      - meili_data:/meili_data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 volumes:
   meili_data:
