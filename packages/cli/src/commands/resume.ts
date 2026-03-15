@@ -27,15 +27,40 @@ export async function resumeCommand(args: string[], ctx: CliContext): Promise<vo
 			model: string;
 			maxIterations: number;
 			workdir: string;
-			iterations: { current: number; history: { summary: string }[] };
+			iterations: { current: number; history: { number: number; summary: string }[] };
+			plan?: { task: string; status: string }[];
+			progressHistory?: string[];
 		};
 
 		// Build resume context
 		const priorContext = oldJob.iterations.history
-			.map((h: { summary: string }, i: number) => `Iteration ${i + 1}: ${h.summary}`)
+			.map((h) => `Iteration ${h.number}: ${h.summary}`)
 			.join("\n");
 
-		const resumePrompt = `${oldJob.prompt}\n\n## Prior Run Context\nThis is a resumed job. Previous run reached iteration ${oldJob.iterations.current}.\n${priorContext}`;
+		let resumePrompt = `${oldJob.prompt}\n\n## Prior Run Context\nThis is a resumed job. Previous run reached iteration ${oldJob.iterations.current}.\n${priorContext}`;
+
+		// Include plan state if present
+		if (oldJob.plan && oldJob.plan.length > 0) {
+			const planLines = oldJob.plan
+				.map((t) => {
+					const icon =
+						t.status === "completed"
+							? "[x]"
+							: t.status === "in_progress"
+								? "[>]"
+								: t.status === "failed"
+									? "[!]"
+									: "[ ]";
+					return `- ${icon} ${t.task} (${t.status})`;
+				})
+				.join("\n");
+			resumePrompt += `\n\n## Task Plan (from previous run)\n${planLines}`;
+		}
+
+		// Include progress history if present
+		if (oldJob.progressHistory && oldJob.progressHistory.length > 0) {
+			resumePrompt += `\n\n## Previous Progress\n${oldJob.progressHistory.join("\n\n")}`;
+		}
 
 		// Submit new job
 		const res = await fetch(`${url}/job`, {

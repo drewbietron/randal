@@ -17,6 +17,9 @@ export type RunnerEventType =
 	| "iteration.start"
 	| "iteration.tool_use"
 	| "iteration.end"
+	| "job.plan_updated"
+	| "job.delegation.started"
+	| "job.delegation.completed"
 	| "job.stuck"
 	| "job.context_injected"
 	| "job.complete"
@@ -50,6 +53,10 @@ export interface RunnerEvent {
 		contextText?: string;
 		error?: string;
 		exitCode?: number;
+		plan?: JobPlanTask[];
+		delegationTask?: string;
+		delegationJobId?: string;
+		delegationStatus?: JobStatus;
 		// Scheduler event data:
 		cronJobName?: string;
 		hookSource?: string;
@@ -71,11 +78,16 @@ export interface JobIteration {
 	promiseFound: boolean;
 	summary: string;
 	stderr?: string;
+	planUpdate?: JobPlanTask[];
+	progress?: string;
+	delegationRequests?: DelegationRequest[];
 }
 
 export interface JobPlanTask {
 	task: string;
-	status: "pending" | "in_progress" | "completed";
+	status: "pending" | "in_progress" | "completed" | "failed";
+	updatedAt?: string;
+	iterationNumber?: number;
 }
 
 export interface Job {
@@ -99,6 +111,9 @@ export interface Job {
 		history: JobIteration[];
 	};
 	plan: JobPlanTask[];
+	progressHistory: string[];
+	delegations: DelegationResult[];
+	parentJobId?: string;
 	cost: {
 		totalTokens: TokenUsage;
 		estimatedCost: number;
@@ -108,6 +123,25 @@ export interface Job {
 	error: string | null;
 	exitCode: number | null;
 	origin?: JobOrigin;
+}
+
+// ---- Delegation ----
+export interface DelegationRequest {
+	task: string;
+	context?: string;
+	agent?: string;
+	model?: string;
+	maxIterations?: number;
+}
+
+export interface DelegationResult {
+	jobId: string;
+	task: string;
+	status: JobStatus;
+	summary: string;
+	filesChanged: string[];
+	duration: number;
+	error?: string;
 }
 
 // ---- Job Origin (channel-aware routing) ----

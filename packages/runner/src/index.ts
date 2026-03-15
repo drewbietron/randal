@@ -26,8 +26,18 @@ export {
 export {
 	assemblePrompt,
 	formatRules,
+	formatPlan,
+	formatProgressHistory,
+	formatDelegationResults,
+	buildProtocolSection,
 	buildSystemPrompt,
 	loadKnowledgeFiles,
 	loadSkillDocs,
 } from "./prompt-assembly.js";
 export type { PromptParts } from "./prompt-assembly.js";
+
+export {
+	parsePlanUpdate,
+	parseProgress,
+	parseDelegationRequests,
+} from "./plan-parser.js";

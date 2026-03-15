@@ -180,10 +180,14 @@
 				<h2>Plan</h2>
 				<div id="job-plan"></div>
 			</div>
-			<div class="section">
-				<h2>Iterations</h2>
-				<div class="timeline" id="job-timeline"></div>
-			</div>
+		<div class="section">
+			<h2>Delegations</h2>
+			<div id="job-delegations"></div>
+		</div>
+		<div class="section">
+			<h2>Iterations</h2>
+			<div class="timeline" id="job-timeline"></div>
+		</div>
 			<div class="section">
 				<h2>Inject Context</h2>
 				<div class="context-input">
@@ -298,10 +302,16 @@
 				container.innerHTML = active.map(function(j) {
 					var pct = (j.iterations.current / j.maxIterations) * 100;
 					var preview = j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : '');
+					var planInfo = '';
+					if (j.plan && j.plan.length > 0) {
+						var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
+						planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
+					}
 					return '<div class="job-card" onclick="showJobDetail(\'' + j.id + '\')">' +
 						'<h3>' + preview + '</h3>' +
 						'<div class="meta"><span class="badge ' + j.status + '">' + j.status + '</span>' +
 						'<span>' + j.agent + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
+						planInfo +
 						'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
 						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
 				}).join('');
@@ -318,10 +328,37 @@
 				document.getElementById('job-spec').textContent = job.spec ? job.spec.content || job.prompt : job.prompt;
 
 				// Plan
-				var planHtml = job.plan.length > 0 ? '<table><thead><tr><th>Task</th><th>Status</th></tr></thead><tbody>' +
-					job.plan.map(function(p) { return '<tr><td>' + p.task + '</td><td><span class="badge ' + p.status + '">' + p.status + '</span></td></tr>'; }).join('') +
-					'</tbody></table>' : '<div class="empty">No plan extracted</div>';
+				var planHtml;
+				if (job.plan && job.plan.length > 0) {
+					var completedCount = job.plan.filter(function(p) { return p.status === 'completed'; }).length;
+					planHtml = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-muted)">' + completedCount + '/' + job.plan.length + ' tasks complete</div>';
+					planHtml += '<table><thead><tr><th>Task</th><th>Status</th><th>Iteration</th></tr></thead><tbody>';
+					planHtml += job.plan.map(function(p) {
+						var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
+						var iterInfo = p.iterationNumber ? '#' + p.iterationNumber : '-';
+						return '<tr><td>' + icon + ' ' + p.task + '</td><td><span class="badge ' + p.status + '">' + p.status + '</span></td><td>' + iterInfo + '</td></tr>';
+					}).join('');
+					planHtml += '</tbody></table>';
+				} else {
+					planHtml = '<div class="empty">No plan extracted</div>';
+				}
 				document.getElementById('job-plan').innerHTML = planHtml;
+
+				// Delegations
+				var delegationsEl = document.getElementById('job-delegations');
+				if (delegationsEl) {
+					if (job.delegations && job.delegations.length > 0) {
+						var delHtml = '<table><thead><tr><th>Task</th><th>Status</th><th>Job ID</th><th>Duration</th></tr></thead><tbody>';
+						delHtml += job.delegations.map(function(d) {
+							return '<tr><td>' + d.task + '</td><td><span class="badge ' + d.status + '">' + d.status + '</span></td>' +
+								'<td>' + d.jobId + '</td><td>' + d.duration + 's</td></tr>';
+						}).join('');
+						delHtml += '</tbody></table>';
+						delegationsEl.innerHTML = delHtml;
+					} else {
+						delegationsEl.innerHTML = '<div class="empty">No delegations</div>';
+					}
+				}
 
 				// Timeline
 				var timelineHtml = job.iterations.history.length > 0 ?
@@ -458,7 +495,7 @@
 			refreshJobs();
 		}
 
-		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected'].forEach(function(type) {
+		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
 			evtSource.addEventListener(type, function(e) {
 				addEvent(type, e.data);
 				if (currentJobId) loadJobDetail(currentJobId);

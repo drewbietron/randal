@@ -23,4 +23,7 @@ export interface AgentAdapter {
 	deploySkills?(skills: SkillDeployment[], workdir: string): Promise<SkillCleanup>;
 	/** The directory where this agent CLI expects skills */
 	skillDir?: string;
+
+	/** Whether this adapter supports the Randal execution protocol tags. Defaults to true. */
+	supportsProtocol?: boolean;
 }

@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { assemblePrompt, formatRules } from "./prompt-assembly.js";
+import {
+	assemblePrompt,
+	buildProtocolSection,
+	formatDelegationResults,
+	formatPlan,
+	formatProgressHistory,
+	formatRules,
+} from "./prompt-assembly.js";
 
 describe("formatRules", () => {
 	test("formats rules as numbered list", () => {
@@ -111,13 +118,28 @@ describe("assemblePrompt", () => {
 		expect(result).toContain("Focus on the auth module");
 	});
 
-	test("omits empty sections", () => {
+	test("includes protocol section even with no other content", () => {
 		const result = assemblePrompt({
 			rules: [],
 			knowledge: [],
 			skills: [],
 			discoveredSkills: [],
 			memory: [],
+		});
+		expect(result).toContain("## Randal Execution Protocol");
+		expect(result).toContain("<plan-update>");
+		expect(result).toContain("<progress>");
+		expect(result).toContain("<delegate>");
+	});
+
+	test("omits protocol section when includeProtocol is false", () => {
+		const result = assemblePrompt({
+			rules: [],
+			knowledge: [],
+			skills: [],
+			discoveredSkills: [],
+			memory: [],
+			includeProtocol: false,
 		});
 		expect(result).toBe("");
 	});
@@ -158,5 +180,171 @@ describe("assemblePrompt", () => {
 
 		expect(toolsIdx).toBeLessThan(activeIdx);
 		expect(activeIdx).toBeLessThan(memoryIdx);
+	});
+
+	test("includes current plan section", () => {
+		const result = assemblePrompt({
+			rules: [],
+			knowledge: [],
+			skills: [],
+			discoveredSkills: [],
+			memory: [],
+			currentPlan: [
+				{ task: "Task A", status: "completed", iterationNumber: 1 },
+				{ task: "Task B", status: "in_progress", iterationNumber: 2 },
+				{ task: "Task C", status: "pending" },
+			],
+		});
+		expect(result).toContain("## Current Task Plan");
+		expect(result).toContain("[x] Task A (completed, iteration 1)");
+		expect(result).toContain("[>] Task B (in_progress, iteration 2)");
+		expect(result).toContain("[ ] Task C (pending)");
+	});
+
+	test("includes progress history section", () => {
+		const result = assemblePrompt({
+			rules: [],
+			knowledge: [],
+			skills: [],
+			discoveredSkills: [],
+			memory: [],
+			progressHistory: ["First iteration done", "Second iteration done"],
+		});
+		expect(result).toContain("## Previous Progress");
+		expect(result).toContain("### Iteration 1");
+		expect(result).toContain("First iteration done");
+		expect(result).toContain("### Iteration 2");
+		expect(result).toContain("Second iteration done");
+	});
+
+	test("includes delegation results section", () => {
+		const result = assemblePrompt({
+			rules: [],
+			knowledge: [],
+			skills: [],
+			discoveredSkills: [],
+			memory: [],
+			delegationResults: [
+				{
+					jobId: "abc123",
+					task: "Write tests",
+					status: "complete",
+					summary: "Created 12 test cases",
+					filesChanged: ["src/test.ts"],
+					duration: 45,
+				},
+			],
+		});
+		expect(result).toContain("## Delegation Results");
+		expect(result).toContain("### Task: Write tests");
+		expect(result).toContain("Status: complete");
+		expect(result).toContain("Job: abc123");
+		expect(result).toContain("Duration: 45s");
+		expect(result).toContain("Created 12 test cases");
+	});
+
+	test("protocol section always present", () => {
+		const result = assemblePrompt({
+			rules: [],
+			knowledge: [],
+			skills: [],
+			discoveredSkills: [],
+			memory: [],
+		});
+		expect(result).toContain("## Randal Execution Protocol");
+		expect(result).toContain("plan-update");
+		expect(result).toContain("progress");
+		expect(result).toContain("delegate");
+		expect(result).toContain("<promise>DONE</promise>");
+	});
+});
+
+// ── formatPlan ──────────────────────────────────────────────
+
+describe("formatPlan", () => {
+	test("formats plan with status icons", () => {
+		const result = formatPlan([
+			{ task: "Done task", status: "completed", iterationNumber: 1 },
+			{ task: "Active task", status: "in_progress", iterationNumber: 2 },
+			{ task: "Failed task", status: "failed", iterationNumber: 2 },
+			{ task: "Todo task", status: "pending" },
+		]);
+		expect(result).toContain("[x] Done task (completed, iteration 1)");
+		expect(result).toContain("[>] Active task (in_progress, iteration 2)");
+		expect(result).toContain("[!] Failed task (failed, iteration 2)");
+		expect(result).toContain("[ ] Todo task (pending)");
+	});
+});
+
+// ── formatProgressHistory ───────────────────────────────────
+
+describe("formatProgressHistory", () => {
+	test("formats progress entries with iteration numbers", () => {
+		const result = formatProgressHistory(["Did A", "Did B"]);
+		expect(result).toContain("### Iteration 1");
+		expect(result).toContain("Did A");
+		expect(result).toContain("### Iteration 2");
+		expect(result).toContain("Did B");
+	});
+
+	test("uses custom start iteration", () => {
+		const result = formatProgressHistory(["Did C"], 5);
+		expect(result).toContain("### Iteration 5");
+		expect(result).toContain("Did C");
+	});
+});
+
+// ── formatDelegationResults ─────────────────────────────────
+
+describe("formatDelegationResults", () => {
+	test("formats delegation results", () => {
+		const result = formatDelegationResults([
+			{
+				jobId: "xyz",
+				task: "Run tests",
+				status: "complete",
+				summary: "All tests pass",
+				filesChanged: ["a.ts", "b.ts"],
+				duration: 30,
+			},
+		]);
+		expect(result).toContain("### Task: Run tests");
+		expect(result).toContain("Status: complete");
+		expect(result).toContain("Job: xyz");
+		expect(result).toContain("Duration: 30s");
+		expect(result).toContain("a.ts, b.ts");
+		expect(result).toContain("All tests pass");
+	});
+
+	test("shows error when present", () => {
+		const result = formatDelegationResults([
+			{
+				jobId: "err",
+				task: "Broken task",
+				status: "failed",
+				summary: "",
+				filesChanged: [],
+				duration: 5,
+				error: "Process crashed",
+			},
+		]);
+		expect(result).toContain("Error: Process crashed");
+	});
+});
+
+// ── buildProtocolSection ────────────────────────────────────
+
+describe("buildProtocolSection", () => {
+	test("contains all protocol elements", () => {
+		const result = buildProtocolSection();
+		expect(result).toContain("## Randal Execution Protocol");
+		expect(result).toContain("### Task Plan");
+		expect(result).toContain("### Progress Summary");
+		expect(result).toContain("### Delegation");
+		expect(result).toContain("### Completion");
+		expect(result).toContain("<plan-update>");
+		expect(result).toContain("<progress>");
+		expect(result).toContain("<delegate>");
+		expect(result).toContain("<promise>DONE</promise>");
 	});
 });

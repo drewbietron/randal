@@ -79,6 +79,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		// Persist job state on key events
 		if (
 			event.type === "iteration.end" ||
+			event.type === "job.plan_updated" ||
+			event.type === "job.delegation.completed" ||
 			event.type === "job.complete" ||
 			event.type === "job.failed" ||
 			event.type === "job.stopped"
