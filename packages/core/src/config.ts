@@ -171,6 +171,7 @@ export const configSchema = z.object({
 			.object({
 				noChangeThreshold: z.number().default(3),
 				maxRepeatedErrors: z.number().default(3),
+				action: z.enum(["warn", "stop"]).default("warn"),
 			})
 			.default({}),
 	}),

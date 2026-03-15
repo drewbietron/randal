@@ -537,6 +537,16 @@ export class Runner {
 						iteration: iteration.number,
 						struggleIndicators: struggle.indicators,
 					});
+
+					// Act on struggle based on config
+					if (this.config.runner.struggle.action === "stop") {
+						job.status = "failed";
+						job.error = `Stopped due to struggle: ${struggle.indicators.join(", ")}`;
+						job.completedAt = new Date().toISOString();
+						job.duration = Math.round((Date.now() - loopStart) / 1000);
+						this.emit("job.failed", job, { error: job.error });
+						return job;
+					}
 				}
 			}
 
