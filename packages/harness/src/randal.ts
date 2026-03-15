@@ -50,6 +50,9 @@ export interface CreateRandalOptions {
 	/** Provide a custom MemoryStore implementation (advanced).
 	 *  When provided, this store is used instead of the config-driven default. */
 	memoryStore?: MemoryStore;
+
+	/** Event handler for runner events */
+	onEvent?: (event: import("@randal/core").RunnerEvent) => void;
 }
 
 // ---- Implementation ----
@@ -94,6 +97,7 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 	}
 
 	// 3. Initialize memory manager
+	const harnessLogger = createLogger({ context: { component: "harness" } });
 	let memoryManager: MemoryManager | undefined;
 	try {
 		memoryManager = new MemoryManager({
@@ -102,16 +106,23 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 			store: opts.memoryStore,
 		});
 		await memoryManager.init();
-	} catch {
-		// Memory init failed, continue without it
+	} catch (err) {
+		harnessLogger.warn("Memory initialization failed, continuing without memory", {
+			error: err instanceof Error ? err.message : String(err),
+		});
 	}
 
 	// 4. Create Runner
+	const eventHandler = opts.onEvent ?? (() => {});
 	const runner = new Runner({
 		config,
-		onEvent: () => {},
+		onEvent: eventHandler,
 		memorySearch: memoryManager
-			? (query: string) => memoryManager?.searchForContext(query)
+			? async (query: string) => {
+					const mgr = memoryManager;
+					if (!mgr) return [];
+					return (await mgr.searchForContext(query)) ?? [];
+				}
 			: undefined,
 	});
 
@@ -119,8 +130,13 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 	const scheduler = new Scheduler({
 		config,
 		runner,
+		onEvent: eventHandler,
 		memorySearch: memoryManager
-			? (query: string) => memoryManager?.searchForContext(query)
+			? async (query: string) => {
+					const mgr = memoryManager;
+					if (!mgr) return [];
+					return (await mgr.searchForContext(query)) ?? [];
+				}
 			: undefined,
 	});
 
@@ -146,6 +162,10 @@ export async function createRandal(opts: CreateRandalOptions): Promise<RandalIns
 		scheduler,
 		memory: memoryManager,
 		stop: () => {
+			// Stop all active runner jobs
+			for (const job of runner.getActiveJobs()) {
+				runner.stop(job.id);
+			}
 			scheduler.stop();
 			gateway?.stop();
 		},
