@@ -21,7 +21,11 @@ export function readAndClearContext(jobWorkdir: string): string | null {
 
 	try {
 		const content = readFileSync(path, "utf-8").trim();
-		unlinkSync(path);
+		try {
+			unlinkSync(path);
+		} catch {
+			// Failed to clear context file — not critical
+		}
 		return content || null;
 	} catch {
 		return null;

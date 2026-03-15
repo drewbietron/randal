@@ -470,8 +470,10 @@ export class Runner {
 				if (this.memorySearch && this.config.memory.autoInject.enabled) {
 					try {
 						memoryContext = await this.memorySearch(job.prompt);
-					} catch {
-						// Memory search failed, continue without it
+					} catch (err) {
+						this.logger.warn("Memory search failed, continuing without memory context", {
+							error: err instanceof Error ? err.message : String(err),
+						});
 					}
 				}
 
