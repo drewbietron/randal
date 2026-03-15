@@ -167,6 +167,8 @@ export const configSchema = z.object({
 		allowedWorkdirs: z.array(z.string()).optional(),
 		completionPromise: z.string().default("DONE"),
 		iterationTimeout: z.number().positive().default(600),
+		maxDelegationDepth: z.number().default(2),
+		maxDelegationsPerIteration: z.number().default(3),
 		struggle: z
 			.object({
 				noChangeThreshold: z.number().default(3),

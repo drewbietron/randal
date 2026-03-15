@@ -191,6 +191,19 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json({ error: "Job not found" }, 404);
 	});
 
+	// Get job plan (lightweight endpoint for polling/widgets)
+	app.get("/job/:id/plan", (c) => {
+		const id = c.req.param("id");
+
+		const activeJob = runner.getJob(id);
+		if (activeJob) return c.json(activeJob.plan);
+
+		const diskJob = loadJob(id);
+		if (diskJob) return c.json(diskJob.plan);
+
+		return c.json({ error: "Job not found" }, 404);
+	});
+
 	// List jobs
 	app.get("/jobs", (c) => {
 		const statusFilter = c.req.query("status") as Job["status"] | undefined;

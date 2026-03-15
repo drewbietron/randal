@@ -133,9 +133,42 @@ export async function handleCommand(
 			if (oldJob.status !== "failed" && oldJob.status !== "stopped") {
 				return `Job \`${args}\` is ${oldJob.status}, not resumable`;
 			}
-			// Re-execute with same prompt + origin
+
+			// Build resume prompt with prior context
+			const priorIterations = oldJob.iterations.history
+				.map((h: { summary: string; number: number }) => `Iteration ${h.number}: ${h.summary}`)
+				.join("\n");
+
+			let resumePrompt = `${oldJob.prompt}\n\n## Prior Run Context\nThis is a resumed job. Previous run reached iteration ${oldJob.iterations.current}.`;
+			if (priorIterations) {
+				resumePrompt += `\n${priorIterations}`;
+			}
+
+			// Include plan state if present
+			if (oldJob.plan && oldJob.plan.length > 0) {
+				const planLines = oldJob.plan
+					.map((t: { task: string; status: string }) => {
+						const icon =
+							t.status === "completed"
+								? "[x]"
+								: t.status === "in_progress"
+									? "[>]"
+									: t.status === "failed"
+										? "[!]"
+										: "[ ]";
+						return `- ${icon} ${t.task} (${t.status})`;
+					})
+					.join("\n");
+				resumePrompt += `\n\n## Task Plan (from previous run)\n${planLines}`;
+			}
+
+			// Include progress history if present
+			if (oldJob.progressHistory && oldJob.progressHistory.length > 0) {
+				resumePrompt += `\n\n## Previous Progress\n${oldJob.progressHistory.join("\n\n")}`;
+			}
+
 			const { jobId: resumeJobId, done: resumeDone } = deps.runner.submit({
-				prompt: oldJob.prompt,
+				prompt: resumePrompt,
 				workdir: oldJob.workdir,
 				agent: oldJob.agent,
 				model: oldJob.model,
@@ -177,6 +210,15 @@ export function formatEvent(event: RunnerEvent): string {
 			const summaryPart = event.data.summary ? ` — ${event.data.summary}` : "";
 			return `Iteration ${event.data.iteration ?? "?"}/${event.data.maxIterations ?? "?"} complete${summaryPart}`;
 		}
+		case "job.plan_updated": {
+			const completed = event.data.plan?.filter((t) => t.status === "completed").length ?? 0;
+			const total = event.data.plan?.length ?? 0;
+			return `Job \`${event.jobId}\` plan: ${completed}/${total} tasks complete`;
+		}
+		case "job.delegation.started":
+			return `Job \`${event.jobId}\` delegating: ${event.data.delegationTask ?? "unknown task"}`;
+		case "job.delegation.completed":
+			return `Job \`${event.jobId}\` delegation done: ${event.data.delegationTask ?? "unknown task"} (${event.data.delegationStatus ?? "unknown"})`;
 		default:
 			return `Event: ${event.type} (job ${event.jobId})`;
 	}

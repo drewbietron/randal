@@ -7,6 +7,7 @@ import type { AgentAdapter } from "./adapter.js";
  */
 export const mock: AgentAdapter = {
 	binary: "bash",
+	supportsProtocol: false,
 	buildCommand(opts) {
 		// The prompt is the path to the mock script
 		return [opts.prompt];

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
+	DelegationRequest,
+	DelegationResult,
 	Job,
 	JobIteration,
 	JobOrigin,
@@ -14,6 +16,7 @@ import { type RandalConfig, createLogger } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { type AgentAdapter, getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
+import { parseDelegationRequests, parsePlanUpdate, parseProgress } from "./plan-parser.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StruggleConfig, detectStruggle } from "./struggle.js";
@@ -26,6 +29,8 @@ export interface RunnerOptions {
 	onEvent?: EventHandler;
 	memorySearch?: (query: string) => Promise<string[]>;
 	skillSearch?: (query: string) => Promise<SkillDeployment[]>;
+	/** Internal: current delegation depth (used by child runners). */
+	delegationDepth?: number;
 }
 
 export interface JobRequest {
@@ -94,6 +99,8 @@ function createJob(req: JobRequest, config: RandalConfig): Job {
 		duration: null,
 		iterations: { current: 0, history: [] },
 		plan: [],
+		progressHistory: [],
+		delegations: [],
 		cost: {
 			totalTokens: { input: 0, output: 0 },
 			estimatedCost: 0,
@@ -258,6 +265,11 @@ async function executeIteration(
 	// Check for completion promise using the clean agent output
 	const promiseFound = findCompletionPromise(agentOutput, completionPromiseTag);
 
+	// Parse structured output tags (non-fatal — null/empty on failure)
+	const planUpdate = parsePlanUpdate(agentOutput);
+	const progress = parseProgress(agentOutput);
+	const delegationReqs = parseDelegationRequests(agentOutput);
+
 	return {
 		number: iterNum,
 		startedAt: new Date(iterStart).toISOString(),
@@ -268,6 +280,9 @@ async function executeIteration(
 		promiseFound,
 		summary,
 		stderr: stderr.trim() || undefined,
+		planUpdate: planUpdate ?? undefined,
+		progress: progress ?? undefined,
+		delegationRequests: delegationReqs.length > 0 ? delegationReqs : undefined,
 	};
 }
 
@@ -309,6 +324,9 @@ export class Runner {
 		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
 	> = new Map();
 	private logger = createLogger({ context: { component: "runner" } });
+	private delegationDepth: number;
+	private maxDelegationDepth: number;
+	private maxDelegationsPerIteration: number;
 
 	constructor(options: RunnerOptions) {
 		this.config = options.config;
@@ -316,6 +334,9 @@ export class Runner {
 		this.onEvent = options.onEvent ?? (() => {});
 		this.memorySearch = options.memorySearch;
 		this.skillSearch = options.skillSearch;
+		this.delegationDepth = options.delegationDepth ?? 0;
+		this.maxDelegationDepth = this.config.runner.maxDelegationDepth ?? 2;
+		this.maxDelegationsPerIteration = this.config.runner.maxDelegationsPerIteration ?? 3;
 	}
 
 	private emit(type: RunnerEventType, job: Job, data: RunnerEvent["data"] = {}): void {
@@ -401,6 +422,92 @@ export class Runner {
 		return [...this.activeJobs.values()].map((e) => e.job);
 	}
 
+	/**
+	 * Execute a delegation request as a child job.
+	 */
+	private async executeDelegation(
+		parentJob: Job,
+		request: DelegationRequest,
+		_iterationNumber: number,
+	): Promise<void> {
+		this.emit("job.delegation.started", parentJob, {
+			delegationTask: request.task,
+		});
+
+		const childPrompt = request.context
+			? `## Delegated Task\n${request.task}\n\n## Context\n${request.context}`
+			: `## Delegated Task\n${request.task}`;
+
+		const childRunner = new Runner({
+			config: this.config,
+			configBasePath: this.configBasePath,
+			onEvent: this.onEvent,
+			memorySearch: this.memorySearch,
+			skillSearch: this.skillSearch,
+			delegationDepth: this.delegationDepth + 1,
+		});
+
+		const startTime = Date.now();
+		try {
+			const childJob = await childRunner.execute({
+				prompt: childPrompt,
+				workdir: parentJob.workdir,
+				agent: request.agent ?? parentJob.agent,
+				model: request.model ?? parentJob.model,
+				maxIterations: request.maxIterations ?? 5,
+			});
+
+			// Set parentJobId on child (it's already completed at this point)
+			childJob.parentJobId = parentJob.id;
+
+			const result: DelegationResult = {
+				jobId: childJob.id,
+				task: request.task,
+				status: childJob.status,
+				summary:
+					childJob.iterations.history.length > 0
+						? childJob.iterations.history[childJob.iterations.history.length - 1].summary
+						: "",
+				filesChanged: childJob.iterations.history.flatMap((h) => h.filesChanged),
+				duration: Math.round((Date.now() - startTime) / 1000),
+			};
+
+			if (childJob.error) {
+				result.error = childJob.error;
+			}
+
+			parentJob.delegations.push(result);
+
+			this.emit("job.delegation.completed", parentJob, {
+				delegationTask: request.task,
+				delegationJobId: childJob.id,
+				delegationStatus: childJob.status,
+			});
+		} catch (err) {
+			const result: DelegationResult = {
+				jobId: "error",
+				task: request.task,
+				status: "failed",
+				summary: "",
+				filesChanged: [],
+				duration: Math.round((Date.now() - startTime) / 1000),
+				error: err instanceof Error ? err.message : String(err),
+			};
+
+			parentJob.delegations.push(result);
+
+			this.logger.warn("Delegation execution failed", {
+				task: request.task,
+				error: err instanceof Error ? err.message : String(err),
+			});
+
+			this.emit("job.delegation.completed", parentJob, {
+				delegationTask: request.task,
+				delegationStatus: "failed",
+			});
+		}
+	}
+
 	private async runLoop(job: Job): Promise<Job> {
 		job.status = "running";
 		job.startedAt = new Date().toISOString();
@@ -478,10 +585,15 @@ export class Runner {
 				}
 
 				// Build system prompt
+				const includeProtocol = adapter.supportsProtocol !== false;
 				const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
 					memoryContext,
 					injectedContext: injectedContext ?? undefined,
 					skillContext,
+					currentPlan: job.plan.length > 0 ? job.plan : undefined,
+					progressHistory: job.progressHistory.length > 0 ? job.progressHistory : undefined,
+					delegationResults: job.delegations.length > 0 ? job.delegations : undefined,
+					includeProtocol,
 				});
 
 				this.emit("iteration.start", job, {
@@ -517,6 +629,57 @@ export class Runner {
 					summary: iteration.summary,
 					exitCode: iteration.exitCode,
 				});
+
+				// Update plan if iteration produced a plan-update
+				if (iteration.planUpdate) {
+					const now = new Date().toISOString();
+					job.plan = iteration.planUpdate.map((t) => ({
+						...t,
+						updatedAt: now,
+						iterationNumber: iteration.number,
+					}));
+					this.emit("job.plan_updated", job, {
+						plan: job.plan,
+					});
+				}
+
+				// Update progress history (sliding window, max 3)
+				if (iteration.progress) {
+					job.progressHistory.push(iteration.progress);
+					if (job.progressHistory.length > 3) {
+						job.progressHistory = job.progressHistory.slice(-3);
+					}
+				}
+
+				// Handle delegation requests
+				if (
+					iteration.delegationRequests &&
+					iteration.delegationRequests.length > 0 &&
+					this.delegationDepth < this.maxDelegationDepth
+				) {
+					const maxDelegations = this.maxDelegationsPerIteration;
+					const requests = iteration.delegationRequests.slice(0, maxDelegations);
+
+					if (iteration.delegationRequests.length > maxDelegations) {
+						this.logger.warn("Delegation requests truncated", {
+							requested: iteration.delegationRequests.length,
+							max: maxDelegations,
+						});
+					}
+
+					for (const delegationReq of requests) {
+						await this.executeDelegation(job, delegationReq, iteration.number);
+					}
+				} else if (
+					iteration.delegationRequests &&
+					iteration.delegationRequests.length > 0 &&
+					this.delegationDepth >= this.maxDelegationDepth
+				) {
+					this.logger.warn("Delegation requests ignored — max depth reached", {
+						depth: this.delegationDepth,
+						maxDepth: this.maxDelegationDepth,
+					});
+				}
 
 				// Check for completion promise (detected in executeIteration using clean agent output)
 				if (iteration.promiseFound) {

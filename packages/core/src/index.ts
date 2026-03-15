@@ -24,6 +24,8 @@ export type {
 	JobPlanTask,
 	Job,
 	JobOrigin,
+	DelegationRequest,
+	DelegationResult,
 	MemoryDocType,
 	MemoryCategory,
 	MemorySource,
