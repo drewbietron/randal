@@ -83,31 +83,38 @@ credentials:
 		expect(job.iterations.current).toBe(2);
 	});
 
-	test("stop cancels a job", async () => {
+	test("stop cancels a job and kills the process", async () => {
 		const workdir = makeTmpDir();
 		const config = makeConfig(workdir);
+		const events: RunnerEvent[] = [];
 
-		// Script that sleeps
+		// Script that runs for a long time
 		const scriptPath = join(workdir, "slow.sh");
-		writeFileSync(scriptPath, '#!/bin/bash\nsleep 0.1\necho "done"\n', { mode: 0o755 });
+		writeFileSync(scriptPath, '#!/bin/bash\nsleep 10\necho "done"\n', { mode: 0o755 });
 
-		const runner = new Runner({ config });
+		const runner = new Runner({
+			config,
+			onEvent: (e) => events.push(e),
+		});
 
 		// Start job in background
 		const jobPromise = runner.execute({ prompt: scriptPath });
 
-		// Give it a moment to start
-		await new Promise((r) => setTimeout(r, 50));
+		// Wait for the job to actually start running
+		const waitStart = Date.now();
+		while (runner.getActiveJobs().length === 0 && Date.now() - waitStart < 2000) {
+			await new Promise((r) => setTimeout(r, 10));
+		}
 
 		// Get the active job and stop it
 		const active = runner.getActiveJobs();
-		if (active.length > 0) {
-			runner.stop(active[0].id);
-		}
+		expect(active.length).toBeGreaterThan(0);
+		const stopped = runner.stop(active[0].id);
+		expect(stopped).toBe(true);
 
 		const job = await jobPromise;
-		// Job should be stopped or complete (race condition possible)
-		expect(["stopped", "complete"]).toContain(job.status);
+		expect(job.status).toBe("stopped");
+		expect(events.some((e) => e.type === "job.stopped")).toBe(true);
 	});
 
 	test("job events include proper data", async () => {
@@ -133,6 +140,56 @@ credentials:
 		expect(iterEnd).toBeDefined();
 		expect(iterEnd?.data.iteration).toBe(1);
 		expect(iterEnd?.data.exitCode).toBe(0);
+	});
+
+	test("iteration timeout kills long-running process", async () => {
+		const workdir = makeTmpDir();
+		const config = parseConfig(`
+name: test
+runner:
+  workdir: ${workdir}
+  defaultAgent: mock
+  defaultMaxIterations: 1
+  completionPromise: DONE
+  iterationTimeout: 2
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+`);
+
+		// Script that sleeps longer than the timeout
+		const scriptPath = join(workdir, "timeout.sh");
+		writeFileSync(scriptPath, '#!/bin/bash\nsleep 30\necho "<promise>DONE</promise>"\n', {
+			mode: 0o755,
+		});
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({ prompt: scriptPath });
+
+		// Job should fail because iteration timed out and no promise was found
+		expect(job.status).toBe("failed");
+		// Should have completed in roughly 2 seconds, not 30
+		expect(job.duration).toBeLessThan(10);
+	}, 15000);
+
+	test("captures stderr output in iteration", async () => {
+		const workdir = makeTmpDir();
+		const config = makeConfig(workdir);
+
+		const scriptPath = join(workdir, "agent.sh");
+		writeFileSync(
+			scriptPath,
+			'#!/bin/bash\necho "stdout output"\necho "stderr warning" >&2\necho "<promise>DONE</promise>"\n',
+			{ mode: 0o755 },
+		);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({ prompt: scriptPath });
+
+		expect(job.status).toBe("complete");
+		// Check that stderr was captured in iteration history
+		const lastIter = job.iterations.history[0];
+		expect(lastIter.stderr).toContain("stderr warning");
 	});
 
 	test("uses spec file when provided", async () => {

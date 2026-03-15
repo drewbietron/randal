@@ -70,6 +70,7 @@ export interface JobIteration {
 	exitCode: number;
 	promiseFound: boolean;
 	summary: string;
+	stderr?: string;
 }
 
 export interface JobPlanTask {

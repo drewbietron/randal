@@ -164,6 +164,7 @@ export const configSchema = z.object({
 		workdir: z.string(),
 		allowedWorkdirs: z.array(z.string()).optional(),
 		completionPromise: z.string().default("DONE"),
+		iterationTimeout: z.number().positive().default(600),
 		struggle: z
 			.object({
 				noChangeThreshold: z.number().default(3),

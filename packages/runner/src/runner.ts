@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type {
 	Job,
 	JobIteration,
+	JobOrigin,
 	RunnerEvent,
 	RunnerEventType,
 	SkillCleanup,
@@ -106,6 +107,32 @@ function createJob(req: JobRequest, config: RandalConfig): Job {
 }
 
 /**
+ * Read a readable stream to completion, returning all chunks as a single string.
+ */
+async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
+	if (!stream) return "";
+	const reader = stream.getReader();
+	const decoder = new TextDecoder();
+	const chunks: string[] = [];
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			chunks.push(decoder.decode(value, { stream: true }));
+		}
+	} catch (err) {
+		// Stream ended or errored
+		const logger = createLogger({ context: { component: "runner" } });
+		logger.debug("Stream read ended", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	} finally {
+		reader.releaseLock();
+	}
+	return chunks.join("");
+}
+
+/**
  * Execute a single iteration of the ralph loop.
  * Spawns the agent process, captures output, and parses results.
  */
@@ -114,6 +141,8 @@ async function executeIteration(
 	adapter: AgentAdapter,
 	env: Record<string, string>,
 	systemPrompt: string,
+	iterationTimeoutSecs: number,
+	activeJobEntry?: { job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> },
 ): Promise<JobIteration> {
 	const iterStart = Date.now();
 	const iterNum = job.iterations.current + 1;
@@ -151,40 +180,49 @@ async function executeIteration(
 		stderr: "pipe",
 	});
 
-	// Collect output
-	const stdoutChunks: string[] = [];
-	const stderrChunks: string[] = [];
-
-	if (proc.stdout) {
-		const reader = proc.stdout.getReader();
-		const decoder = new TextDecoder();
-		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				stdoutChunks.push(decoder.decode(value, { stream: true }));
-			}
-		} catch {
-			// Stream ended
-		}
+	// Store proc reference for kill-on-stop
+	if (activeJobEntry) {
+		activeJobEntry.proc = proc;
 	}
 
-	if (proc.stderr) {
-		const reader = proc.stderr.getReader();
-		const decoder = new TextDecoder();
-		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				stderrChunks.push(decoder.decode(value, { stream: true }));
-			}
-		} catch {
-			// Stream ended
-		}
+	// Start reading stdout/stderr concurrently in the background
+	const stdoutPromise = readStream(proc.stdout);
+	const stderrPromise = readStream(proc.stderr);
+
+	// Wait for process exit with iteration timeout
+	const timeoutMs = iterationTimeoutSecs * 1000;
+	let timedOut = false;
+
+	const exitCode = await Promise.race([
+		proc.exited,
+		new Promise<number>((resolve) =>
+			setTimeout(() => {
+				timedOut = true;
+				try {
+					proc.kill("SIGKILL");
+				} catch {
+					// Process already exited
+				}
+				resolve(124); // Standard timeout exit code
+			}, timeoutMs),
+		),
+	]);
+
+	if (timedOut) {
+		const logger = createLogger({ context: { component: "runner" } });
+		logger.warn("Iteration timed out", {
+			jobId: job.id,
+			iteration: iterNum,
+			timeoutSecs: iterationTimeoutSecs,
+		});
 	}
 
-	const exitCode = await proc.exited;
-	const stdout = stdoutChunks.join("");
+	// Collect whatever output we have, with a short timeout for stream cleanup
+	const [stdout, stderr] = await Promise.race([
+		Promise.all([stdoutPromise, stderrPromise]),
+		new Promise<[string, string]>((resolve) => setTimeout(() => resolve(["", ""]), 1000)),
+	]);
+
 	const duration = Math.round((Date.now() - iterStart) / 1000);
 
 	// Parse token usage if adapter supports it
@@ -202,6 +240,21 @@ async function executeIteration(
 	// Extract summary (first meaningful line)
 	const summary = extractSummary(stdout);
 
+	// Log stderr at warn level when non-empty
+	if (stderr.trim()) {
+		const logger = createLogger({ context: { component: "runner" } });
+		logger.warn("Agent stderr output", {
+			jobId: job.id,
+			iteration: iterNum,
+			stderr: stderr.slice(0, 1000),
+		});
+	}
+
+	// Clear proc reference after completion
+	if (activeJobEntry) {
+		activeJobEntry.proc = undefined;
+	}
+
 	return {
 		number: iterNum,
 		startedAt: new Date(iterStart).toISOString(),
@@ -211,6 +264,7 @@ async function executeIteration(
 		exitCode,
 		promiseFound,
 		summary,
+		stderr: stderr.trim() || undefined,
 	};
 }
 
@@ -247,7 +301,10 @@ export class Runner {
 	private onEvent: EventHandler;
 	private memorySearch?: (query: string) => Promise<string[]>;
 	private skillSearch?: (query: string) => Promise<SkillDeployment[]>;
-	private activeJobs: Map<string, { job: Job; aborted: boolean }> = new Map();
+	private activeJobs: Map<
+		string,
+		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
+	> = new Map();
 	private logger = createLogger({ context: { component: "runner" } });
 
 	constructor(options: RunnerOptions) {
@@ -285,13 +342,25 @@ export class Runner {
 	}
 
 	/**
-	 * Stop a running job.
+	 * Stop a running job. Kills the child process if one is active.
 	 */
 	stop(jobId: string): boolean {
 		const entry = this.activeJobs.get(jobId);
 		if (!entry) return false;
 		entry.aborted = true;
 		entry.job.status = "stopped";
+		if (entry.proc) {
+			entry.proc.kill("SIGTERM");
+			// Force kill after 5 seconds if still running
+			const proc = entry.proc;
+			setTimeout(() => {
+				try {
+					proc.kill("SIGKILL");
+				} catch {
+					// Process already exited
+				}
+			}, 5000);
+		}
 		this.emit("job.stopped", entry.job);
 		return true;
 	}
@@ -397,7 +466,14 @@ export class Runner {
 				});
 
 				// Execute iteration
-				const iteration = await executeIteration(job, adapter, env, systemPrompt);
+				const iteration = await executeIteration(
+					job,
+					adapter,
+					env,
+					systemPrompt,
+					this.config.runner.iterationTimeout,
+					entry,
+				);
 
 				// Update job state
 				job.iterations.current = iteration.number;
