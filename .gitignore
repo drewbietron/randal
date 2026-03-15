@@ -5,6 +5,5 @@ dist/
 .randal/
 *.log
 .DS_Store
-bun.lock
 .opencode/
 .ralph/
