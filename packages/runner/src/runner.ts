@@ -15,7 +15,7 @@ import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { type AgentAdapter, getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
-import { findCompletionPromise, generateToken, wrapCommand } from "./sentinel.js";
+import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StruggleConfig, detectStruggle } from "./struggle.js";
 
 export type EventHandler = (event: RunnerEvent) => void;
@@ -142,6 +142,7 @@ async function executeIteration(
 	env: Record<string, string>,
 	systemPrompt: string,
 	iterationTimeoutSecs: number,
+	completionPromiseTag: string,
 	activeJobEntry?: { job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> },
 ): Promise<JobIteration> {
 	const iterStart = Date.now();
@@ -225,20 +226,19 @@ async function executeIteration(
 
 	const duration = Math.round((Date.now() - iterStart) / 1000);
 
-	// Parse token usage if adapter supports it
-	const tokens = adapter.parseUsage?.(stdout) ?? { input: 0, output: 0 };
+	// Parse sentinel markers to extract clean agent output
+	const parsed = parseOutput(stdout, token);
+	const agentOutput = parsed?.output ?? stdout; // Fallback to raw if markers not found
+	const sentinelExitCode = parsed?.exitCode ?? exitCode;
 
-	// Check for completion promise
-	const promiseFound = findCompletionPromise(
-		stdout,
-		"DONE", // will be overridden by config in the loop
-	);
+	// Parse token usage if adapter supports it
+	const tokens = adapter.parseUsage?.(agentOutput) ?? { input: 0, output: 0 };
 
 	// Detect file changes via git diff (simple heuristic)
-	const filesChanged = parseFilesChanged(stdout);
+	const filesChanged = parseFilesChanged(agentOutput);
 
 	// Extract summary (first meaningful line)
-	const summary = extractSummary(stdout);
+	const summary = extractSummary(agentOutput);
 
 	// Log stderr at warn level when non-empty
 	if (stderr.trim()) {
@@ -255,13 +255,16 @@ async function executeIteration(
 		activeJobEntry.proc = undefined;
 	}
 
+	// Check for completion promise using the clean agent output
+	const promiseFound = findCompletionPromise(agentOutput, completionPromiseTag);
+
 	return {
 		number: iterNum,
 		startedAt: new Date(iterStart).toISOString(),
 		duration,
 		filesChanged,
 		tokens,
-		exitCode,
+		exitCode: sentinelExitCode,
 		promiseFound,
 		summary,
 		stderr: stderr.trim() || undefined,
@@ -491,6 +494,7 @@ export class Runner {
 					env,
 					systemPrompt,
 					this.config.runner.iterationTimeout,
+					this.config.runner.completionPromise,
 					entry,
 				);
 
@@ -512,14 +516,8 @@ export class Runner {
 					exitCode: iteration.exitCode,
 				});
 
-				// Check for completion promise
-				if (
-					findCompletionPromise(
-						job.iterations.history.map((h) => h.summary).join("\n"),
-						this.config.runner.completionPromise,
-					) ||
-					iteration.promiseFound
-				) {
+				// Check for completion promise (detected in executeIteration using clean agent output)
+				if (iteration.promiseFound) {
 					job.status = "complete";
 					job.completedAt = new Date().toISOString();
 					job.duration = Math.round((Date.now() - loopStart) / 1000);
