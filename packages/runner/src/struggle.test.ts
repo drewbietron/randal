@@ -74,6 +74,7 @@ describe("detectStruggle", () => {
 			makeIteration({ summary: "stuck on auth", filesChanged: ["a.ts"] }),
 		];
 		const result = detectStruggle(history, defaultConfig);
+		expect(result.isStuck).toBe(true);
 		expect(result.indicators).toContain("Identical summary for 3 iterations");
 	});
 

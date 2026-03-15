@@ -6,7 +6,7 @@ import { parseConfig } from "@randal/core";
 import { Runner } from "@randal/runner";
 
 describe("resume E2E", () => {
-	test("failed job can be resumed with new runner", async () => {
+	test("resumes a failed job with the same prompt and workdir", async () => {
 		const workdir = mkdtempSync(join(tmpdir(), "randal-resume-"));
 		const config = parseConfig(`
 name: test-resume
@@ -19,22 +19,32 @@ credentials:
   allow: []
   inherit: [PATH, HOME, SHELL]
 `);
-		// Script that never completes
-		const failScript = join(workdir, "fail.sh");
-		writeFileSync(failScript, '#!/bin/bash\necho "Working but not done"\n', { mode: 0o755 });
 
-		const runner1 = new Runner({ config });
-		const failedJob = await runner1.execute({ prompt: failScript });
+		// Script that never outputs the promise
+		const scriptPath = join(workdir, "agent.sh");
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Working but not done"\n', { mode: 0o755 });
+
+		// 1. Run a job that fails (max iterations reached without promise)
+		const runner = new Runner({ config });
+		const failedJob = await runner.execute({ prompt: scriptPath });
 		expect(failedJob.status).toBe("failed");
 
-		// Now create a script that completes
-		const successScript = join(workdir, "success.sh");
-		writeFileSync(successScript, '#!/bin/bash\necho "<promise>DONE</promise>"\n', { mode: 0o755 });
+		// 2. Update the script to succeed for the resume
+		writeFileSync(scriptPath, '#!/bin/bash\necho "<promise>DONE</promise>"\n', {
+			mode: 0o755,
+		});
 
-		// Resume by creating a new job with context from the failed one
-		const resumePrompt = successScript;
-		const runner2 = new Runner({ config });
-		const resumedJob = await runner2.execute({ prompt: resumePrompt });
+		// 3. Resume by re-executing with the same prompt/workdir/agent
+		const resumedJob = await runner.execute({
+			prompt: failedJob.prompt,
+			workdir: failedJob.workdir,
+			agent: failedJob.agent,
+		});
+
+		// 4. Verify the resumed job uses the same workdir and prompt
 		expect(resumedJob.status).toBe("complete");
+		expect(resumedJob.workdir).toBe(failedJob.workdir);
+		expect(resumedJob.prompt).toBe(failedJob.prompt);
+		expect(resumedJob.id).not.toBe(failedJob.id); // New job ID
 	});
 });

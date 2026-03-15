@@ -110,6 +110,9 @@ describe("HTTP API", () => {
 		expect(data.skills.dir).toBe("./skills");
 		expect(data.skills.autoDiscover).toBe(true);
 		expect(data.skills.maxPerPrompt).toBe(5);
+		// Verify no raw credential values are exposed
+		const serialized = JSON.stringify(data);
+		expect(serialized).not.toContain("test-token");
 	});
 
 	test("GET / returns dashboard HTML", async () => {
