@@ -31,7 +31,15 @@ gateway:
 }
 
 describe("HTTP API", () => {
-	test("GET /health returns ok", async () => {
+	test("GET /health returns ok without auth", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/health");
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.status).toBe("ok");
+	});
+
+	test("GET /health returns ok with auth too", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/health", {
 			headers: { Authorization: "Bearer test-token" },
@@ -39,12 +47,6 @@ describe("HTTP API", () => {
 		expect(res.status).toBe(200);
 		const data = await res.json();
 		expect(data.status).toBe("ok");
-	});
-
-	test("GET /health requires auth", async () => {
-		const { app } = makeTestApp();
-		const res = await app.request("/health");
-		expect(res.status).toBe(401);
 	});
 
 	test("GET /instance returns info", async () => {

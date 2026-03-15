@@ -74,11 +74,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		);
 	}
 
-	// Protect all routes except root dashboard
+	// Protect all routes except root dashboard and health check
 	app.use("*", async (c, next) => {
 		const path = c.req.path;
-		// Dashboard root is public
-		if (path === "/") {
+		// Dashboard root and health endpoint are public (healthcheck probes send no auth)
+		if (path === "/" || path === "/health") {
 			return next();
 		}
 		if (authToken) {
