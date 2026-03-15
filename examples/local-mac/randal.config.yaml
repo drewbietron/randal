@@ -11,8 +11,9 @@ version: "0.1"
 
 # Identity: who is this agent and what are its constraints?
 identity:
-  persona: |
-    You are a development assistant running on a local Mac.
+  persona: ./IDENTITY.md
+  vars:
+    name: dev-agent
   rules:
     - "ALWAYS verify your work before marking complete"
     - "NEVER modify files outside the allowed workdirs"

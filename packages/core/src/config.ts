@@ -156,6 +156,7 @@ export const configSchema = z.object({
 			systemPrompt: z.string().optional(),
 			knowledge: z.array(z.string()).default([]),
 			rules: z.array(z.string()).default([]),
+			vars: z.record(z.string()).default({}),
 		})
 		.default({}),
 

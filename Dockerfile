@@ -1,27 +1,36 @@
 FROM oven/bun:1
 WORKDIR /app
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
+# System dependencies (including headless Chromium for agent web browsing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     ca-certificates \
+    chromium \
     && rm -rf /var/lib/apt/lists/*
+
+# Chromium environment (headless, no-sandbox for container use)
+ENV CHROME_BIN="/usr/bin/chromium"
+ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium"
+ENV CHROMIUM_FLAGS="--no-sandbox --headless --disable-gpu"
 
 # Install Meilisearch (embedded for agent memory)
 RUN curl -L https://install.meilisearch.com | sh && \
     mv ./meilisearch /usr/local/bin/meilisearch
 
 # Install Claude Code (default agent CLI)
-RUN npm install -g @anthropic-ai/claude-code
+RUN bun install -g @anthropic-ai/claude-code
 
 # Copy Randal source and install dependencies
 COPY package.json bun.lock ./
 COPY packages/ packages/
 RUN bun install --frozen-lockfile
 
-# Create directories
-RUN mkdir -p /app/meili-data /app/workspace /app/knowledge
+# Create directories (including /app/tools/bin for persistent agent-installed binaries)
+RUN mkdir -p /app/meeli-data /app/workspace /app/knowledge /app/tools/bin
+
+# Add /app/tools/bin to PATH so agent-installed binaries are discoverable
+ENV PATH="/app/tools/bin:$PATH"
 
 # Copy entrypoint
 COPY docker/entrypoint.sh /app/entrypoint.sh

@@ -14,6 +14,9 @@ export { RANDAL_VERSION } from "./version.js";
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
 
+export { resolvePromptValue, resolvePromptArray } from "./resolve-prompt.js";
+export type { PromptContext } from "./resolve-prompt.js";
+
 export type {
 	TokenUsage,
 	ToolUseEvent,

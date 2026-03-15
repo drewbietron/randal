@@ -1,0 +1,69 @@
+# Prompt Layers Example
+# Demonstrates all three prompt resolution layers:
+#   - Layer 1: File references with {{var}} template interpolation
+#   - Layer 3: TypeScript/JavaScript code modules
+#   - Layer 0: Inline strings (passthrough)
+#
+# See docs/config-reference.md for full documentation on prompt resolution.
+name: layers-demo
+version: "0.1"
+
+identity:
+  # Layer 1: Markdown file with {{var}} template interpolation
+  persona: ./IDENTITY.md
+
+  # Layer 3: TypeScript code module (conditional logic, dynamic content)
+  systemPrompt: ./instructions.ts
+
+  # Mixed rules: inline strings + file reference
+  rules:
+    - "ALWAYS verify your work before marking complete"
+    - "NEVER modify files outside the workdir"
+    - ./safety-rules.md
+
+  # Knowledge: glob patterns + direct file reference
+  knowledge:
+    - ./knowledge/*.md
+
+  # Template variables available as {{key}} in .md/.txt files
+  vars:
+    name: layers-demo
+    company: Acme Corp
+
+runner:
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 20
+  workdir: .
+
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY]
+  inherit: [PATH, HOME, SHELL, TERM]
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+
+memory:
+  store: file
+  files: [MEMORY.md]
+
+# Layer 1: Heartbeat prompt as a file reference with template vars
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: ./HEARTBEAT.md
+
+# Cron jobs with file-referenced prompts
+cron:
+  jobs:
+    morning-briefing:
+      schedule: "0 8 * * *"
+      prompt: ./HEARTBEAT.md
+      execution: isolated
+      announce: true
+
+tools: []

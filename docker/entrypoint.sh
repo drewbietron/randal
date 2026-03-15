@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure /app/tools/bin is on PATH (belt-and-suspenders with Dockerfile ENV)
+export PATH="/app/tools/bin:$PATH"
+
 # ──────────────────────────────────────────────────────
 # Randal Official Docker Entrypoint
 #

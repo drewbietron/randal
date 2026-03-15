@@ -22,16 +22,130 @@ All string values support `${ENV_VAR}` substitution from the process environment
 
 ---
 
+## 🔄 Prompt Resolution
+
+All prompt-bearing config fields (`identity.persona`, `identity.systemPrompt`, `identity.rules`, `identity.knowledge`, `heartbeat.prompt`, `cron.jobs.*.prompt`, `tools.*.skill`) support a unified three-layer resolution system. Values are resolved at prompt build time, not at config parse time.
+
+### Resolution Layers
+
+Values are checked in this order:
+
+| Layer | Detection | Behavior |
+|-------|-----------|----------|
+| **Layer 3: Code Module** | Ends with `.ts` or `.js` | Dynamic import, call `default(ctx)` export, return result string. |
+| **Layer 1: File Reference** | Starts with `./` or `/`, or ends with `.md` or `.txt` | Read file, then apply `{{var}}` template interpolation. |
+| **Layer 0: Inline Passthrough** | Everything else | Return as-is, no transformation. |
+
+Layer 3 (code module) is checked first, so `./foo.ts` is treated as a code module, not a file reference.
+
+### Template Interpolation (`{{var}}`)
+
+File-loaded content (Layer 1) supports `{{key}}` template interpolation using variables from `identity.vars` plus auto-populated values:
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `name` | `config.name` | Agent instance name |
+| `version` | `config.version` | Config schema version |
+| `date` | Auto-generated | Current ISO date (e.g., `2026-03-15`) |
+| *(user-defined)* | `identity.vars` | Custom key-value pairs from config |
+
+User-defined vars take precedence over auto-populated vars with the same name. Unknown `{{key}}` placeholders are left as-is.
+
+**Important:** `{{var}}` interpolation only applies to file-loaded content (Layer 1). It does **not** apply to code module output (Layer 3) or inline YAML values (Layer 0). Inline YAML values already have `${ENV_VAR}` substitution at config parse time.
+
+### Code Module Contract
+
+Code modules (`.ts`/`.js`) must export a default function:
+
+```typescript
+import type { PromptContext } from "@randal/core";
+
+// For string fields (persona, systemPrompt, heartbeat.prompt, etc.)
+export default function(ctx: PromptContext): string | Promise<string>;
+
+// For rules arrays, modules may also return string[]
+export default function(ctx: PromptContext): string | string[] | Promise<string | string[]>;
+```
+
+### `PromptContext` Interface
+
+```typescript
+interface PromptContext {
+  basePath: string;              // Directory containing randal.config.yaml
+  vars?: Record<string, string>; // Template variables (identity.vars + auto-populated)
+  configName?: string;           // From config.name
+}
+```
+
+### Examples
+
+**Inline string (Layer 0):**
+
+```yaml
+identity:
+  persona: "You are a helpful AI assistant."
+```
+
+**File reference with template vars (Layer 1):**
+
+```yaml
+identity:
+  persona: ./IDENTITY.md
+  vars:
+    name: my-agent
+    company: Acme Corp
+```
+
+Where `IDENTITY.md` contains:
+```markdown
+# {{name}}
+You are {{name}}, built by {{company}}.
+```
+
+**Code module (Layer 3):**
+
+```yaml
+identity:
+  systemPrompt: ./instructions.ts
+```
+
+Where `instructions.ts` contains:
+```typescript
+import type { PromptContext } from "@randal/core";
+
+export default function(ctx: PromptContext): string {
+  const isWeekend = [0, 6].includes(new Date().getDay());
+  return isWeekend
+    ? "Focus on maintenance tasks today."
+    : "Prioritize active development tasks.";
+}
+```
+
+**Mixed rules array:**
+
+```yaml
+identity:
+  rules:
+    - "NEVER delete data"
+    - ./safety-rules.md
+    - ./dynamic-rules.ts
+```
+
+File entries are split by newlines into individual rules. Code modules may return `string` (split by newlines) or `string[]`.
+
+---
+
 ## 🪪 `identity`
 
 Agent identity and knowledge configuration. Defaults to `{}` if omitted.
 
 | Field | Type | Default | Required | Description |
 |-------|------|---------|----------|-------------|
-| `identity.persona` | string | — | No | Agent persona injected into system prompt. |
-| `identity.systemPrompt` | string | — | No | Additional system instructions appended to prompt. |
-| `identity.knowledge` | string[] | `[]` | No | Glob patterns for knowledge files. Contents loaded and injected into system prompt. |
-| `identity.rules` | string[] | `[]` | No | Rules injected as a numbered list into system prompt. |
+| `identity.persona` | string | — | No | Agent persona injected into system prompt. Supports [prompt resolution](#-prompt-resolution). |
+| `identity.systemPrompt` | string | — | No | Additional system instructions appended to prompt. Supports [prompt resolution](#-prompt-resolution). |
+| `identity.knowledge` | string[] | `[]` | No | Glob patterns or file paths for knowledge files. Contents loaded and injected into system prompt. Supports [prompt resolution](#-prompt-resolution). |
+| `identity.rules` | string[] | `[]` | No | Rules injected as a numbered list into system prompt. Each entry supports [prompt resolution](#-prompt-resolution). File entries are split by newlines into individual rules. |
+| `identity.vars` | `Record<string, string>` | `{}` | No | User-defined template variables. Available as `{{key}}` in file-loaded prompts. Auto-populated vars: `name`, `version`, `date`. |
 
 ---
 
