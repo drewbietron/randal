@@ -23,6 +23,10 @@ function makeDeps(overrides: Record<string, unknown> = {}): ChannelDeps {
 		} as unknown as ChannelDeps["config"],
 		runner: {
 			execute: mock(() => Promise.resolve({ id: "abc1", status: "complete" })),
+			submit: mock(() => ({
+				jobId: "abc1",
+				done: Promise.resolve({ id: "abc1", status: "complete" }),
+			})),
 			getActiveJobs: mock(() => [
 				{ id: "abc1", status: "running", iterations: { current: 1 }, maxIterations: 5 },
 			]),

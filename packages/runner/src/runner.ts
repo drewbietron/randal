@@ -327,6 +327,7 @@ export class Runner {
 
 	/**
 	 * Submit and execute a job through the ralph loop.
+	 * Blocks until the job completes.
 	 */
 	async execute(request: JobRequest): Promise<Job> {
 		const job = createJob(request, this.config);
@@ -339,6 +340,24 @@ export class Runner {
 		} finally {
 			this.activeJobs.delete(job.id);
 		}
+	}
+
+	/**
+	 * Submit a job and return the job ID immediately.
+	 * The job runs in the background; use `done` to await completion.
+	 * This eliminates the race condition of needing a job ID before execute() resolves.
+	 */
+	submit(request: JobRequest): { jobId: string; done: Promise<Job> } {
+		const job = createJob(request, this.config);
+		this.activeJobs.set(job.id, { job, aborted: false });
+
+		this.emit("job.queued", job);
+
+		const done = this.runLoop(job).finally(() => {
+			this.activeJobs.delete(job.id);
+		});
+
+		return { jobId: job.id, done };
 	}
 
 	/**

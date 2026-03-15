@@ -99,8 +99,8 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return c.json({ error: "prompt or specFile required" }, 400);
 		}
 
-		// Start job in background
-		const jobPromise = runner.execute({
+		// Submit job — returns immediately with job ID
+		const { jobId, done } = runner.submit({
 			prompt: body.prompt,
 			specFile: body.specFile,
 			agent: body.agent,
@@ -109,22 +109,16 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			workdir: body.workdir,
 		});
 
-		// Wait briefly to get the job ID from the queued event
-		await new Promise((r) => setTimeout(r, 50));
-		const active = runner.getActiveJobs();
-		const latestJob = active[active.length - 1];
-
-		if (latestJob) {
-			// Persist to disk
-			saveJob(latestJob);
-
-			// When job completes, update disk
-			jobPromise.then((job) => saveJob(job)).catch(() => {});
-
-			return c.json({ id: latestJob.id, status: latestJob.status }, 201);
+		// Persist initial state to disk
+		const initialJob = runner.getJob(jobId);
+		if (initialJob) {
+			saveJob(initialJob);
 		}
 
-		return c.json({ error: "Failed to create job" }, 500);
+		// When job completes, update disk
+		done.then((job) => saveJob(job)).catch(() => {});
+
+		return c.json({ id: jobId, status: "queued" }, 201);
 	});
 
 	// Get job

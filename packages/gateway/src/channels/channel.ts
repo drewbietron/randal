@@ -43,22 +43,13 @@ export async function handleCommand(
 	switch (command) {
 		case "run": {
 			if (!args) return "Usage: run: <prompt>";
-			const jobPromise = deps.runner.execute({
+			const { jobId, done } = deps.runner.submit({
 				prompt: args,
 				origin,
 			});
-			// Wait briefly to get the job ID
-			await new Promise((r) => setTimeout(r, 50));
-			const active = deps.runner.getActiveJobs();
-			const latestJob = active[active.length - 1];
-			if (latestJob) {
-				// Let job finish in background
-				jobPromise.catch(() => {});
-				return `Job \`${latestJob.id}\` started`;
-			}
-			// Job may have already completed quickly
-			const result = await jobPromise;
-			return `Job \`${result.id}\` ${result.status}`;
+			// Let job finish in background
+			done.catch(() => {});
+			return `Job \`${jobId}\` started`;
 		}
 
 		case "status": {
@@ -143,22 +134,15 @@ export async function handleCommand(
 				return `Job \`${args}\` is ${oldJob.status}, not resumable`;
 			}
 			// Re-execute with same prompt + origin
-			const resumePromise = deps.runner.execute({
+			const { jobId: resumeJobId, done: resumeDone } = deps.runner.submit({
 				prompt: oldJob.prompt,
 				workdir: oldJob.workdir,
 				agent: oldJob.agent,
 				model: oldJob.model,
 				origin,
 			});
-			await new Promise((r) => setTimeout(r, 50));
-			const resumeActive = deps.runner.getActiveJobs();
-			const resumeLatest = resumeActive[resumeActive.length - 1];
-			if (resumeLatest) {
-				resumePromise.catch(() => {});
-				return `Resuming job \`${args}\` as \`${resumeLatest.id}\`...`;
-			}
-			const resumeResult = await resumePromise;
-			return `Resumed job \`${args}\` as \`${resumeResult.id}\` — ${resumeResult.status}`;
+			resumeDone.catch(() => {});
+			return `Resuming job \`${args}\` as \`${resumeJobId}\`...`;
 		}
 
 		case "help":
