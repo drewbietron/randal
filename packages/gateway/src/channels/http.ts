@@ -235,11 +235,13 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json({ ok: true });
 	});
 
-	// SSE events
+	// SSE events (with event IDs for reconnection support)
 	app.get("/events", (c) => {
 		return streamSSE(c, async (stream) => {
+			let eventId = 0;
 			const unsub = eventBus.subscribe((event: RunnerEvent) => {
 				stream.writeSSE({
+					id: String(++eventId),
 					event: event.type,
 					data: JSON.stringify({
 						jobId: event.jobId,
@@ -248,10 +250,10 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 				});
 			});
 
-			// Keep connection alive
+			// Keep connection alive (15s to survive intermediate proxies)
 			const keepAlive = setInterval(() => {
 				stream.writeSSE({ event: "ping", data: "" });
-			}, 30000);
+			}, 15000);
 
 			stream.onAbort(() => {
 				unsub();

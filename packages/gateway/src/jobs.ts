@@ -1,8 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Job, JobStatus } from "@randal/core";
+import { createLogger } from "@randal/core";
 import { parse, stringify } from "yaml";
+
+const logger = createLogger({ context: { component: "jobs" } });
 
 const JOBS_DIR = join(homedir(), ".randal", "jobs");
 
@@ -29,11 +39,14 @@ function jobPath(id: string): string {
 }
 
 /**
- * Save a job to disk as YAML.
+ * Save a job to disk as YAML. Uses atomic write (temp + rename) to prevent corruption.
  */
 export function saveJob(job: Job): void {
 	ensureDir();
-	writeFileSync(jobPath(job.id), stringify(job), "utf-8");
+	const target = jobPath(job.id);
+	const tmp = `${target}.tmp`;
+	writeFileSync(tmp, stringify(job), "utf-8");
+	renameSync(tmp, target);
 }
 
 /**
@@ -75,8 +88,9 @@ export function listJobs(status?: JobStatus): Job[] {
 
 /**
  * Update a job on disk. Loads, applies updates, saves.
+ * Prevents overwriting immutable fields (id, createdAt).
  */
-export function updateJob(id: string, updates: Partial<Job>): Job | null {
+export function updateJob(id: string, updates: Partial<Omit<Job, "id" | "createdAt">>): Job | null {
 	const job = loadJob(id);
 	if (!job) return null;
 
