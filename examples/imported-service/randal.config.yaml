@@ -1,0 +1,56 @@
+# Imported service example
+# Shows how to import Randal as a dependency in your own application.
+#
+# This pattern is ideal for:
+#   - Adding an AI agent to an existing project
+#   - Deploying alongside your own codebase (e.g., Railway, Fly, etc.)
+#   - Customizing the agent entry point with your own TypeScript code
+#
+# Your Dockerfile controls what ships in the container: codebase, knowledge
+# files, tools, data — whatever your agent needs. Randal just needs this
+# config file and a workdir.
+
+name: my-service-agent
+version: "0.1"
+
+identity:
+  persona: |
+    You are a helpful agent deployed as part of a larger application.
+  knowledge:
+    - ./knowledge/*.md
+  rules:
+    - "NEVER delete production data"
+    - "ALWAYS verify your work before marking complete"
+
+runner:
+  defaultAgent: claude-code
+  defaultModel: claude-sonnet-4
+  workdir: /app/workspace
+  allowedWorkdirs:
+    - /app/workspace
+
+credentials:
+  envFile: ./.env
+  allow: [ANTHROPIC_API_KEY]
+
+sandbox:
+  enforcement: env-scrub
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+
+memory:
+  store: meilisearch
+  url: http://meilisearch.internal:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-my-service
+
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: |
+    Check for pending tasks or items needing attention.
+    Stay silent if nothing requires action.

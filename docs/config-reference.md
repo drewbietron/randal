@@ -45,7 +45,7 @@ Agent execution configuration. The `runner` section is required.
 | `runner.defaultModel` | string | `"anthropic/claude-sonnet-4"` | No | Default model identifier passed to the agent CLI. |
 | `runner.defaultMaxIterations` | number | `20` | No | Maximum iterations per job before marking as failed. |
 | `runner.workdir` | string | — | Yes | Working directory for agent processes. |
-| `runner.allowedWorkdirs` | string[] | — | No | Whitelist of allowed working directories. If set, job workdirs are validated against this list. |
+| `runner.allowedWorkdirs` | string[] | — | No | Allowed working directories. If set, job workdirs are validated against this list before the agent is spawned. A job whose workdir is not within one of these directories is rejected with an error. Path matching is prefix-based and paths are resolved to absolute before comparison. Recommended for container-based deployments to restrict agent filesystem access. |
 | `runner.completionPromise` | string | `"DONE"` | No | Completion marker tag. The runner looks for `<promise>DONE</promise>` in agent output. |
 | `runner.struggle.noChangeThreshold` | number | `3` | No | Iterations with no file changes before the agent is considered stuck. |
 | `runner.struggle.maxRepeatedErrors` | number | `3` | No | Consecutive non-zero exit codes before the agent is considered stuck. |

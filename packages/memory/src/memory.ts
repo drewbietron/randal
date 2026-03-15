@@ -7,6 +7,8 @@ import { MeilisearchStore } from "./stores/meilisearch.js";
 export interface MemoryManagerOptions {
 	config: RandalConfig;
 	basePath?: string;
+	/** Pre-built store instance. When provided, skips config-driven store construction. */
+	store?: MemoryStore;
 }
 
 export class MemoryManager {
@@ -17,7 +19,9 @@ export class MemoryManager {
 	constructor(options: MemoryManagerOptions) {
 		this.config = options.config;
 
-		if (options.config.memory.store === "file") {
+		if (options.store) {
+			this.store = options.store;
+		} else if (options.config.memory.store === "file") {
 			this.store = new FileStore({
 				basePath: options.basePath ?? ".",
 				files: options.config.memory.files,

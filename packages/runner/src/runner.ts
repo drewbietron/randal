@@ -41,9 +41,28 @@ function generateJobId(): string {
 	return randomBytes(4).toString("hex");
 }
 
+function validateWorkdir(workdir: string, config: RandalConfig): void {
+	if (!config.runner.allowedWorkdirs) return;
+
+	const resolved = resolve(workdir);
+	const allowed = config.runner.allowedWorkdirs.some((dir) => {
+		const resolvedDir = resolve(dir);
+		return resolved === resolvedDir || resolved.startsWith(`${resolvedDir}/`);
+	});
+
+	if (!allowed) {
+		throw new Error(
+			`Workdir "${resolved}" is not in allowedWorkdirs: [${config.runner.allowedWorkdirs.join(", ")}]`,
+		);
+	}
+}
+
 function createJob(req: JobRequest, config: RandalConfig): Job {
 	const id = generateJobId();
 	const now = new Date().toISOString();
+
+	const workdir = req.workdir ?? config.runner.workdir;
+	validateWorkdir(workdir, config);
 
 	let prompt = req.prompt ?? "";
 	let spec: Job["spec"];

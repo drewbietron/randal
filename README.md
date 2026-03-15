@@ -288,6 +288,8 @@ docker compose up --build
 
 ## 📦 Programmatic Usage
 
+Import `@randal/harness` to embed Randal in your own application. This is ideal for adding an AI agent to an existing project and deploying it alongside your own codebase.
+
 ```typescript
 import { createRandal } from "@randal/harness";
 
@@ -306,6 +308,34 @@ await agent.runner.execute({
 // Clean shutdown
 agent.stop();
 ```
+
+### Importing into an existing project
+
+Clone Randal into your Docker image and reference `@randal/harness` as a local dependency:
+
+```dockerfile
+# Your Dockerfile
+FROM oven/bun:1
+RUN git clone --depth 1 https://github.com/your-org/randal.git /opt/randal
+WORKDIR /opt/randal && RUN bun install --frozen-lockfile
+
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+COPY . .
+CMD ["bun", "run", "index.ts"]
+```
+
+```json
+// Your package.json
+{
+  "dependencies": {
+    "@randal/harness": "file:/opt/randal/packages/harness"
+  }
+}
+```
+
+Your Dockerfile controls what ships in the container — codebase, knowledge files, tools, data. Randal just needs its config and a workdir. See [`examples/imported-service/`](examples/imported-service/) for the full pattern and [SECURITY.md](SECURITY.md) for deployment mode guidance.
 
 ---
 
@@ -374,6 +404,7 @@ agent.stop();
 | [`examples/cloud-railway/`](examples/cloud-railway/) | 🚂 Railway deployment with Dockerfile |
 | [`examples/multi-agent-posse/`](examples/multi-agent-posse/) | 🤝 Two agents sharing memory — the posse in action |
 | [`examples/customer-support/`](examples/customer-support/) | 🎧 Identity, knowledge base, cron jobs, webhook hooks |
+| [`examples/imported-service/`](examples/imported-service/) | 📦 Import Randal as a dependency in your own app |
 
 ---
 
@@ -395,6 +426,7 @@ agent.stop();
 | [CLI Reference](docs/cli-reference.md) | Every command, every flag, HTTP API endpoints |
 | [Config Reference](docs/config-reference.md) | All YAML config options with examples |
 | [Deployment Guide](docs/deployment-guide.md) | Mac Mini, Railway, Docker, Meilisearch setup |
+| [Security Model](SECURITY.md) | Deployment modes, sandbox enforcement, isolation boundaries |
 
 ---
 
