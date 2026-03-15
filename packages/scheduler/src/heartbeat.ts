@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { createLogger } from "@randal/core";
-import type { RunnerEvent } from "@randal/core";
+import { createLogger, resolvePromptValue } from "@randal/core";
+import type { PromptContext, RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
@@ -84,6 +84,8 @@ export interface HeartbeatOptions {
 	onEvent?: HeartbeatEventHandler;
 	configBasePath?: string;
 	memorySearch?: (query: string) => Promise<string[]>;
+	/** Template variables for prompt resolution (from identity.vars + auto-populated) */
+	promptVars?: Record<string, string>;
 }
 
 // ---- Active hours logic ----
@@ -193,6 +195,7 @@ export class Heartbeat {
 	private onEvent: HeartbeatEventHandler;
 	private configBasePath: string;
 	private memorySearch?: (query: string) => Promise<string[]>;
+	private promptVars?: Record<string, string>;
 
 	private intervalMs: number;
 	private timer: ReturnType<typeof setInterval> | null = null;
@@ -209,6 +212,7 @@ export class Heartbeat {
 		this.onEvent = options.onEvent ?? (() => {});
 		this.configBasePath = options.configBasePath ?? ".";
 		this.memorySearch = options.memorySearch;
+		this.promptVars = options.promptVars;
 		this.intervalMs = parseDuration(this.config.every);
 
 		// Restore persisted state
@@ -312,7 +316,7 @@ export class Heartbeat {
 		logger.info("Heartbeat tick", { tickNumber });
 
 		// Load heartbeat prompt
-		let prompt = this.loadPrompt();
+		let prompt = await this.loadPrompt();
 
 		// Append additional context (from triggerNow)
 		if (additionalContext) {
@@ -370,28 +374,27 @@ export class Heartbeat {
 	}
 
 	/**
-	 * Load the heartbeat prompt from file or use inline string.
+	 * Load the heartbeat prompt using the shared prompt resolver.
+	 * Supports file references (.md, .txt), code modules (.ts, .js),
+	 * template interpolation ({{var}}), and inline strings.
 	 */
-	private loadPrompt(): string {
+	private async loadPrompt(): Promise<string> {
 		const promptValue = this.config.prompt;
+		const ctx: PromptContext = {
+			basePath: this.configBasePath,
+			vars: this.promptVars,
+			configName: this.promptVars?.name,
+		};
 
-		// Check if it looks like a file path
-		if (
-			promptValue.startsWith("./") ||
-			promptValue.startsWith("/") ||
-			promptValue.endsWith(".md") ||
-			promptValue.endsWith(".txt")
-		) {
-			const filePath = resolve(this.configBasePath, promptValue);
-			if (existsSync(filePath)) {
-				return readFileSync(filePath, "utf-8");
-			}
-			logger.warn("Heartbeat prompt file not found, using default", { path: filePath });
+		try {
+			return await resolvePromptValue(promptValue, ctx);
+		} catch (err) {
+			logger.warn("Heartbeat prompt resolution failed, using default", {
+				prompt: promptValue,
+				error: err instanceof Error ? err.message : String(err),
+			});
 			return "Heartbeat check-in: Review pending tasks and current status.";
 		}
-
-		// Treat as inline prompt
-		return promptValue;
 	}
 
 	/**

@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createLogger } from "@randal/core";
-import type { RunnerEvent } from "@randal/core";
+import { createLogger, resolvePromptValue } from "@randal/core";
+import type { PromptContext, RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { Heartbeat, WakeItem } from "./heartbeat.js";
@@ -34,6 +34,10 @@ export interface CronSchedulerOptions {
 	runner: Runner;
 	heartbeat?: Heartbeat;
 	onEvent?: CronEventHandler;
+	/** Directory containing the config file (for prompt file resolution) */
+	configBasePath?: string;
+	/** Template variables for prompt resolution (from identity.vars + auto-populated) */
+	promptVars?: Record<string, string>;
 }
 
 // ---- Cron expression matching ----
@@ -169,6 +173,8 @@ export class CronScheduler {
 	private runner: Runner;
 	private heartbeat?: Heartbeat;
 	private onEvent: CronEventHandler;
+	private configBasePath: string;
+	private promptVars?: Record<string, string>;
 	private jobStates: Map<string, CronJobState> = new Map();
 	private timers: Map<string, ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>> =
 		new Map();
@@ -179,6 +185,8 @@ export class CronScheduler {
 		this.runner = options.runner;
 		this.heartbeat = options.heartbeat;
 		this.onEvent = options.onEvent ?? (() => {});
+		this.configBasePath = options.configBasePath ?? ".";
+		this.promptVars = options.promptVars;
 
 		// Load persisted state
 		const persisted = loadPersistedState();
@@ -403,6 +411,7 @@ export class CronScheduler {
 
 	/**
 	 * Fire a cron job — either queue to heartbeat (main) or execute directly (isolated).
+	 * Resolves the prompt through the shared resolver (supports file refs, code modules, templates).
 	 */
 	private async fireJob(name: string): Promise<void> {
 		const state = this.jobStates.get(name);
@@ -416,10 +425,29 @@ export class CronScheduler {
 		this.emitEvent("cron.fired", { cronJobName: name });
 		logger.info("Cron job fired", { name, execution: config.execution });
 
+		// Resolve the prompt through the layered resolver
+		const ctx: PromptContext = {
+			basePath: this.configBasePath,
+			vars: this.promptVars,
+			configName: this.promptVars?.name,
+		};
+
+		let resolvedPrompt: string;
+		try {
+			resolvedPrompt = await resolvePromptValue(config.prompt, ctx);
+		} catch (err) {
+			logger.warn("Cron prompt resolution failed, using raw prompt", {
+				name,
+				prompt: config.prompt,
+				error: err instanceof Error ? err.message : String(err),
+			});
+			resolvedPrompt = config.prompt;
+		}
+
 		if (config.execution === "main" && this.heartbeat) {
 			// Queue for next heartbeat
 			const wakeItem: WakeItem = {
-				text: `[Cron: ${name}] ${config.prompt}`,
+				text: `[Cron: ${name}] ${resolvedPrompt}`,
 				source: "cron",
 				timestamp: new Date().toISOString(),
 			};
@@ -428,7 +456,7 @@ export class CronScheduler {
 			// Execute directly as isolated job
 			try {
 				await this.runner.execute({
-					prompt: config.prompt,
+					prompt: resolvedPrompt,
 					model: config.model,
 					maxIterations: 5,
 				});

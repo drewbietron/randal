@@ -64,6 +64,7 @@ function buildConfigYaml(opts: {
 	discordAllowFrom?: string[];
 	imessageEnabled?: boolean;
 	imessageAllowFrom?: string[];
+	useTypeScriptIdentity?: boolean;
 }): string {
 	const lines: string[] = [
 		"# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -75,8 +76,9 @@ function buildConfigYaml(opts: {
 		'version: "0.1"',
 		"",
 		"identity:",
-		"  persona: |",
-		`    ${opts.persona ?? "You are a helpful AI assistant."}`,
+		`  persona: ${opts.useTypeScriptIdentity ? "./identity.ts" : "./IDENTITY.md"}`,
+		"  vars:",
+		`    name: ${opts.name}`,
 		"  rules:",
 		'    - "ALWAYS verify your work before marking complete"',
 		"",
@@ -238,6 +240,48 @@ function generateEnvTemplate(opts?: {
 
 	lines.push("");
 	return lines.join("\n");
+}
+
+// ── Prompt Template Files ───────────────────────────────────────────────
+
+const IDENTITY_MD_TEMPLATE = `# {{name}}
+
+You are {{name}}, a helpful AI assistant.
+
+## Responsibilities
+- Respond to user requests accurately and concisely
+- Escalate issues you cannot resolve
+- Maintain a record of your work in MEMORY.md
+
+## Tone
+- Professional and friendly
+- Clear and concise
+- Honest about limitations
+`;
+
+const HEARTBEAT_MD_TEMPLATE = `# Heartbeat Checklist
+
+- Check for any failed jobs that may need retry or human attention
+- Review memory for tasks marked as follow-up
+- If any background process crashed, log it
+- If idle for 8+ hours, send a brief status update
+`;
+
+function buildIdentityTsTemplate(name: string): string {
+	return `import type { PromptContext } from "@randal/core";
+
+export default function buildIdentity(ctx: PromptContext): string {
+	return \`# \${ctx.vars?.name ?? "Agent"}
+
+You are \${ctx.vars?.name ?? "a helpful AI assistant"}.
+
+## Responsibilities
+- Respond to user requests accurately and concisely
+- Escalate issues you cannot resolve
+- Maintain a record of your work in MEMORY.md
+\`;
+}
+`;
 }
 
 // ── ASCII Banner ────────────────────────────────────────────────────────
@@ -403,6 +447,11 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 					message: "Agent persona (one-liner)",
 					placeholder: "You are a senior engineer who writes clean, tested code.",
 					defaultValue: "You are a helpful AI assistant.",
+				}),
+			useTypeScriptIdentity: () =>
+				confirm({
+					message: "Use a TypeScript module for identity? (instead of Markdown template)",
+					initialValue: false,
 				}),
 		},
 		{
@@ -628,6 +677,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		discordAllowFrom,
 		imessageEnabled,
 		imessageAllowFrom,
+		useTypeScriptIdentity: identity.useTypeScriptIdentity as boolean,
 	});
 }
 
@@ -649,6 +699,7 @@ async function writeConfig(opts: {
 	discordAllowFrom?: string[];
 	imessageEnabled?: boolean;
 	imessageAllowFrom?: string[];
+	useTypeScriptIdentity?: boolean;
 }): Promise<void> {
 	const s = spinner();
 	s.start("Writing configuration...");
@@ -656,6 +707,18 @@ async function writeConfig(opts: {
 	const configYaml = buildConfigYaml(opts);
 
 	writeFileSync(resolve("randal.config.yaml"), configYaml, "utf-8");
+
+	// Write IDENTITY.md or identity.ts
+	if (opts.useTypeScriptIdentity) {
+		writeFileSync(resolve("identity.ts"), buildIdentityTsTemplate(opts.name), "utf-8");
+	} else {
+		writeFileSync(resolve("IDENTITY.md"), IDENTITY_MD_TEMPLATE, "utf-8");
+	}
+
+	// Write HEARTBEAT.md when heartbeat is enabled
+	if (opts.heartbeatEnabled) {
+		writeFileSync(resolve("HEARTBEAT.md"), HEARTBEAT_MD_TEMPLATE, "utf-8");
+	}
 
 	let envCreated = false;
 	if (!existsSync(resolve(".env"))) {
@@ -677,6 +740,14 @@ async function writeConfig(opts: {
 
 	// Summary
 	const summaryLines = ["📄 randal.config.yaml"];
+	if (opts.useTypeScriptIdentity) {
+		summaryLines.push("📄 identity.ts");
+	} else {
+		summaryLines.push("📄 IDENTITY.md");
+	}
+	if (opts.heartbeatEnabled) {
+		summaryLines.push("📄 HEARTBEAT.md");
+	}
 	if (envCreated) {
 		summaryLines.push("📄 .env (template)");
 	}
@@ -792,6 +863,9 @@ function initNonInteractive(): void {
 
 	writeFileSync(resolve("randal.config.yaml"), configYaml, "utf-8");
 	console.log("  ✅ Created randal.config.yaml");
+
+	writeFileSync(resolve("IDENTITY.md"), IDENTITY_MD_TEMPLATE, "utf-8");
+	console.log("  ✅ Created IDENTITY.md");
 
 	if (!existsSync(resolve(".env"))) {
 		writeFileSync(resolve(".env"), generateEnvTemplate(), "utf-8");

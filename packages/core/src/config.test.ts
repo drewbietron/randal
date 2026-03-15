@@ -36,6 +36,7 @@ describe("configSchema", () => {
 		expect(result.tools).toEqual([]);
 		expect(result.identity.knowledge).toEqual([]);
 		expect(result.identity.rules).toEqual([]);
+		expect(result.identity.vars).toEqual({});
 	});
 
 	test("rejects config without name", () => {
@@ -115,6 +116,35 @@ describe("configSchema", () => {
 		expect(result.runner.defaultAgent).toBe("claude-code");
 		expect(result.gateway.channels).toHaveLength(1);
 		expect(result.tools).toHaveLength(1);
+	});
+
+	test("validates identity.vars as Record<string, string>", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			identity: {
+				persona: "Test agent",
+				vars: {
+					name: "my-agent",
+					company: "Acme Corp",
+					environment: "production",
+				},
+			},
+		});
+		expect(result.identity.vars).toEqual({
+			name: "my-agent",
+			company: "Acme Corp",
+			environment: "production",
+		});
+	});
+
+	test("identity.vars defaults to empty object", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			identity: {
+				persona: "Test agent",
+			},
+		});
+		expect(result.identity.vars).toEqual({});
 	});
 
 	test("validates discord channel", () => {

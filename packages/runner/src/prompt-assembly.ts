@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { DelegationResult, JobPlanTask, RandalConfig } from "@randal/core";
-import { createLogger } from "@randal/core";
+import type { DelegationResult, JobPlanTask, PromptContext, RandalConfig } from "@randal/core";
+import { createLogger, resolvePromptArray, resolvePromptValue } from "@randal/core";
 
 const logger = createLogger({ context: { component: "prompt-assembly" } });
 
@@ -52,15 +52,31 @@ export async function loadKnowledgeFiles(patterns: string[], basePath: string): 
 
 /**
  * Load skill documents for available tools.
+ * Supports static .md files, .ts/.js code modules via resolvePromptValue().
  */
-export function loadSkillDocs(tools: RandalConfig["tools"], basePath: string): string[] {
+export async function loadSkillDocs(
+	tools: RandalConfig["tools"],
+	basePath: string,
+	ctx?: PromptContext,
+): Promise<string[]> {
 	const results: string[] = [];
 
 	for (const tool of tools) {
 		if (!tool.skill) continue;
 
-		// Check if tool binary exists on system
-		// For now, just load the skill file if it exists
+		// Use resolver if context is available (supports .ts/.js modules + templates)
+		if (ctx) {
+			try {
+				const content = await resolvePromptValue(tool.skill, ctx);
+				results.push(`--- Skill: ${tool.name} ---\n${content}`);
+			} catch {
+				// Skip unresolvable skills
+				logger.debug("Failed to resolve skill", { tool: tool.name, skill: tool.skill });
+			}
+			continue;
+		}
+
+		// Fallback: direct file read (backward compat for callers without ctx)
 		const skillPath = resolve(basePath, tool.skill);
 		if (existsSync(skillPath)) {
 			try {
@@ -213,7 +229,17 @@ export function assemblePrompt(parts: PromptParts): string {
 }
 
 /**
+ * Check if a string contains glob characters.
+ */
+function isGlobPattern(value: string): boolean {
+	return value.includes("*") || value.includes("?") || value.includes("[");
+}
+
+/**
  * Build the full system prompt from a config and optional runtime context.
+ *
+ * Constructs a PromptContext and resolves all prompt-bearing config fields
+ * through the layered resolver (code module → file ref → inline passthrough).
  */
 export async function buildSystemPrompt(
 	config: RandalConfig,
@@ -228,13 +254,71 @@ export async function buildSystemPrompt(
 		includeProtocol?: boolean;
 	} = {},
 ): Promise<string> {
-	const knowledge = await loadKnowledgeFiles(config.identity.knowledge, basePath);
-	const skills = loadSkillDocs(config.tools, basePath);
+	// Construct PromptContext with auto-populated vars
+	const ctx: PromptContext = {
+		basePath,
+		vars: {
+			name: config.name,
+			version: config.version,
+			date: new Date().toISOString().split("T")[0],
+			...((config.identity as { vars?: Record<string, string> }).vars ?? {}),
+		},
+		configName: config.name,
+	};
+
+	// Resolve persona through the prompt resolver
+	let resolvedPersona = config.identity.persona;
+	if (resolvedPersona) {
+		resolvedPersona = await resolvePromptValue(resolvedPersona, ctx);
+	}
+
+	// Resolve systemPrompt through the prompt resolver
+	let resolvedSystemPrompt = config.identity.systemPrompt;
+	if (resolvedSystemPrompt) {
+		resolvedSystemPrompt = await resolvePromptValue(resolvedSystemPrompt, ctx);
+	}
+
+	// Resolve rules through the array resolver (handles inline + file + module)
+	const resolvedRules = config.identity.rules.length > 0
+		? await resolvePromptArray(config.identity.rules, ctx, { mode: "rules" })
+		: [];
+
+	// Resolve knowledge: split into glob patterns vs file/module refs
+	const knowledgePatterns = config.identity.knowledge;
+	const globPatterns: string[] = [];
+	const resolvedKnowledgeEntries: string[] = [];
+
+	for (const pattern of knowledgePatterns) {
+		if (isGlobPattern(pattern)) {
+			globPatterns.push(pattern);
+		} else {
+			// Resolve file/module ref and wrap with header
+			try {
+				const content = await resolvePromptValue(pattern, ctx);
+				resolvedKnowledgeEntries.push(`--- ${pattern} ---\n${content}`);
+			} catch (err) {
+				logger.debug("Failed to resolve knowledge entry", {
+					pattern,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+	}
+
+	// Load glob-based knowledge files (existing behavior)
+	const globKnowledge = globPatterns.length > 0
+		? await loadKnowledgeFiles(globPatterns, basePath)
+		: [];
+
+	const knowledge = [...globKnowledge, ...resolvedKnowledgeEntries];
+
+	// Load skill docs through the resolver
+	const skills = await loadSkillDocs(config.tools, basePath, ctx);
 
 	return assemblePrompt({
-		persona: config.identity.persona,
-		systemPrompt: config.identity.systemPrompt,
-		rules: config.identity.rules,
+		persona: resolvedPersona,
+		systemPrompt: resolvedSystemPrompt,
+		rules: resolvedRules,
 		knowledge,
 		skills,
 		discoveredSkills: options.skillContext ?? [],

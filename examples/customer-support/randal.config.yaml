@@ -11,9 +11,9 @@ version: "0.1"
 
 # Identity: customer support persona with strict guardrails
 identity:
-  persona: |
-    You are a customer support agent. You help users with their questions,
-    troubleshoot issues, and escalate complex problems appropriately.
+  persona: ./IDENTITY.md
+  vars:
+    name: support-agent
   knowledge:
     - ./knowledge/*.md
   rules:
@@ -53,9 +53,7 @@ memory:
 heartbeat:
   enabled: true
   every: 15m
-  prompt: |
-    Check for unresolved support tickets or follow-ups needed.
-    Review any new knowledge base articles that may need indexing.
+  prompt: ./HEARTBEAT.md
   model: anthropic/claude-haiku-4
 
 # Cron: daily summaries and weekly reports
