@@ -138,7 +138,7 @@ describe("DEFAULT_DOMAIN_KEYWORDS", () => {
 	});
 
 	test("each domain has at least 5 keywords", () => {
-		for (const [domain, keywords] of Object.entries(DEFAULT_DOMAIN_KEYWORDS)) {
+		for (const [_domain, keywords] of Object.entries(DEFAULT_DOMAIN_KEYWORDS)) {
 			expect(keywords.length).toBeGreaterThanOrEqual(5);
 		}
 	});

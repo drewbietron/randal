@@ -38,8 +38,8 @@ function computeWeightedScores(
 	halfLifeDays: number,
 ): { passRate: number; passCount: number; failCount: number; partialCount: number } {
 	let weightedPass = 0;
-	let weightedFail = 0;
-	let weightedPartial = 0;
+	let _weightedFail = 0;
+	let _weightedPartial = 0;
 	let totalWeight = 0;
 
 	for (const ann of annotations) {
@@ -49,9 +49,9 @@ function computeWeightedScores(
 		if (ann.verdict === "pass") {
 			weightedPass += weight;
 		} else if (ann.verdict === "fail") {
-			weightedFail += weight;
+			_weightedFail += weight;
 		} else {
-			weightedPartial += weight;
+			_weightedPartial += weight;
 		}
 	}
 

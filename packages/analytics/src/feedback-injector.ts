@@ -6,7 +6,7 @@
 import type { Annotation, ReliabilityScore } from "@randal/core";
 import { createLogger } from "@randal/core";
 
-const logger = createLogger({ context: { component: "analytics:feedback" } });
+const _logger = createLogger({ context: { component: "analytics:feedback" } });
 
 /** Minimum annotations before injecting feedback */
 const MIN_ANNOTATIONS_FOR_FEEDBACK = 10;

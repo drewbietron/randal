@@ -1,7 +1,7 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PromptContext } from "./resolve-prompt.js";
 import { resolvePromptArray, resolvePromptValue } from "./resolve-prompt.js";
 
@@ -151,19 +151,16 @@ describe("resolvePromptValue", () => {
 		});
 
 		test("throws on missing .ts module", async () => {
-			await expect(
-				resolvePromptValue("./nonexistent.ts", ctx),
-			).rejects.toThrow(/Failed to load code module/);
+			await expect(resolvePromptValue("./nonexistent.ts", ctx)).rejects.toThrow(
+				/Failed to load code module/,
+			);
 		});
 
 		test("throws when module has no default export function", async () => {
-			writeFileSync(
-				join(tempDir, "bad-module.ts"),
-				`export const foo = "bar";`,
+			writeFileSync(join(tempDir, "bad-module.ts"), `export const foo = "bar";`);
+			await expect(resolvePromptValue("./bad-module.ts", ctx)).rejects.toThrow(
+				/does not export a default function/,
 			);
-			await expect(
-				resolvePromptValue("./bad-module.ts", ctx),
-			).rejects.toThrow(/does not export a default function/);
 		});
 
 		test("does NOT apply template interpolation to code module output", async () => {
@@ -179,10 +176,7 @@ describe("resolvePromptValue", () => {
 		test(".ts extension takes priority over file ref detection", async () => {
 			// ./foo.ts matches both isFileRef (starts with ./) and isCodeModule (.ts)
 			// Code module should win
-			writeFileSync(
-				join(tempDir, "foo.ts"),
-				`export default function() { return "module wins"; }`,
-			);
+			writeFileSync(join(tempDir, "foo.ts"), `export default function() { return "module wins"; }`);
 			const result = await resolvePromptValue("./foo.ts", ctx);
 			expect(result).toBe("module wins");
 		});
@@ -203,10 +197,7 @@ describe("resolvePromptValue", () => {
 describe("resolvePromptArray", () => {
 	describe("rules mode", () => {
 		test("passes inline strings through as-is", async () => {
-			const result = await resolvePromptArray(
-				["NEVER delete data", "ALWAYS verify"],
-				ctx,
-			);
+			const result = await resolvePromptArray(["NEVER delete data", "ALWAYS verify"], ctx);
 			expect(result).toEqual(["NEVER delete data", "ALWAYS verify"]);
 		});
 
@@ -216,33 +207,19 @@ describe("resolvePromptArray", () => {
 				"NEVER expose PII\nALWAYS log actions\nBe concise",
 			);
 			const result = await resolvePromptArray(["./safety-rules.md"], ctx);
-			expect(result).toEqual([
-				"NEVER expose PII",
-				"ALWAYS log actions",
-				"Be concise",
-			]);
+			expect(result).toEqual(["NEVER expose PII", "ALWAYS log actions", "Be concise"]);
 		});
 
 		test("filters out empty lines from file", async () => {
-			writeFileSync(
-				join(tempDir, "rules.md"),
-				"Rule A\n\nRule B\n\n\nRule C\n",
-			);
+			writeFileSync(join(tempDir, "rules.md"), "Rule A\n\nRule B\n\n\nRule C\n");
 			const result = await resolvePromptArray(["./rules.md"], ctx);
 			expect(result).toEqual(["Rule A", "Rule B", "Rule C"]);
 		});
 
 		test("handles mixed inline and file entries", async () => {
 			writeFileSync(join(tempDir, "safety-rules.md"), "No PII\nNo deletion");
-			const result = await resolvePromptArray(
-				["NEVER delete data", "./safety-rules.md"],
-				ctx,
-			);
-			expect(result).toEqual([
-				"NEVER delete data",
-				"No PII",
-				"No deletion",
-			]);
+			const result = await resolvePromptArray(["NEVER delete data", "./safety-rules.md"], ctx);
+			expect(result).toEqual(["NEVER delete data", "No PII", "No deletion"]);
 		});
 
 		test("loads .ts module returning string array", async () => {
@@ -264,9 +241,9 @@ describe("resolvePromptArray", () => {
 		});
 
 		test("throws on missing file in array", async () => {
-			await expect(
-				resolvePromptArray(["./missing-rules.md"], ctx),
-			).rejects.toThrow(/Failed to read prompt file/);
+			await expect(resolvePromptArray(["./missing-rules.md"], ctx)).rejects.toThrow(
+				/Failed to read prompt file/,
+			);
 		});
 
 		test("interpolates templates in file content for rules", async () => {
@@ -275,30 +252,21 @@ describe("resolvePromptArray", () => {
 				"{{name}} must always log\n{{company}} policy applies",
 			);
 			const result = await resolvePromptArray(["./var-rules.md"], ctx);
-			expect(result).toEqual([
-				"test-agent must always log",
-				"Acme Corp policy applies",
-			]);
+			expect(result).toEqual(["test-agent must always log", "Acme Corp policy applies"]);
 		});
 	});
 
 	describe("knowledge mode", () => {
 		test("passes glob patterns through as-is", async () => {
-			const result = await resolvePromptArray(
-				["./knowledge/*.md", "**/*.txt"],
-				ctx,
-				{ mode: "knowledge" },
-			);
+			const result = await resolvePromptArray(["./knowledge/*.md", "**/*.txt"], ctx, {
+				mode: "knowledge",
+			});
 			expect(result).toEqual(["./knowledge/*.md", "**/*.txt"]);
 		});
 
 		test("resolves file refs with header wrapper", async () => {
 			writeFileSync(join(tempDir, "overview.md"), "Overview content");
-			const result = await resolvePromptArray(
-				["./overview.md"],
-				ctx,
-				{ mode: "knowledge" },
-			);
+			const result = await resolvePromptArray(["./overview.md"], ctx, { mode: "knowledge" });
 			expect(result).toEqual(["--- ./overview.md ---\nOverview content"]);
 		});
 
@@ -307,25 +275,16 @@ describe("resolvePromptArray", () => {
 				join(tempDir, "kb.ts"),
 				`export default function() { return "Dynamic knowledge"; }`,
 			);
-			const result = await resolvePromptArray(
-				["./kb.ts"],
-				ctx,
-				{ mode: "knowledge" },
-			);
+			const result = await resolvePromptArray(["./kb.ts"], ctx, { mode: "knowledge" });
 			expect(result).toEqual(["--- ./kb.ts ---\nDynamic knowledge"]);
 		});
 
 		test("mixes glob patterns with file refs", async () => {
 			writeFileSync(join(tempDir, "static.md"), "Static info");
-			const result = await resolvePromptArray(
-				["./knowledge/*.md", "./static.md"],
-				ctx,
-				{ mode: "knowledge" },
-			);
-			expect(result).toEqual([
-				"./knowledge/*.md",
-				"--- ./static.md ---\nStatic info",
-			]);
+			const result = await resolvePromptArray(["./knowledge/*.md", "./static.md"], ctx, {
+				mode: "knowledge",
+			});
+			expect(result).toEqual(["./knowledge/*.md", "--- ./static.md ---\nStatic info"]);
 		});
 	});
 });

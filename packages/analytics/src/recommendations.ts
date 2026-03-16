@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import type { Annotation, Recommendation, ReliabilityScore } from "@randal/core";
 import { createLogger } from "@randal/core";
 
-const logger = createLogger({ context: { component: "analytics:recommendations" } });
+const _logger = createLogger({ context: { component: "analytics:recommendations" } });
 
 /** Minimum annotations before generating recommendations */
 const MIN_ANNOTATIONS = 10;

@@ -75,8 +75,8 @@ describe("mesh routing integration", () => {
 		});
 
 		expect(decision).not.toBeNull();
-		expect(decision!.instance.instanceId).toBe("inst-frontend");
-		expect(decision!.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.instance.instanceId).toBe("inst-frontend");
+		expect(decision?.breakdown.specializationScore).toBe(1.0);
 	});
 
 	test("routeTask selects backend-specialized instance for backend task", async () => {
@@ -103,8 +103,8 @@ describe("mesh routing integration", () => {
 		});
 
 		expect(decision).not.toBeNull();
-		expect(decision!.instance.instanceId).toBe("inst-backend");
-		expect(decision!.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.instance.instanceId).toBe("inst-backend");
+		expect(decision?.breakdown.specializationScore).toBe(1.0);
 	});
 
 	test("routeTask prefers idle instances over busy ones", async () => {
@@ -136,7 +136,7 @@ describe("mesh routing integration", () => {
 
 		expect(decision).not.toBeNull();
 		// The idle instance should win due to higher load score
-		expect(decision!.instance.instanceId).toBe("inst-idle");
+		expect(decision?.instance.instanceId).toBe("inst-idle");
 	});
 
 	test("routeTask returns null for unhealthy instances", async () => {

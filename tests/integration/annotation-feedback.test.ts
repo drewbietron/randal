@@ -34,8 +34,8 @@ describe("annotation feedback loop integration", () => {
 
 		const retrieved = await store.getByJobId("job-1");
 		expect(retrieved).not.toBeNull();
-		expect(retrieved!.id).toBe("ann-1");
-		expect(retrieved!.verdict).toBe("pass");
+		expect(retrieved?.id).toBe("ann-1");
+		expect(retrieved?.verdict).toBe("pass");
 
 		const count = await store.count();
 		expect(count).toBe(1);
@@ -68,9 +68,9 @@ describe("annotation feedback loop integration", () => {
 		// Check overall score exists
 		const overall = scores.find((s) => s.dimension === "overall");
 		expect(overall).toBeDefined();
-		expect(overall!.totalAnnotations).toBe(15);
-		expect(overall!.passRate).toBeGreaterThan(0);
-		expect(overall!.passRate).toBeLessThan(1);
+		expect(overall?.totalAnnotations).toBe(15);
+		expect(overall?.passRate).toBeGreaterThan(0);
+		expect(overall?.passRate).toBeLessThan(1);
 
 		// Check per-agent scores
 		const agentScores = scores.filter((s) => s.dimension === "agent");
