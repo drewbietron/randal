@@ -689,3 +689,157 @@ memory:
     enabled: true
     maxResults: 5
 ```
+
+---
+
+## 🎙️ Voice & Video
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `voice.enabled` | boolean | `false` | Enable voice/video features |
+| `voice.livekit.url` | string | `""` | LiveKit server URL |
+| `voice.livekit.apiKey` | string | `""` | LiveKit API key |
+| `voice.livekit.apiSecret` | string | `""` | LiveKit API secret |
+| `voice.twilio.accountSid` | string | `""` | Twilio Account SID |
+| `voice.twilio.authToken` | string | `""` | Twilio Auth Token |
+| `voice.twilio.phoneNumber` | string | `""` | Twilio phone number |
+| `voice.stt.provider` | `"deepgram"` \| `"whisper"` \| `"assemblyai"` | `"deepgram"` | Speech-to-text provider |
+| `voice.stt.model` | string | — | STT model name |
+| `voice.stt.apiKey` | string | `""` | STT provider API key |
+| `voice.tts.provider` | `"elevenlabs"` \| `"cartesia"` \| `"openai"` \| `"edge"` | `"elevenlabs"` | Text-to-speech provider |
+| `voice.tts.voice` | string | — | TTS voice ID |
+| `voice.tts.apiKey` | string | `""` | TTS provider API key |
+| `voice.turnDetection.mode` | `"auto"` \| `"manual"` | `"auto"` | Turn detection mode |
+| `voice.video.enabled` | boolean | `false` | Enable video features |
+| `voice.video.visionModel` | string | `"gpt-4o"` | Vision model for processing screen shares |
+| `voice.video.publishScreen` | boolean | `false` | Publish agent screen as video track |
+| `voice.video.recordSessions` | boolean | `false` | Record voice/video sessions |
+| `voice.video.recordPath` | string | `"./recordings"` | Path to save recordings |
+
+---
+
+## 🌐 Multi-Instance Mesh
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `mesh.enabled` | boolean | `false` | Enable mesh orchestration |
+| `mesh.specialization` | string | — | Instance specialization (e.g., "frontend", "backend") |
+| `mesh.endpoint` | string | — | This instance's HTTP endpoint for peer communication |
+| `mesh.routingWeights.specialization` | number | `0.4` | Weight for specialization match in routing |
+| `mesh.routingWeights.reliability` | number | `0.3` | Weight for reliability score in routing |
+| `mesh.routingWeights.load` | number | `0.2` | Weight for current load in routing |
+| `mesh.routingWeights.modelMatch` | number | `0.1` | Weight for model availability in routing |
+
+---
+
+## 📊 Analytics & Self-Learning
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `analytics.enabled` | boolean | `false` | Enable analytics engine |
+| `analytics.autoAnnotationPrompt` | boolean | `true` | Prompt for annotations after job completion |
+| `analytics.feedbackInjection` | boolean | `true` | Inject empirical guidance into system prompts |
+| `analytics.recommendationFrequency` | `"daily"` \| `"weekly"` \| `"on-demand"` | `"on-demand"` | How often to generate recommendations |
+| `analytics.domainKeywords` | Record<string, string[]> | (see defaults) | Custom keyword-to-domain mapping |
+| `analytics.agingHalfLife` | number | `30` | Half-life in days for annotation aging |
+
+---
+
+## 🌍 Browser Automation
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `browser.enabled` | boolean | `false` | Enable browser automation |
+| `browser.headless` | boolean | `true` | Run browser in headless mode |
+| `browser.profileDir` | string | — | Directory for browser profile persistence |
+| `browser.sandbox` | boolean | `false` | Run browser in sandbox container |
+| `browser.viewport.width` | number | `1280` | Browser viewport width |
+| `browser.viewport.height` | number | `720` | Browser viewport height |
+| `browser.timeout` | number | `30000` | Default timeout in milliseconds |
+
+---
+
+## 🔄 Runner Extensions
+
+### MCP Server
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `runner.mcpServer.enabled` | boolean | `false` | Enable MCP server for bidirectional agent communication |
+| `runner.mcpServer.port` | number | `7601` | MCP server port |
+| `runner.mcpServer.tools` | string[] | `["memory_search", "context", "status", "skills", "annotate"]` | Tools to expose |
+
+### Context Compaction
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `runner.compaction.enabled` | boolean | `false` | Enable context compaction |
+| `runner.compaction.threshold` | number | `0.8` | Trigger compaction at this percentage of context window |
+| `runner.compaction.model` | string | `"anthropic/claude-haiku-3"` | Model for summarization |
+| `runner.compaction.maxSummaryTokens` | number | `2000` | Maximum tokens for compacted summary |
+
+---
+
+## 💬 Expanded Channel Types
+
+### Telegram
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"telegram"` | — | Channel type discriminator |
+| `token` | string | — | Telegram Bot API token |
+| `allowFrom` | string[] | — | Allowed Telegram user IDs |
+
+### Slack
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"slack"` | — | Channel type discriminator |
+| `botToken` | string | — | Slack Bot token (xoxb-...) |
+| `appToken` | string | — | Slack App token (xapp-...) |
+| `signingSecret` | string | — | Slack signing secret |
+| `allowFrom` | string[] | — | Allowed Slack user IDs |
+
+### Email
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"email"` | — | Channel type discriminator |
+| `imap.host` | string | — | IMAP server host |
+| `imap.port` | number | `993` | IMAP server port |
+| `imap.user` | string | — | IMAP username |
+| `imap.password` | string | — | IMAP password |
+| `imap.tls` | boolean | `true` | Use TLS |
+| `smtp.host` | string | — | SMTP server host |
+| `smtp.port` | number | `587` | SMTP server port |
+| `smtp.user` | string | — | SMTP username |
+| `smtp.password` | string | — | SMTP password |
+| `smtp.secure` | boolean | `false` | Use secure connection |
+| `allowFrom` | string[] | — | Allowed email addresses |
+
+### WhatsApp
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"whatsapp"` | — | Channel type discriminator |
+| `provider` | `"twilio"` \| `"baileys"` | `"twilio"` | WhatsApp provider |
+| `accountSid` | string | — | Twilio Account SID |
+| `authToken` | string | — | Twilio Auth Token |
+| `phoneNumber` | string | — | WhatsApp phone number |
+| `allowFrom` | string[] | — | Allowed phone numbers |
+
+### Signal
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"signal"` | — | Channel type discriminator |
+| `phoneNumber` | string | — | Signal phone number |
+| `signalCliBin` | string | `"signal-cli"` | Path to signal-cli binary |
+| `allowFrom` | string[] | — | Allowed phone numbers |
+
+### Voice
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `"voice"` | — | Channel type discriminator |
+| `allowFrom` | string[] | — | Allowed phone numbers / caller IDs |

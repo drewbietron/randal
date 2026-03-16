@@ -279,9 +279,10 @@ export async function buildSystemPrompt(
 	}
 
 	// Resolve rules through the array resolver (handles inline + file + module)
-	const resolvedRules = config.identity.rules.length > 0
-		? await resolvePromptArray(config.identity.rules, ctx, { mode: "rules" })
-		: [];
+	const resolvedRules =
+		config.identity.rules.length > 0
+			? await resolvePromptArray(config.identity.rules, ctx, { mode: "rules" })
+			: [];
 
 	// Resolve knowledge: split into glob patterns vs file/module refs
 	const knowledgePatterns = config.identity.knowledge;
@@ -306,9 +307,8 @@ export async function buildSystemPrompt(
 	}
 
 	// Load glob-based knowledge files (existing behavior)
-	const globKnowledge = globPatterns.length > 0
-		? await loadKnowledgeFiles(globPatterns, basePath)
-		: [];
+	const globKnowledge =
+		globPatterns.length > 0 ? await loadKnowledgeFiles(globPatterns, basePath) : [];
 
 	const knowledge = [...globKnowledge, ...resolvedKnowledgeEntries];
 

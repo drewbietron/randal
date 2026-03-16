@@ -267,7 +267,7 @@ const HEARTBEAT_MD_TEMPLATE = `# Heartbeat Checklist
 - If idle for 8+ hours, send a brief status update
 `;
 
-function buildIdentityTsTemplate(name: string): string {
+function buildIdentityTsTemplate(_name: string): string {
 	return `import type { PromptContext } from "@randal/core";
 
 export default function buildIdentity(ctx: PromptContext): string {

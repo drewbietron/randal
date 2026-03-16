@@ -3,6 +3,12 @@ import { join, resolve } from "node:path";
 import type { RandalConfig, SkillDeployment, SkillDoc } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
+import {
+	type StoreFactory,
+	defaultStoreFactory,
+	publishSkillToShared,
+	searchSharedSkills,
+} from "../cross-agent.js";
 import type { MemoryManager } from "../memory.js";
 import { parseSkillFile } from "./parser.js";
 
@@ -12,6 +18,8 @@ export interface SkillManagerOptions {
 	config: RandalConfig;
 	basePath: string;
 	memoryManager?: MemoryManager;
+	/** Custom store factory for cross-agent operations. Enables testing without Meilisearch. */
+	storeFactory?: StoreFactory;
 }
 
 export class SkillManager {
@@ -21,11 +29,13 @@ export class SkillManager {
 	private client: MeiliSearch;
 	private indexName: string;
 	private skills: Map<string, SkillDoc> = new Map();
+	private storeFactory: StoreFactory;
 
 	constructor(options: SkillManagerOptions) {
 		this.config = options.config;
 		this.basePath = options.basePath;
 		this.memoryManager = options.memoryManager;
+		this.storeFactory = options.storeFactory ?? defaultStoreFactory;
 
 		this.client = new MeiliSearch({
 			host: options.config.memory.url,
@@ -82,12 +92,53 @@ export class SkillManager {
 
 	/**
 	 * Search and prepare skills for deployment, including memory-correlated outcomes.
+	 * Merges shared skill results when sharing is configured (R1.4).
 	 */
 	async searchWithOutcomes(query: string): Promise<SkillDeployment[]> {
 		const skills = await this.search(query, this.config.skills.maxPerPrompt);
+
+		// Merge shared skills if configured (R1.4)
+		let sharedSkillDocs: SkillDoc[] = [];
+		const readFrom = this.config.skills.sharing.readFrom;
+		if (readFrom.length > 0) {
+			try {
+				const sharedMemDocs = await searchSharedSkills(
+					query,
+					this.config,
+					this.config.skills.maxPerPrompt,
+					this.storeFactory,
+				);
+				// Convert MemoryDoc results to SkillDoc-like structure for uniform processing
+				sharedSkillDocs = sharedMemDocs.map((doc) => ({
+					meta: {
+						name: doc.file || "shared-skill",
+						description: doc.content.slice(0, 100),
+						tags: [doc.category],
+					},
+					content: doc.content,
+					filePath: doc.file || "",
+					updated: doc.timestamp,
+				}));
+			} catch (err) {
+				logger.warn("Shared skill search failed", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		// Combine local + shared skills, dedup by name
+		const allSkills = [...skills];
+		const seenNames = new Set(skills.map((s) => s.meta.name));
+		for (const shared of sharedSkillDocs) {
+			if (!seenNames.has(shared.meta.name)) {
+				allSkills.push(shared);
+				seenNames.add(shared.meta.name);
+			}
+		}
+
 		const deployments: SkillDeployment[] = [];
 
-		for (const skill of skills) {
+		for (const skill of allSkills) {
 			let enrichedContent = skill.content;
 
 			if (this.memoryManager) {
@@ -229,6 +280,9 @@ export class SkillManager {
 		};
 	}
 
+	/**
+	 * Index a skill in Meilisearch and publish to shared index if configured (R1.5).
+	 */
 	private async indexSkill(skill: SkillDoc): Promise<void> {
 		try {
 			const index = this.client.index(this.indexName);
@@ -240,6 +294,29 @@ export class SkillManager {
 			]);
 		} catch {
 			// Silently fail — skill is still in memory
+		}
+
+		// Publish to shared skills index if configured (R1.5)
+		if (this.config.skills.sharing.publishTo) {
+			try {
+				await publishSkillToShared(
+					{
+						type: "learning",
+						file: skill.filePath,
+						content: skill.content,
+						contentHash: skill.meta.name,
+						category: "skill-outcome",
+						source: "self",
+						timestamp: skill.updated,
+					},
+					this.config,
+					this.storeFactory,
+				);
+			} catch (err) {
+				logger.warn("Failed to publish skill to shared index", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 	}
 

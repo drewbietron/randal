@@ -1,0 +1,293 @@
+# Full-platform Randal configuration
+# All features enabled: voice, mesh, analytics, browser, multiple channels
+# See the docs/ directory for setup guides for each feature
+
+name: randal-full
+
+runner:
+  workdir: ./workspace
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 25
+  maxDelegationDepth: 2
+  maxDelegationsPerIteration: 3
+  struggle:
+    noChangeThreshold: 3
+    maxRepeatedErrors: 3
+    action: warn
+  mcpServer:
+    enabled: true
+    port: 7601
+    tools:
+      - memory_search
+      - context
+      - status
+      - skills
+      - annotate
+  compaction:
+    enabled: true
+    threshold: 0.8
+    model: anthropic/claude-haiku-3
+    maxSummaryTokens: 2000
+
+identity:
+  persona: >
+    You are a full-featured software engineering assistant with voice
+    capabilities, browser automation, mesh collaboration, and self-learning.
+    Adapt your communication style to the channel: concise speech for voice,
+    detailed markdown for text channels.
+  knowledge:
+    - ./knowledge/codebase-overview.md
+  rules:
+    - Use voice-appropriate responses when on a call
+    - Delegate tasks outside your specialization to mesh peers
+    - Self-evaluate work quality after each task
+    - Use browser tools for web research and testing
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: ${API_TOKEN}
+      corsOrigin: ${CORS_ORIGIN}
+    - type: voice
+    - type: discord
+      token: ${DISCORD_BOT_TOKEN}
+      allowFrom:
+        - "${DISCORD_ALLOWED_USER}"
+    - type: telegram
+      token: ${TELEGRAM_BOT_TOKEN}
+      allowFrom:
+        - "${TELEGRAM_ALLOWED_USER}"
+    - type: slack
+      botToken: ${SLACK_BOT_TOKEN}
+      appToken: ${SLACK_APP_TOKEN}
+      signingSecret: ${SLACK_SIGNING_SECRET}
+    - type: email
+      imap:
+        host: ${EMAIL_IMAP_HOST}
+        port: 993
+        user: ${EMAIL_IMAP_USER}
+        password: ${EMAIL_IMAP_PASS}
+        tls: true
+      smtp:
+        host: ${EMAIL_SMTP_HOST}
+        port: 587
+        user: ${EMAIL_SMTP_USER}
+        password: ${EMAIL_SMTP_PASS}
+        secure: false
+      allowFrom:
+        - "*@company.com"
+
+voice:
+  enabled: true
+  livekit:
+    url: ${LIVEKIT_URL}
+    apiKey: ${LIVEKIT_API_KEY}
+    apiSecret: ${LIVEKIT_API_SECRET}
+  twilio:
+    accountSid: ${TWILIO_ACCOUNT_SID}
+    authToken: ${TWILIO_AUTH_TOKEN}
+    phoneNumber: ${TWILIO_PHONE_NUMBER}
+  stt:
+    provider: deepgram
+    apiKey: ${DEEPGRAM_API_KEY}
+    model: nova-2
+  tts:
+    provider: elevenlabs
+    apiKey: ${ELEVENLABS_API_KEY}
+    voice: pNInz6obpgDQGcFmaJgB
+  turnDetection:
+    mode: auto
+  video:
+    enabled: true
+    visionModel: gpt-4o
+    publishScreen: false
+    recordSessions: true
+    recordPath: ./recordings
+
+mesh:
+  enabled: true
+  specialization: general
+  endpoint: ${MESH_ENDPOINT}
+  routingWeights:
+    specialization: 0.4
+    reliability: 0.3
+    load: 0.2
+    modelMatch: 0.1
+
+analytics:
+  enabled: true
+  autoAnnotationPrompt: true
+  feedbackInjection: true
+  recommendationFrequency: weekly
+  domainKeywords:
+    frontend:
+      - react
+      - vue
+      - angular
+      - css
+      - html
+      - component
+      - ui
+      - ux
+      - tailwind
+      - next.js
+      - svelte
+    backend:
+      - api
+      - server
+      - endpoint
+      - rest
+      - graphql
+      - middleware
+      - express
+      - hono
+      - fastify
+    database:
+      - sql
+      - query
+      - migration
+      - schema
+      - postgres
+      - mysql
+      - sqlite
+      - prisma
+      - drizzle
+    infra:
+      - docker
+      - kubernetes
+      - ci
+      - cd
+      - deploy
+      - terraform
+      - aws
+      - gcp
+      - azure
+      - nginx
+    docs:
+      - readme
+      - documentation
+      - docs
+      - guide
+      - tutorial
+      - changelog
+    testing:
+      - test
+      - spec
+      - jest
+      - vitest
+      - cypress
+      - playwright
+      - coverage
+  agingHalfLife: 30
+
+browser:
+  enabled: true
+  headless: true
+  profileDir: ./browser-profile
+  sandbox: false
+  viewport:
+    width: 1280
+    height: 720
+  timeout: 30000
+
+memory:
+  store: meilisearch
+  url: ${MEILISEARCH_URL}
+  apiKey: ${MEILISEARCH_API_KEY}
+  syncInterval: 60
+  files:
+    - MEMORY.md
+  embedder:
+    type: openai
+    model: text-embedding-3-large
+    apiKey: ${OPENAI_API_KEY}
+  sharing:
+    publishTo: shared-mesh-index
+    readFrom:
+      - shared-mesh-index
+  autoInject:
+    enabled: true
+    maxResults: 5
+
+skills:
+  dir: ./skills
+  autoDiscover: true
+  maxPerPrompt: 5
+  sharing:
+    publishTo: shared-mesh-index
+    readFrom:
+      - shared-mesh-index
+
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: ./HEARTBEAT.md
+  activeHours:
+    start: "08:00"
+    end: "22:00"
+    timezone: America/Los_Angeles
+
+cron:
+  jobs:
+    daily-review:
+      schedule:
+        at: "09:00"
+      prompt: Review open PRs and summarize status
+      execution: isolated
+      announce: true
+    weekly-analytics:
+      schedule:
+        every: 7d
+      prompt: Generate weekly analytics report and recommendations
+      execution: isolated
+      announce: true
+
+credentials:
+  envFile: ./.env
+  allow:
+    - API_TOKEN
+    - CORS_ORIGIN
+    - DISCORD_BOT_TOKEN
+    - DISCORD_ALLOWED_USER
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_ALLOWED_USER
+    - SLACK_BOT_TOKEN
+    - SLACK_APP_TOKEN
+    - SLACK_SIGNING_SECRET
+    - EMAIL_IMAP_HOST
+    - EMAIL_IMAP_USER
+    - EMAIL_IMAP_PASS
+    - EMAIL_SMTP_HOST
+    - EMAIL_SMTP_USER
+    - EMAIL_SMTP_PASS
+    - LIVEKIT_URL
+    - LIVEKIT_API_KEY
+    - LIVEKIT_API_SECRET
+    - TWILIO_ACCOUNT_SID
+    - TWILIO_AUTH_TOKEN
+    - TWILIO_PHONE_NUMBER
+    - DEEPGRAM_API_KEY
+    - ELEVENLABS_API_KEY
+    - OPENAI_API_KEY
+    - MEILISEARCH_URL
+    - MEILISEARCH_API_KEY
+    - MESH_ENDPOINT
+    - MESH_PEERS
+
+sandbox:
+  enforcement: env-scrub
+  pathFilter:
+    mode: allowlist
+    allow:
+      - ./workspace
+      - ./skills
+      - ./knowledge
+      - ./recordings
+      - ./browser-profile
+  homeAccess:
+    ssh: true
+    gitconfig: true
+    docker: true
+    aws: false

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createLogger, resolvePromptValue } from "@randal/core";
 import type { PromptContext, RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";

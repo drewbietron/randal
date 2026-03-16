@@ -12,7 +12,7 @@ import type { Job, JobStatus } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { parse, stringify } from "yaml";
 
-const logger = createLogger({ context: { component: "jobs" } });
+const _logger = createLogger({ context: { component: "jobs" } });
 
 let JOBS_DIR = join(homedir(), ".randal", "jobs");
 

@@ -19,6 +19,13 @@
         "typescript": "^5.7.0",
       },
     },
+    "packages/analytics": {
+      "name": "@randal/analytics",
+      "version": "0.1.0",
+      "dependencies": {
+        "@randal/core": "workspace:*",
+      },
+    },
     "packages/cli": {
       "name": "randal",
       "version": "0.1.0",
@@ -78,6 +85,13 @@
         "@randal/core": "workspace:*",
       },
     },
+    "packages/mesh": {
+      "name": "@randal/mesh",
+      "version": "0.1.0",
+      "dependencies": {
+        "@randal/core": "workspace:*",
+      },
+    },
     "packages/runner": {
       "name": "@randal/runner",
       "version": "0.1.0",
@@ -93,6 +107,14 @@
       "dependencies": {
         "@randal/core": "workspace:*",
         "@randal/runner": "workspace:*",
+        "yaml": "*",
+      },
+    },
+    "packages/voice": {
+      "name": "@randal/voice",
+      "version": "0.1.0",
+      "dependencies": {
+        "@randal/core": "workspace:*",
       },
     },
   },
@@ -131,6 +153,8 @@
 
     "@discordjs/ws": ["@discordjs/ws@1.2.3", "", { "dependencies": { "@discordjs/collection": "^2.1.0", "@discordjs/rest": "^2.5.1", "@discordjs/util": "^1.1.0", "@sapphire/async-queue": "^1.5.2", "@types/ws": "^8.5.10", "@vladfrangu/async_event_emitter": "^2.2.4", "discord-api-types": "^0.38.1", "tslib": "^2.6.2", "ws": "^8.17.0" } }, "sha512-wPlQDxEmlDg5IxhJPuxXr3Vy9AjYq5xCvFWGJyD7w7Np8ZGu+Mc+97LCoEc/+AYCo2IDpKioiH0/c/mj5ZR9Uw=="],
 
+    "@randal/analytics": ["@randal/analytics@workspace:packages/analytics"],
+
     "@randal/core": ["@randal/core@workspace:packages/core"],
 
     "@randal/credentials": ["@randal/credentials@workspace:packages/credentials"],
@@ -143,9 +167,13 @@
 
     "@randal/memory": ["@randal/memory@workspace:packages/memory"],
 
+    "@randal/mesh": ["@randal/mesh@workspace:packages/mesh"],
+
     "@randal/runner": ["@randal/runner@workspace:packages/runner"],
 
     "@randal/scheduler": ["@randal/scheduler@workspace:packages/scheduler"],
+
+    "@randal/voice": ["@randal/voice@workspace:packages/voice"],
 
     "@sapphire/async-queue": ["@sapphire/async-queue@1.5.5", "", {}, "sha512-cvGzxbba6sav2zZkH8GPf2oGk9yYoD5qrNWdu9fRehifgnFZJMV+nuy2nON2roRO4yQQ+v7MK/Pktl/HgfsUXg=="],
 

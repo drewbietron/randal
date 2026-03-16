@@ -2,12 +2,19 @@ import { timingSafeEqual } from "node:crypto";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
-import type { MemoryManager, SkillManager } from "@randal/memory";
+import {
+	type MemoryManager,
+	type RegistryDoc,
+	type SkillManager,
+	queryPosseMembers,
+	searchCrossAgent,
+} from "@randal/memory";
 import { type Runner, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 import type { EventBus } from "../events.js";
 import { listJobs, loadJob, saveJob } from "../jobs.js";
 
@@ -37,6 +44,13 @@ function escapeHtml(s: string): string {
 /** Skill name validation pattern */
 const SKILL_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 
+/** Zod schema for job annotation requests. */
+const AnnotationSchema = z.object({
+	verdict: z.enum(["pass", "fail", "partial"]),
+	feedback: z.string().max(2000).optional(),
+	categories: z.array(z.string().max(100)).max(10).optional(),
+});
+
 export interface HttpChannelOptions {
 	config: RandalConfig;
 	runner: Runner;
@@ -44,10 +58,70 @@ export interface HttpChannelOptions {
 	memoryManager?: MemoryManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
+	/** Meilisearch client for posse registry queries. */
+	posseClient?: unknown;
+	/** Analytics engine instance (optional). */
+	analyticsEngine?: {
+		getScores(): {
+			overall: number;
+			byAgent: Record<string, number>;
+			byModel: Record<string, number>;
+			byDomain: Record<string, number>;
+		} | null;
+		getRecommendations(): Array<{
+			severity: "info" | "warning" | "critical";
+			message: string;
+			action?: string;
+		}>;
+		getTrends(range?: string): unknown;
+		getAnnotations(filters?: { jobId?: string; verdict?: string }): unknown[];
+		addAnnotation(
+			jobId: string,
+			annotation: { verdict: string; feedback?: string; categories?: string[] },
+		): boolean;
+	};
+	/** Mesh coordinator instance (optional). */
+	meshCoordinator?: {
+		getInstances(): Array<{
+			id: string;
+			name: string;
+			status: string;
+			health: string;
+			load: number;
+			specialization: string;
+			lastSeen: string;
+		}>;
+		routeDryRun(prompt: string): {
+			selectedInstance: { id: string; name: string; score: number };
+			scores: unknown[];
+		};
+	};
+	/** Voice channel manager instance (optional). */
+	voiceManager?: {
+		isEnabled(): boolean;
+		getSessions(): Array<{
+			id: string;
+			callId: string;
+			status: string;
+			duration: number;
+			transcriptLength: number;
+			startedAt: string;
+		}>;
+	};
 }
 
 export function createHttpApp(options: HttpChannelOptions): Hono {
-	const { config, runner, eventBus, memoryManager, scheduler, skillManager } = options;
+	const {
+		config,
+		runner,
+		eventBus,
+		memoryManager,
+		scheduler,
+		skillManager,
+		analyticsEngine,
+		meshCoordinator,
+		voiceManager,
+	} = options;
 	const app = new Hono();
 
 	// CORS — configurable origin
@@ -374,6 +448,129 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json([]);
 	});
 
+	// ---- Posse endpoints ----
+
+	// Posse info (R5.1)
+	app.get("/posse", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		let agents: RegistryDoc[] = [];
+		if (options.posseClient) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			agents = await queryPosseMembers(
+				config,
+				options.posseClient as Parameters<typeof queryPosseMembers>[1],
+			);
+		}
+
+		return c.json({
+			posse: config.posse,
+			agents,
+			self: config.name,
+		});
+	});
+
+	// Posse memory search (R5.2)
+	app.get("/posse/memory/search", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		const q = c.req.query("q");
+		if (!q) return c.json({ error: "q parameter required" }, 400);
+
+		const scope = c.req.query("scope") ?? "self";
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (scope === "self") {
+			if (memoryManager) {
+				const results = await memoryManager.search(q, limit);
+				return c.json(results);
+			}
+			return c.json([]);
+		}
+
+		if (scope === "shared") {
+			// Search only the shared posse index
+			const readFrom = config.memory.sharing.readFrom.filter((idx) => idx.startsWith("shared-"));
+			if (readFrom.length === 0) return c.json([]);
+
+			try {
+				const results = await searchCrossAgent(
+					q,
+					{
+						...config,
+						memory: { ...config.memory, sharing: { ...config.memory.sharing, readFrom } },
+					},
+					limit,
+				);
+				return c.json(results);
+			} catch {
+				return c.json([]);
+			}
+		}
+
+		// scope === "all": search own + all sharing indexes
+		if (memoryManager) {
+			const ownResults = await memoryManager.search(q, limit);
+			let crossResults: unknown[] = [];
+
+			if (config.memory.sharing.readFrom.length > 0) {
+				try {
+					crossResults = await searchCrossAgent(q, config, limit);
+				} catch {
+					// Continue with own results only
+				}
+			}
+
+			// Merge and deduplicate
+			const seen = new Set<string>();
+			const merged: unknown[] = [];
+
+			for (const doc of ownResults as Array<{ contentHash?: string }>) {
+				const hash = doc.contentHash;
+				if (hash && seen.has(hash)) continue;
+				if (hash) seen.add(hash);
+				merged.push(doc);
+			}
+
+			for (const doc of crossResults as Array<{ contentHash?: string }>) {
+				const hash = doc.contentHash;
+				if (hash && seen.has(hash)) continue;
+				if (hash) seen.add(hash);
+				merged.push(doc);
+			}
+
+			return c.json(merged.slice(0, limit));
+		}
+
+		return c.json([]);
+	});
+
+	// Posse memory recent (R5.3)
+	app.get("/posse/memory/recent", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		const scope = c.req.query("scope") ?? "all";
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (scope === "self" && memoryManager) {
+			const results = await memoryManager.recent(limit);
+			return c.json(results);
+		}
+
+		if (memoryManager) {
+			const results = await memoryManager.recent(limit);
+			return c.json(results);
+		}
+
+		return c.json([]);
+	});
+
 	// ---- Skills endpoints ----
 
 	// List all skills
@@ -515,6 +712,135 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		await skillManager.scanDirectory();
 
 		return c.json({ ok: true, name });
+	});
+
+	// ---- Annotation endpoint ----
+
+	// Annotate a completed job
+	app.post("/job/:id/annotate", async (c) => {
+		const id = c.req.param("id");
+
+		// Find the job
+		const job = runner.getJob(id) ?? loadJob(id);
+		if (!job) {
+			return c.json({ error: "Job not found" }, 404);
+		}
+
+		// Parse and validate body
+		let body: unknown;
+		try {
+			body = await c.req.json();
+		} catch {
+			return c.json({ error: "Invalid JSON" }, 400);
+		}
+
+		const result = AnnotationSchema.safeParse(body);
+		if (!result.success) {
+			return c.json({ error: "Validation failed", details: result.error.issues }, 400);
+		}
+
+		const annotation = result.data;
+
+		// Store annotation via analytics engine if available
+		if (analyticsEngine) {
+			analyticsEngine.addAnnotation(id, annotation);
+		}
+
+		return c.json({ ok: true, jobId: id, annotation });
+	});
+
+	// ---- Analytics endpoints ----
+
+	// Reliability scores
+	app.get("/analytics/scores", (c) => {
+		if (!analyticsEngine) {
+			return c.json({ status: "insufficient_data" });
+		}
+
+		const scores = analyticsEngine.getScores();
+		if (!scores) {
+			return c.json({ status: "insufficient_data" });
+		}
+
+		return c.json(scores);
+	});
+
+	// Recommendations
+	app.get("/analytics/recommendations", (c) => {
+		if (!analyticsEngine) {
+			return c.json({ recommendations: [] });
+		}
+
+		const recommendations = analyticsEngine.getRecommendations();
+		return c.json({ recommendations });
+	});
+
+	// Trends
+	app.get("/analytics/trends", (c) => {
+		if (!analyticsEngine) {
+			return c.json({ trends: [], range: "7d" });
+		}
+
+		const range = c.req.query("range") ?? "7d";
+		const trends = analyticsEngine.getTrends(range);
+		return c.json(trends);
+	});
+
+	// Annotations list
+	app.get("/analytics/annotations", (c) => {
+		if (!analyticsEngine) {
+			return c.json({ annotations: [] });
+		}
+
+		const jobId = c.req.query("jobId");
+		const verdict = c.req.query("verdict");
+		const filters: { jobId?: string; verdict?: string } = {};
+		if (jobId) filters.jobId = jobId;
+		if (verdict) filters.verdict = verdict;
+
+		const annotations = analyticsEngine.getAnnotations(filters);
+		return c.json({ annotations });
+	});
+
+	// ---- Mesh endpoints ----
+
+	// Mesh status
+	app.get("/mesh/status", (c) => {
+		if (!meshCoordinator) {
+			return c.json({ instances: [] });
+		}
+
+		const instances = meshCoordinator.getInstances();
+		return c.json({ instances });
+	});
+
+	// Mesh route dry-run
+	app.post("/mesh/route", async (c) => {
+		if (!meshCoordinator) {
+			return c.json({ error: "Mesh not available" }, 400);
+		}
+
+		const body = await c.req.json<{ prompt: string; dryRun?: boolean }>();
+		if (!body.prompt) {
+			return c.json({ error: "prompt required" }, 400);
+		}
+
+		const result = meshCoordinator.routeDryRun(body.prompt);
+		return c.json(result);
+	});
+
+	// ---- Voice endpoints ----
+
+	// Voice session status
+	app.get("/voice/status", (c) => {
+		if (!voiceManager) {
+			return c.json({ enabled: false, sessions: [] });
+		}
+
+		return c.json({
+			enabled: voiceManager.isEnabled(),
+			sessions: voiceManager.getSessions(),
+		});
 	});
 
 	// Config (sanitized, read-only)

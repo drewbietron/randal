@@ -122,6 +122,51 @@
 		.cred-loaded { color: var(--success); }
 		.cred-missing { color: var(--danger); }
 
+		/* Annotate */
+		.annotate-form { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+		.annotate-form select, .annotate-form input { padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; }
+		.annotate-form input { flex: 1; min-width: 120px; }
+		.btn.sm { padding: 4px 10px; font-size: 11px; }
+		.btn.annotate { background: #2d3748; color: var(--text); }
+		.btn.annotate:hover { background: #4a5568; }
+
+		/* Score Gauge */
+		.gauge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+		.gauge-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+		.gauge-card .gauge-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+		.gauge-card .gauge-value { font-size: 28px; font-weight: 700; color: #fff; }
+		.gauge-card .gauge-bar { margin-top: 8px; height: 6px; background: var(--border); border-radius: 3px; }
+		.gauge-card .gauge-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+		.gauge-fill.good { background: var(--success); }
+		.gauge-fill.warn { background: var(--warning); }
+		.gauge-fill.bad { background: var(--danger); }
+
+		/* Recommendation Card */
+		.rec-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
+		.rec-card.critical { border-left: 3px solid var(--danger); }
+		.rec-card.warning { border-left: 3px solid var(--warning); }
+		.rec-card.info { border-left: 3px solid var(--accent); }
+		.rec-severity { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+		.rec-severity.critical { color: var(--danger); }
+		.rec-severity.warning { color: var(--warning); }
+		.rec-severity.info { color: var(--accent); }
+		.rec-action { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+		/* Mesh Instance */
+		.mesh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+		.mesh-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+		.mesh-card h4 { font-size: 14px; color: #fff; margin-bottom: 6px; }
+		.mesh-card .mesh-meta { font-size: 12px; color: var(--text-muted); }
+		.health-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+		.health-dot.healthy { background: var(--success); }
+		.health-dot.degraded { background: var(--warning); }
+		.health-dot.unhealthy { background: var(--danger); }
+
+		/* Voice Session */
+		.voice-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; }
+		.voice-card h4 { font-size: 14px; color: #fff; margin-bottom: 6px; }
+		.voice-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; }
+
 		/* Empty State */
 		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
 	</style>
@@ -140,6 +185,10 @@
 			<button class="active" data-page="home">Home</button>
 			<button data-page="history">History</button>
 			<button data-page="memory">Memory</button>
+			<button data-page="voice">Voice</button>
+			<button data-page="mesh">Mesh</button>
+			<button data-page="analytics">Analytics</button>
+			<button data-page="posse" id="nav-posse" style="display:none">Posse</button>
 			<button data-page="settings">Settings</button>
 		</nav>
 
@@ -206,7 +255,7 @@
 				<h2>Job History</h2>
 				<table id="history-table">
 					<thead>
-						<tr><th>ID</th><th>Status</th><th>Agent</th><th>Iterations</th><th>Duration</th><th>Prompt</th></tr>
+						<tr><th>ID</th><th>Status</th><th>Agent</th><th>Iterations</th><th>Duration</th><th>Prompt</th><th>Actions</th></tr>
 					</thead>
 					<tbody id="history-body"></tbody>
 				</table>
@@ -219,9 +268,89 @@
 				<h2>Memory Search</h2>
 				<div class="memory-search">
 					<input type="text" id="memory-query" placeholder="Search memories..." />
+					<select id="memory-scope" style="display:none">
+						<option value="self" selected>Self</option>
+						<option value="shared">Shared</option>
+						<option value="all">All</option>
+					</select>
 					<button class="btn" onclick="searchMemory()">Search</button>
 				</div>
 				<div id="memory-results"></div>
+			</div>
+		</div>
+
+		<!-- Voice Page -->
+		<div class="page" id="page-voice">
+			<div class="section">
+				<h2>Active Voice Sessions</h2>
+				<div id="voice-sessions">
+					<div class="empty">Loading...</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Mesh Page -->
+		<div class="page" id="page-mesh">
+			<div class="section">
+				<h2>Mesh Instances</h2>
+				<div class="mesh-grid" id="mesh-instances">
+					<div class="empty">Loading...</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Routing Log</h2>
+				<div class="events-log" id="mesh-routing-log"></div>
+			</div>
+		</div>
+
+		<!-- Analytics Page -->
+		<div class="page" id="page-analytics">
+			<div class="section">
+				<h2>Reliability Scores</h2>
+				<div class="gauge-grid" id="analytics-scores">
+					<div class="empty">Loading...</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Score Breakdown</h2>
+				<div id="analytics-breakdown"></div>
+			</div>
+			<div class="section">
+				<h2>Recommendations</h2>
+				<div id="analytics-recommendations">
+					<div class="empty">Loading...</div>
+				</div>
+			</div>
+			<div class="section">
+				<h2>Recent Annotations</h2>
+				<div id="analytics-annotations">
+					<div class="empty">Loading...</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Posse Page -->
+		<div class="page" id="page-posse">
+			<div class="section">
+				<h2>Posse Agents</h2>
+				<div id="posse-agents"></div>
+			</div>
+			<div class="section">
+				<h2>Posse Memory Search</h2>
+				<div class="memory-search">
+					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." />
+					<select id="posse-scope">
+						<option value="all" selected>All</option>
+						<option value="self">Self</option>
+						<option value="shared">Shared</option>
+					</select>
+					<button class="btn" onclick="searchPosseMemory()">Search</button>
+				</div>
+				<div id="posse-memory-results"></div>
+			</div>
+			<div class="section">
+				<h2>Recent Activity</h2>
+				<div id="posse-recent"></div>
 			</div>
 		</div>
 
@@ -256,6 +385,10 @@
 
 			if (name === 'history') loadHistory();
 			if (name === 'settings') loadSettings();
+			if (name === 'voice') loadVoiceSessions();
+			if (name === 'mesh') loadMeshStatus();
+			if (name === 'analytics') { loadAnalyticsScores(); loadAnalyticsRecommendations(); loadAnalyticsAnnotations(); }
+			if (name === 'posse') { loadPosseAgents(); loadPosseRecent(); }
 		}
 
 		function showJobDetail(id) {
@@ -274,6 +407,7 @@
 				var statusEl = document.getElementById('instance-status');
 				statusEl.textContent = data.status;
 				statusEl.className = 'instance-status ' + data.status;
+				checkPosse(data);
 			} catch(e) {}
 		}
 
@@ -402,14 +536,55 @@
 				var jobs = await res.json();
 				var body = document.getElementById('history-body');
 				body.innerHTML = jobs.map(function(j) {
+					var actions = '';
+					if (j.status === 'complete' || j.status === 'failed') {
+						actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + j.id + '\')">Annotate</button>' +
+							'<div id="annotate-form-' + j.id + '" style="display:none"></div>';
+					}
 					return '<tr onclick="showJobDetail(\'' + j.id + '\')" style="cursor:pointer">' +
 						'<td>' + j.id + '</td>' +
 						'<td><span class="badge ' + j.status + '">' + j.status + '</span></td>' +
 						'<td>' + j.agent + '</td>' +
 						'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
 						'<td>' + (j.duration || '-') + 's</td>' +
-						'<td>' + j.prompt.slice(0, 50) + '</td></tr>';
+						'<td>' + j.prompt.slice(0, 50) + '</td>' +
+						'<td>' + actions + '</td></tr>';
 				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		// Annotate form
+		function showAnnotateForm(jobId) {
+			var el = document.getElementById('annotate-form-' + jobId);
+			if (!el) return;
+			if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+			el.style.display = 'block';
+			el.innerHTML = '<div class="annotate-form">' +
+				'<select id="annotate-verdict-' + jobId + '">' +
+				'<option value="correct">Correct</option>' +
+				'<option value="partial">Partial</option>' +
+				'<option value="incorrect">Incorrect</option>' +
+				'<option value="unsure">Unsure</option></select>' +
+				'<input type="text" id="annotate-feedback-' + jobId + '" placeholder="Feedback (optional)" />' +
+				'<button class="btn sm" onclick="submitAnnotation(\'' + jobId + '\')">Submit</button></div>';
+		}
+
+		async function submitAnnotation(jobId) {
+			var verdict = document.getElementById('annotate-verdict-' + jobId).value;
+			var feedback = document.getElementById('annotate-feedback-' + jobId).value;
+			var body = { verdict: verdict };
+			if (feedback) body.feedback = feedback;
+			try {
+				var res = await fetch('/job/' + jobId + '/annotate', {
+					method: 'POST', headers: headers, body: JSON.stringify(body)
+				});
+				if (res.ok) {
+					var el = document.getElementById('annotate-form-' + jobId);
+					el.innerHTML = '<span style="color:var(--success);font-size:12px">Annotated!</span>';
+				} else {
+					var err = await res.json();
+					alert('Annotation failed: ' + (err.error || 'Unknown error'));
+				}
 			} catch(e) { console.error(e); }
 		}
 
@@ -418,7 +593,9 @@
 			var q = document.getElementById('memory-query').value;
 			if (!q) return;
 			try {
-				var res = await fetch('/memory/search?q=' + encodeURIComponent(q), { headers: headers });
+				var scope = document.getElementById('memory-scope').value;
+				var url = (isPosseMember && scope !== 'self') ? '/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope : '/memory/search?q=' + encodeURIComponent(q);
+				var res = await fetch(url, { headers: headers });
 				var docs = await res.json();
 				var container = document.getElementById('memory-results');
 				if (docs.length === 0) {
@@ -501,6 +678,240 @@
 				if (currentJobId) loadJobDetail(currentJobId);
 			});
 		});
+
+		// Voice functions
+		async function loadVoiceSessions() {
+			try {
+				var res = await fetch('/voice/status', { headers: headers });
+				var data = await res.json();
+				var container = document.getElementById('voice-sessions');
+				if (!data.enabled) {
+					container.innerHTML = '<div class="empty">Voice channel is not enabled</div>';
+					return;
+				}
+				if (!data.sessions || data.sessions.length === 0) {
+					container.innerHTML = '<div class="empty">No active voice sessions</div>';
+					return;
+				}
+				container.innerHTML = data.sessions.map(function(s) {
+					var mins = Math.floor(s.duration / 60);
+					var secs = Math.round(s.duration % 60);
+					return '<div class="voice-card"><h4>Session ' + s.id.slice(0, 8) + '</h4>' +
+						'<div class="voice-meta">' +
+						'<span>Call: ' + s.callId + '</span>' +
+						'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + s.status + '</span>' +
+						'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
+						'<span>Transcript: ' + s.transcriptLength + ' chars</span>' +
+						'</div>' +
+						'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + new Date(s.startedAt).toLocaleString() + '</div></div>';
+				}).join('');
+			} catch(e) {
+				document.getElementById('voice-sessions').innerHTML = '<div class="empty">Failed to load voice sessions</div>';
+			}
+		}
+
+		// Mesh functions
+		async function loadMeshStatus() {
+			try {
+				var res = await fetch('/mesh/status', { headers: headers });
+				var data = await res.json();
+				var container = document.getElementById('mesh-instances');
+				if (!data.instances || data.instances.length === 0) {
+					container.innerHTML = '<div class="empty">No mesh instances found</div>';
+					return;
+				}
+				container.innerHTML = data.instances.map(function(inst) {
+					var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
+					var loadPct = Math.round(inst.load * 100);
+					var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
+					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '"></span>' + inst.name + '</h4>' +
+						'<div class="mesh-meta">' +
+						'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + inst.status + '</span></div>' +
+						'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
+						'<div style="margin-top:4px">Specialization: ' + (inst.specialization || '-') + '</div>' +
+						'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + inst.lastSeen + '</div>' +
+						'</div></div>';
+				}).join('');
+			} catch(e) {
+				document.getElementById('mesh-instances').innerHTML = '<div class="empty">Failed to load mesh status</div>';
+			}
+		}
+
+		// Analytics functions
+		async function loadAnalyticsScores() {
+			try {
+				var res = await fetch('/analytics/scores', { headers: headers });
+				var data = await res.json();
+				var scoresEl = document.getElementById('analytics-scores');
+				var breakdownEl = document.getElementById('analytics-breakdown');
+
+				if (data.status === 'insufficient_data') {
+					scoresEl.innerHTML = '<div class="empty">Insufficient data — complete more jobs to generate analytics</div>';
+					breakdownEl.innerHTML = '';
+					return;
+				}
+
+				// Overall score gauge
+				var overallPct = Math.round((data.overall || 0) * 100);
+				var overallClass = overallPct >= 80 ? 'good' : overallPct >= 50 ? 'warn' : 'bad';
+				var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
+					'<div class="gauge-value">' + overallPct + '%</div>' +
+					'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
+
+				scoresEl.innerHTML = html;
+
+				// Breakdown tables
+				var breakdownHtml = '';
+				if (data.byAgent && Object.keys(data.byAgent).length > 0) {
+					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Agent</h3>';
+					breakdownHtml += renderScoreTable(data.byAgent);
+				}
+				if (data.byModel && Object.keys(data.byModel).length > 0) {
+					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Model</h3>';
+					breakdownHtml += renderScoreTable(data.byModel);
+				}
+				if (data.byDomain && Object.keys(data.byDomain).length > 0) {
+					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Domain</h3>';
+					breakdownHtml += renderScoreTable(data.byDomain);
+				}
+				breakdownEl.innerHTML = breakdownHtml;
+			} catch(e) {
+				document.getElementById('analytics-scores').innerHTML = '<div class="empty">Failed to load analytics</div>';
+			}
+		}
+
+		function renderScoreTable(scores) {
+			var html = '<div class="gauge-grid">';
+			for (var key in scores) {
+				var pct = Math.round(scores[key] * 100);
+				var cls = pct >= 80 ? 'good' : pct >= 50 ? 'warn' : 'bad';
+				html += '<div class="gauge-card"><div class="gauge-label">' + key + '</div>' +
+					'<div class="gauge-value">' + pct + '%</div>' +
+					'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
+			}
+			html += '</div>';
+			return html;
+		}
+
+		async function loadAnalyticsRecommendations() {
+			try {
+				var res = await fetch('/analytics/recommendations', { headers: headers });
+				var data = await res.json();
+				var container = document.getElementById('analytics-recommendations');
+				if (!data.recommendations || data.recommendations.length === 0) {
+					container.innerHTML = '<div class="empty">No recommendations at this time</div>';
+					return;
+				}
+				container.innerHTML = data.recommendations.map(function(rec) {
+					return '<div class="rec-card ' + rec.severity + '">' +
+						'<div class="rec-severity ' + rec.severity + '">' + rec.severity + '</div>' +
+						'<div style="font-size:13px">' + rec.message + '</div>' +
+						(rec.action ? '<div class="rec-action">Action: ' + rec.action + '</div>' : '') +
+						'</div>';
+				}).join('');
+			} catch(e) {
+				document.getElementById('analytics-recommendations').innerHTML = '<div class="empty">Failed to load recommendations</div>';
+			}
+		}
+
+		async function loadAnalyticsAnnotations() {
+			try {
+				var res = await fetch('/analytics/annotations', { headers: headers });
+				var data = await res.json();
+				var container = document.getElementById('analytics-annotations');
+				if (!data.annotations || data.annotations.length === 0) {
+					container.innerHTML = '<div class="empty">No annotations yet</div>';
+					return;
+				}
+				var html = '<table><thead><tr><th>Job</th><th>Verdict</th><th>Feedback</th><th>Time</th></tr></thead><tbody>';
+				html += data.annotations.slice(0, 50).map(function(a) {
+					var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
+					return '<tr><td>' + (a.jobId || '-') + '</td>' +
+						'<td><span class="badge ' + verdictClass + '">' + a.verdict + '</span></td>' +
+						'<td>' + (a.feedback || '-') + '</td>' +
+						'<td>' + (a.timestamp ? new Date(a.timestamp).toLocaleString() : '-') + '</td></tr>';
+				}).join('');
+				html += '</tbody></table>';
+				container.innerHTML = html;
+			} catch(e) {
+				document.getElementById('analytics-annotations').innerHTML = '<div class="empty">Failed to load annotations</div>';
+			}
+		}
+
+		// Posse functions
+		var isPosseMember = false;
+
+		async function checkPosse(data) {
+			if (data && data.posse) {
+				isPosseMember = true;
+				document.getElementById('nav-posse').style.display = '';
+				document.getElementById('memory-scope').style.display = '';
+			}
+		}
+
+		async function loadPosseAgents() {
+			if (!isPosseMember) return;
+			try {
+				var res = await fetch('/posse', { headers: headers });
+				if (!res.ok) return;
+				var data = await res.json();
+				var container = document.getElementById('posse-agents');
+				if (!data.agents || data.agents.length === 0) {
+					container.innerHTML = '<div class="empty">No agents registered</div>';
+					return;
+				}
+				container.innerHTML = data.agents.map(function(a) {
+					var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
+					var heartbeat = a.lastHeartbeat ? new Date(a.lastHeartbeat).toLocaleString() : '-';
+					return '<div class="job-card"><h3>' + a.name + (a.name === data.self ? ' (self)' : '') + '</h3>' +
+						'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + a.status + '</span>' +
+						'<span>' + a.agent + '</span>' +
+						'<span>v' + a.version + '</span></div>' +
+						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		async function searchPosseMemory() {
+			var q = document.getElementById('posse-memory-query').value;
+			if (!q) return;
+			var scope = document.getElementById('posse-scope').value;
+			try {
+				var res = await fetch('/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope, { headers: headers });
+				var docs = await res.json();
+				var container = document.getElementById('posse-memory-results');
+				if (docs.length === 0) {
+					container.innerHTML = '<div class="empty">No results</div>';
+					return;
+				}
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
+					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
+						'<div class="content">' + d.content + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		async function loadPosseRecent() {
+			if (!isPosseMember) return;
+			try {
+				var res = await fetch('/posse/memory/recent?scope=all&limit=10', { headers: headers });
+				if (!res.ok) return;
+				var docs = await res.json();
+				var container = document.getElementById('posse-recent');
+				if (docs.length === 0) {
+					container.innerHTML = '<div class="empty">No recent activity</div>';
+					return;
+				}
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
+					var time = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
+					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
+						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
+						'<div class="content">' + d.content + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
 
 		// Init
 		loadInstance();

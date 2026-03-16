@@ -73,10 +73,7 @@ function interpolateTemplate(content: string, vars?: Record<string, string>): st
  * Code modules (Layer 3) handle their own string construction.
  * Inline values (Layer 0) already have ${ENV_VAR} substitution at config parse time.
  */
-export async function resolvePromptValue(
-	value: string,
-	ctx: PromptContext,
-): Promise<string> {
+export async function resolvePromptValue(value: string, ctx: PromptContext): Promise<string> {
 	// Layer 3: Code module (.ts, .js)
 	if (isCodeModule(value)) {
 		const filePath = resolve(ctx.basePath, value);
@@ -84,9 +81,7 @@ export async function resolvePromptValue(
 			const mod = await import(filePath);
 			const fn = mod.default;
 			if (typeof fn !== "function") {
-				throw new Error(
-					`Code module does not export a default function: ${filePath}`,
-				);
+				throw new Error(`Code module does not export a default function: ${filePath}`);
 			}
 			const result = await fn(ctx);
 			if (typeof result !== "string") {
@@ -167,9 +162,7 @@ export async function resolvePromptArray(
 				const mod = await import(filePath);
 				const fn = mod.default;
 				if (typeof fn !== "function") {
-					throw new Error(
-						`Code module does not export a default function: ${filePath}`,
-					);
+					throw new Error(`Code module does not export a default function: ${filePath}`);
 				}
 				const result = await fn(ctx);
 
@@ -189,7 +182,10 @@ export async function resolvePromptArray(
 					results.push(`--- ${value} ---\n${content}`);
 				}
 			} catch (err) {
-				if (err instanceof Error && (err.message.includes("Code module") || err.message.includes("Rules module"))) {
+				if (
+					err instanceof Error &&
+					(err.message.includes("Code module") || err.message.includes("Rules module"))
+				) {
 					throw err;
 				}
 				throw new Error(

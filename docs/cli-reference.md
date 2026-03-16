@@ -410,3 +410,57 @@ randal init --from ~/backups/randal.config.yaml
 ### `randal init --yes`
 
 Non-interactive mode. Uses auto-detected values and all defaults. Useful for Docker builds and CI.
+
+---
+
+## 🌐 Mesh Commands
+
+### `randal mesh status`
+
+Show all instances in the mesh with health, load, specialization, and reliability scores.
+
+```bash
+randal mesh status
+randal mesh status --url http://remote:7600
+```
+
+### `randal mesh route <prompt>`
+
+Dry-run the routing algorithm and show which instance would handle the task and why.
+
+```bash
+randal mesh route "build a React component"
+```
+
+---
+
+## 📊 Analytics Commands
+
+### `randal analytics scores`
+
+Show reliability scores broken down by agent, model, and domain.
+
+```bash
+randal analytics scores
+randal analytics scores --url http://remote:7600
+```
+
+### `randal analytics recommendations`
+
+Show current actionable recommendations based on annotation patterns.
+
+```bash
+randal analytics recommendations
+```
+
+---
+
+## 🎙️ Voice Commands
+
+### `randal voice status`
+
+Show active voice sessions with duration and transcript length.
+
+```bash
+randal voice status
+```
