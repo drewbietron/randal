@@ -27,10 +27,70 @@ const imessageChannelSchema = z.object({
 	webhookSecret: z.string().optional(),
 });
 
+const telegramChannelSchema = z.object({
+	type: z.literal("telegram"),
+	token: z.string(),
+	allowFrom: z.array(z.string()).optional(),
+});
+
+const slackChannelSchema = z.object({
+	type: z.literal("slack"),
+	botToken: z.string(),
+	appToken: z.string(),
+	signingSecret: z.string().optional(),
+	allowFrom: z.array(z.string()).optional(),
+});
+
+const emailChannelSchema = z.object({
+	type: z.literal("email"),
+	imap: z.object({
+		host: z.string(),
+		port: z.number().default(993),
+		user: z.string(),
+		password: z.string(),
+		tls: z.boolean().default(true),
+	}),
+	smtp: z.object({
+		host: z.string(),
+		port: z.number().default(587),
+		user: z.string(),
+		password: z.string(),
+		secure: z.boolean().default(false),
+	}),
+	allowFrom: z.array(z.string()).optional(),
+});
+
+const whatsappChannelSchema = z.object({
+	type: z.literal("whatsapp"),
+	provider: z.enum(["twilio", "baileys"]).default("twilio"),
+	accountSid: z.string().optional(),
+	authToken: z.string().optional(),
+	phoneNumber: z.string().optional(),
+	allowFrom: z.array(z.string()).optional(),
+});
+
+const signalChannelSchema = z.object({
+	type: z.literal("signal"),
+	phoneNumber: z.string(),
+	signalCliBin: z.string().default("signal-cli"),
+	allowFrom: z.array(z.string()).optional(),
+});
+
+const voiceChannelSchema = z.object({
+	type: z.literal("voice"),
+	allowFrom: z.array(z.string()).optional(),
+});
+
 const channelSchema = z.discriminatedUnion("type", [
 	httpChannelSchema,
 	discordChannelSchema,
 	imessageChannelSchema,
+	telegramChannelSchema,
+	slackChannelSchema,
+	emailChannelSchema,
+	whatsappChannelSchema,
+	signalChannelSchema,
+	voiceChannelSchema,
 ]);
 
 const builtinEmbedderSchema = z.object({ type: z.literal("builtin") });
@@ -177,6 +237,23 @@ export const configSchema = z.object({
 				action: z.enum(["warn", "stop"]).default("warn"),
 			})
 			.default({}),
+		mcpServer: z
+			.object({
+				enabled: z.boolean().default(false),
+				port: z.number().default(7601),
+				tools: z
+					.array(z.string())
+					.default(["memory_search", "context", "status", "skills", "annotate"]),
+			})
+			.default({}),
+		compaction: z
+			.object({
+				enabled: z.boolean().default(false),
+				threshold: z.number().min(0).max(1).default(0.8),
+				model: z.string().default("anthropic/claude-haiku-3"),
+				maxSummaryTokens: z.number().default(2000),
+			})
+			.default({}),
 	}),
 
 	credentials: z
@@ -295,6 +372,147 @@ export const configSchema = z.object({
 					}),
 				)
 				.default({}),
+		})
+		.default({}),
+
+	voice: z
+		.object({
+			enabled: z.boolean().default(false),
+			livekit: z
+				.object({
+					url: z.string().default(""),
+					apiKey: z.string().default(""),
+					apiSecret: z.string().default(""),
+				})
+				.default({}),
+			twilio: z
+				.object({
+					accountSid: z.string().default(""),
+					authToken: z.string().default(""),
+					phoneNumber: z.string().default(""),
+				})
+				.default({}),
+			stt: z
+				.object({
+					provider: z.enum(["deepgram", "whisper", "assemblyai"]).default("deepgram"),
+					model: z.string().optional(),
+					apiKey: z.string().default(""),
+				})
+				.default({}),
+			tts: z
+				.object({
+					provider: z.enum(["elevenlabs", "cartesia", "openai", "edge"]).default("elevenlabs"),
+					voice: z.string().optional(),
+					apiKey: z.string().default(""),
+				})
+				.default({}),
+			turnDetection: z
+				.object({
+					mode: z.enum(["auto", "manual"]).default("auto"),
+				})
+				.default({}),
+			video: z
+				.object({
+					enabled: z.boolean().default(false),
+					visionModel: z.string().default("gpt-4o"),
+					publishScreen: z.boolean().default(false),
+					recordSessions: z.boolean().default(false),
+					recordPath: z.string().default("./recordings"),
+				})
+				.default({}),
+		})
+		.default({}),
+
+	mesh: z
+		.object({
+			enabled: z.boolean().default(false),
+			specialization: z.string().optional(),
+			endpoint: z.string().optional(),
+			routingWeights: z
+				.object({
+					specialization: z.number().default(0.4),
+					reliability: z.number().default(0.3),
+					load: z.number().default(0.2),
+					modelMatch: z.number().default(0.1),
+				})
+				.default({}),
+		})
+		.default({}),
+
+	analytics: z
+		.object({
+			enabled: z.boolean().default(false),
+			autoAnnotationPrompt: z.boolean().default(true),
+			feedbackInjection: z.boolean().default(true),
+			recommendationFrequency: z.enum(["daily", "weekly", "on-demand"]).default("on-demand"),
+			domainKeywords: z.record(z.array(z.string())).default({
+				frontend: [
+					"react",
+					"vue",
+					"angular",
+					"css",
+					"html",
+					"component",
+					"ui",
+					"ux",
+					"tailwind",
+					"next.js",
+					"svelte",
+				],
+				backend: [
+					"api",
+					"server",
+					"endpoint",
+					"rest",
+					"graphql",
+					"middleware",
+					"express",
+					"hono",
+					"fastify",
+				],
+				database: [
+					"sql",
+					"query",
+					"migration",
+					"schema",
+					"postgres",
+					"mysql",
+					"sqlite",
+					"prisma",
+					"drizzle",
+				],
+				infra: [
+					"docker",
+					"kubernetes",
+					"ci",
+					"cd",
+					"deploy",
+					"terraform",
+					"aws",
+					"gcp",
+					"azure",
+					"nginx",
+				],
+				docs: ["readme", "documentation", "docs", "guide", "tutorial", "changelog"],
+				testing: ["test", "spec", "jest", "vitest", "cypress", "playwright", "coverage"],
+			}),
+			agingHalfLife: z.number().default(30),
+		})
+		.default({}),
+
+	browser: z
+		.object({
+			enabled: z.boolean().default(false),
+			headless: z.boolean().default(true),
+			profileDir: z.string().optional(),
+			sandbox: z.boolean().default(false),
+			viewport: z
+				.object({
+					width: z.number().default(1280),
+					height: z.number().default(720),
+				})
+				.default({}),
+			timeout: z.number().default(30000),
 		})
 		.default({}),
 });

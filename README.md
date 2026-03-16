@@ -22,6 +22,13 @@ Randal wraps agent CLIs — [OpenCode](https://github.com/nickthecook/opencode),
 - 🔐 **Credentials** — Scoped env-var filtering with explicit allowlists. No leaks.
 - 📡 **Dashboard** — Real-time web UI with SSE streaming, job tracking, and cost monitoring
 - 🤝 **Posse Mode** — Multiple agents, shared memory, coordinated teamwork
+- 🎙️ **Voice & Video** — Join phone calls and video meetings as a full participant via LiveKit + Twilio
+- 🌐 **Multi-Instance Mesh** — Distributed orchestration with specialization-based routing across machines
+- 📊 **Self-Learning Analytics** — Human annotation feedback loops, reliability scoring, and prompt tuning
+- 💬 **Expanded Channels** — Telegram, Slack, WhatsApp, Signal, Email — reach your agent anywhere
+- 🌍 **Browser Automation** — Chrome/Chromium control via CDP for web browsing and OAuth flows
+- 🔄 **Real-Time Streaming** — Line-by-line agent output with tool use detection and MCP server integration
+- 📦 **Context Compaction** — LLM-based summarization when context grows too large
 
 > *One agent is useful. A posse is unstoppable.*
 

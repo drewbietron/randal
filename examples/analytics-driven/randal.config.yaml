@@ -1,0 +1,121 @@
+# Analytics and self-learning enabled instance
+# Randal learns from annotations and improves over time.
+# See docs/analytics-guide.md for setup instructions
+
+name: learning-agent
+
+runner:
+  workdir: ./workspace
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 20
+  mcpServer:
+    enabled: true
+    port: 7601
+    tools:
+      - memory_search
+      - context
+      - status
+      - skills
+      - annotate
+
+identity:
+  persona: >
+    You are a software engineering assistant that continuously improves.
+    After completing each task, evaluate your own work honestly. Pay
+    attention to analytics feedback injected into your context and
+    adjust your approach accordingly.
+  rules:
+    - Self-evaluate work quality after each task
+    - Note areas of uncertainty for future improvement
+    - Follow recommendations from the analytics system
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: ${API_TOKEN}
+    - type: discord
+      token: ${DISCORD_BOT_TOKEN}
+      allowFrom:
+        - "${DISCORD_ALLOWED_USER}"
+
+analytics:
+  enabled: true
+  autoAnnotationPrompt: true
+  feedbackInjection: true
+  recommendationFrequency: weekly
+  domainKeywords:
+    frontend:
+      - react
+      - vue
+      - angular
+      - css
+      - html
+      - component
+      - ui
+      - ux
+      - tailwind
+      - next.js
+      - svelte
+    backend:
+      - api
+      - server
+      - endpoint
+      - rest
+      - graphql
+      - middleware
+      - express
+      - hono
+      - fastify
+    database:
+      - sql
+      - query
+      - migration
+      - schema
+      - postgres
+      - mysql
+      - sqlite
+      - prisma
+      - drizzle
+    infra:
+      - docker
+      - kubernetes
+      - ci
+      - cd
+      - deploy
+      - terraform
+      - aws
+      - gcp
+      - azure
+      - nginx
+    docs:
+      - readme
+      - documentation
+      - docs
+      - guide
+      - tutorial
+      - changelog
+    testing:
+      - test
+      - spec
+      - jest
+      - vitest
+      - cypress
+      - playwright
+      - coverage
+  agingHalfLife: 30
+
+memory:
+  store: meilisearch
+  url: ${MEILISEARCH_URL}
+  apiKey: ${MEILISEARCH_API_KEY}
+
+credentials:
+  envFile: ./.env
+  allow:
+    - API_TOKEN
+    - DISCORD_BOT_TOKEN
+    - DISCORD_ALLOWED_USER
+    - MEILISEARCH_URL
+    - MEILISEARCH_API_KEY

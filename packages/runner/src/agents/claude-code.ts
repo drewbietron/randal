@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { SkillCleanup, SkillDeployment, TokenUsage } from "@randal/core";
+import type { SkillCleanup, SkillDeployment, TokenUsage, ToolUseEvent } from "@randal/core";
 import { stringify as stringifyYaml } from "yaml";
 import type { AgentAdapter } from "./adapter.js";
 
@@ -25,6 +25,36 @@ export const claudeCode: AgentAdapter = {
 				output: Number.parseFloat(match[2]) * 1000,
 			};
 		}
+		return null;
+	},
+
+	parseToolUse(line: string): ToolUseEvent | null {
+		// Claude Code tool use patterns:
+		// "Tool: Read file: path/to/file.ts"
+		// "Tool: Edit file: path/to/file.ts"
+		// "Tool: Bash: ls -la"
+		// "Tool: Write file: path/to/file.ts"
+		// "Tool: Glob: **/*.ts"
+		// "Tool: Grep: pattern"
+		const toolMatch = line.match(/^Tool:\s*(\w[\w\s]*?):\s*(.+)$/);
+		if (toolMatch) {
+			return {
+				tool: toolMatch[1].trim(),
+				args: toolMatch[2].trim(),
+			};
+		}
+
+		// Alternative format: "Using tool: ToolName"
+		const usingMatch = line.match(/^Using tool:\s*(\w+)/);
+		if (usingMatch) {
+			return {
+				tool: usingMatch[1],
+			};
+		}
+
+		// Tool result patterns: "Result: ..."
+		// We don't emit these as separate events
+
 		return null;
 	},
 

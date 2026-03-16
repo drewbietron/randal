@@ -16,12 +16,14 @@ export type RunnerEventType =
 	| "job.started"
 	| "iteration.start"
 	| "iteration.tool_use"
+	| "iteration.output"
 	| "iteration.end"
 	| "job.plan_updated"
 	| "job.delegation.started"
 	| "job.delegation.completed"
 	| "job.stuck"
 	| "job.context_injected"
+	| "job.compacted"
 	| "job.complete"
 	| "job.failed"
 	| "job.stopped"
@@ -57,12 +59,77 @@ export interface RunnerEvent {
 		delegationTask?: string;
 		delegationJobId?: string;
 		delegationStatus?: JobStatus;
+		// Streaming event data:
+		outputLine?: string;
+		// Compaction event data:
+		iterationsCompacted?: number;
+		originalTokens?: number;
+		compactedTokens?: number;
 		// Scheduler event data:
 		cronJobName?: string;
 		hookSource?: string;
 		wakeMode?: "now" | "next-heartbeat";
 		heartbeatTickNumber?: number;
 	};
+}
+
+// ---- Annotation ----
+export type AnnotationVerdict = "pass" | "fail" | "partial";
+
+export interface Annotation {
+	id: string;
+	jobId: string;
+	verdict: AnnotationVerdict;
+	feedback?: string;
+	categories?: string[];
+	agent: string;
+	model: string;
+	domain?: string;
+	iterationCount: number;
+	tokenCost: number;
+	duration: number;
+	filesChanged: string[];
+	prompt: string;
+	timestamp: string;
+}
+
+// ---- Mesh Instance ----
+export interface MeshInstance {
+	instanceId: string;
+	name: string;
+	posse?: string;
+	capabilities: string[];
+	specialization?: string;
+	status: "idle" | "busy" | "unhealthy" | "offline";
+	lastHeartbeat: string;
+	endpoint: string;
+	models: string[];
+	activeJobs: number;
+	completedJobs: number;
+	health: {
+		uptime: number;
+		missedPings: number;
+	};
+}
+
+// ---- Analytics ----
+export interface ReliabilityScore {
+	dimension: string;
+	value: string;
+	passRate: number;
+	totalAnnotations: number;
+	passCount: number;
+	failCount: number;
+	partialCount: number;
+}
+
+export interface Recommendation {
+	id: string;
+	type: "model_switch" | "knowledge_gap" | "split_instance" | "rule_validation" | "general";
+	message: string;
+	severity: "info" | "warning" | "critical";
+	data?: Record<string, unknown>;
+	timestamp: string;
 }
 
 // ---- Job ----

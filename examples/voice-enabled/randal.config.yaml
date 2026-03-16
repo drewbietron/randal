@@ -1,0 +1,70 @@
+# Voice-enabled Randal instance
+# Requires: LiveKit server, Twilio account, Deepgram API key, ElevenLabs API key
+# See docs/voice-video-guide.md for setup instructions
+
+name: voice-assistant
+
+runner:
+  workdir: ./workspace
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 20
+
+identity:
+  persona: >
+    You are a helpful voice assistant. Keep your responses concise and
+    conversational since they will be spoken aloud. Avoid markdown
+    formatting, code blocks, and long lists in voice conversations.
+  rules:
+    - Respond in short, natural sentences suitable for speech
+    - Ask clarifying questions rather than making assumptions
+    - Confirm destructive actions before proceeding
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: ${API_TOKEN}
+    - type: voice
+
+voice:
+  enabled: true
+
+  livekit:
+    url: ${LIVEKIT_URL}
+    apiKey: ${LIVEKIT_API_KEY}
+    apiSecret: ${LIVEKIT_API_SECRET}
+
+  twilio:
+    accountSid: ${TWILIO_ACCOUNT_SID}
+    authToken: ${TWILIO_AUTH_TOKEN}
+    phoneNumber: ${TWILIO_PHONE_NUMBER}
+
+  stt:
+    provider: deepgram
+    apiKey: ${DEEPGRAM_API_KEY}
+    model: nova-2
+
+  tts:
+    provider: elevenlabs
+    apiKey: ${ELEVENLABS_API_KEY}
+    voice: pNInz6obpgDQGcFmaJgB
+
+  turnDetection:
+    mode: auto
+
+  video:
+    enabled: false
+
+credentials:
+  envFile: ./.env
+  allow:
+    - LIVEKIT_URL
+    - LIVEKIT_API_KEY
+    - LIVEKIT_API_SECRET
+    - TWILIO_ACCOUNT_SID
+    - TWILIO_AUTH_TOKEN
+    - TWILIO_PHONE_NUMBER
+    - DEEPGRAM_API_KEY
+    - ELEVENLABS_API_KEY
+    - API_TOKEN

@@ -1,0 +1,228 @@
+import { describe, expect, test } from "bun:test";
+import type { MeshInstance } from "@randal/core";
+import { filterInstances, findBestForSpecialization } from "./discovery.js";
+
+function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
+	return {
+		instanceId: `inst-${Math.random().toString(36).slice(2, 8)}`,
+		name: "test-agent",
+		capabilities: ["run"],
+		status: "idle",
+		lastHeartbeat: new Date().toISOString(),
+		endpoint: "http://localhost:7600",
+		models: ["anthropic/claude-sonnet-4"],
+		activeJobs: 0,
+		completedJobs: 10,
+		health: { uptime: 3600, missedPings: 0 },
+		...overrides,
+	};
+}
+
+describe("filterInstances", () => {
+	test("excludes self by instanceId", () => {
+		const instances = [
+			makeInstance({ instanceId: "self-id" }),
+			makeInstance({ instanceId: "peer-1" }),
+			makeInstance({ instanceId: "peer-2" }),
+		];
+
+		const result = filterInstances(instances, { excludeInstanceId: "self-id" });
+		expect(result.instances).toHaveLength(2);
+		expect(result.total).toBe(2);
+		expect(result.instances.find((i) => i.instanceId === "self-id")).toBeUndefined();
+	});
+
+	test("filters by posse", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-1", posse: "team-a" }),
+			makeInstance({ instanceId: "inst-2", posse: "team-b" }),
+			makeInstance({ instanceId: "inst-3", posse: "team-a" }),
+		];
+
+		const result = filterInstances(instances, { posse: "team-a" });
+		expect(result.instances).toHaveLength(2);
+		expect(result.instances.every((i) => i.posse === "team-a")).toBe(true);
+	});
+
+	test("filters by specialization", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-1", specialization: "frontend" }),
+			makeInstance({ instanceId: "inst-2", specialization: "backend" }),
+			makeInstance({ instanceId: "inst-3", specialization: "frontend" }),
+		];
+
+		const result = filterInstances(instances, { specialization: "frontend" });
+		expect(result.instances).toHaveLength(2);
+		expect(result.instances.every((i) => i.specialization === "frontend")).toBe(true);
+	});
+
+	test("filters by status", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-1", status: "idle" }),
+			makeInstance({ instanceId: "inst-2", status: "busy" }),
+			makeInstance({ instanceId: "inst-3", status: "unhealthy" }),
+		];
+
+		const result = filterInstances(instances, { status: "idle" });
+		expect(result.instances).toHaveLength(1);
+		expect(result.instances[0].status).toBe("idle");
+	});
+
+	test("returns healthy count excluding unhealthy and offline", () => {
+		const instances = [
+			makeInstance({ status: "idle" }),
+			makeInstance({ status: "busy" }),
+			makeInstance({ status: "unhealthy" }),
+			makeInstance({ status: "offline" }),
+		];
+
+		const result = filterInstances(instances);
+		expect(result.total).toBe(4);
+		expect(result.healthy).toBe(2); // idle + busy
+		expect(result.busy).toBe(1);
+	});
+
+	test("returns all instances when no filters provided", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-1" }),
+			makeInstance({ instanceId: "inst-2" }),
+		];
+
+		const result = filterInstances(instances);
+		expect(result.instances).toHaveLength(2);
+		expect(result.total).toBe(2);
+	});
+
+	test("combines multiple filters", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				posse: "team-a",
+				specialization: "frontend",
+				status: "idle",
+			}),
+			makeInstance({
+				instanceId: "inst-2",
+				posse: "team-a",
+				specialization: "backend",
+				status: "idle",
+			}),
+			makeInstance({
+				instanceId: "inst-3",
+				posse: "team-b",
+				specialization: "frontend",
+				status: "idle",
+			}),
+		];
+
+		const result = filterInstances(instances, {
+			posse: "team-a",
+			specialization: "frontend",
+		});
+		expect(result.instances).toHaveLength(1);
+		expect(result.instances[0].instanceId).toBe("inst-1");
+	});
+
+	test("returns empty when no instances match", () => {
+		const instances = [makeInstance({ posse: "team-a" })];
+
+		const result = filterInstances(instances, { posse: "team-z" });
+		expect(result.instances).toHaveLength(0);
+		expect(result.total).toBe(0);
+		expect(result.healthy).toBe(0);
+	});
+});
+
+describe("findBestForSpecialization", () => {
+	test("returns matching idle instance", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				specialization: "frontend",
+				status: "idle",
+				activeJobs: 0,
+			}),
+			makeInstance({
+				instanceId: "inst-2",
+				specialization: "backend",
+				status: "idle",
+				activeJobs: 0,
+			}),
+		];
+
+		const result = findBestForSpecialization(instances, "frontend");
+		expect(result).not.toBeNull();
+		expect(result?.instanceId).toBe("inst-1");
+		expect(result?.specialization).toBe("frontend");
+	});
+
+	test("prefers idle over busy", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-busy",
+				specialization: "frontend",
+				status: "busy",
+				activeJobs: 2,
+			}),
+			makeInstance({
+				instanceId: "inst-idle",
+				specialization: "frontend",
+				status: "idle",
+				activeJobs: 0,
+			}),
+		];
+
+		const result = findBestForSpecialization(instances, "frontend");
+		expect(result).not.toBeNull();
+		expect(result?.instanceId).toBe("inst-idle");
+	});
+
+	test("returns null when no match found", () => {
+		const instances = [makeInstance({ specialization: "backend", status: "idle" })];
+
+		const result = findBestForSpecialization(instances, "frontend");
+		expect(result).toBeNull();
+	});
+
+	test("returns null for unhealthy instances matching specialization", () => {
+		const instances = [
+			makeInstance({
+				specialization: "frontend",
+				status: "unhealthy",
+			}),
+			makeInstance({
+				specialization: "frontend",
+				status: "offline",
+			}),
+		];
+
+		const result = findBestForSpecialization(instances, "frontend");
+		expect(result).toBeNull();
+	});
+
+	test("picks least loaded busy instance when no idle available", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-loaded",
+				specialization: "frontend",
+				status: "busy",
+				activeJobs: 5,
+			}),
+			makeInstance({
+				instanceId: "inst-light",
+				specialization: "frontend",
+				status: "busy",
+				activeJobs: 1,
+			}),
+		];
+
+		const result = findBestForSpecialization(instances, "frontend");
+		expect(result).not.toBeNull();
+		expect(result?.instanceId).toBe("inst-light");
+	});
+
+	test("returns null for empty instances array", () => {
+		const result = findBestForSpecialization([], "frontend");
+		expect(result).toBeNull();
+	});
+});

@@ -1,0 +1,65 @@
+# Multi-instance mesh node
+# This config represents a single node specialized in frontend work.
+# Deploy multiple instances with different specializations to form a mesh.
+# See docs/mesh-guide.md for setup instructions
+
+name: frontend-agent
+
+runner:
+  workdir: ./workspace
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  defaultMaxIterations: 25
+  maxDelegationDepth: 2
+  maxDelegationsPerIteration: 3
+
+identity:
+  persona: >
+    You are a frontend development specialist. You excel at React, TypeScript,
+    CSS, and UI/UX implementation. When you receive tasks outside your
+    expertise, the mesh will route them to a better-suited instance.
+  knowledge:
+    - ./knowledge/frontend-patterns.md
+    - ./knowledge/design-system.md
+  rules:
+    - Follow the project's component conventions
+    - Write tests for all new components
+    - Use the design system tokens for styling
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: ${API_TOKEN}
+
+mesh:
+  enabled: true
+  specialization: frontend
+  endpoint: http://frontend-agent:7600
+  routingWeights:
+    specialization: 0.4
+    reliability: 0.3
+    load: 0.2
+    modelMatch: 0.1
+
+memory:
+  store: meilisearch
+  url: ${MEILISEARCH_URL}
+  apiKey: ${MEILISEARCH_API_KEY}
+  sharing:
+    publishTo: shared-mesh-index
+    readFrom:
+      - shared-mesh-index
+
+analytics:
+  enabled: true
+  feedbackInjection: true
+  recommendationFrequency: weekly
+
+credentials:
+  envFile: ./.env
+  allow:
+    - API_TOKEN
+    - MEILISEARCH_URL
+    - MEILISEARCH_API_KEY
+    - MESH_PEERS

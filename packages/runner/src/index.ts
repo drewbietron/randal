@@ -41,3 +41,23 @@ export {
 	parseProgress,
 	parseDelegationRequests,
 } from "./plan-parser.js";
+
+export { readStreamLines, readStream } from "./streaming.js";
+export type { StreamingReaderOptions, StreamingResult } from "./streaming.js";
+
+export { parseCallRequests, callRequestSchema } from "./call-parser.js";
+export type { CallRequest } from "./call-parser.js";
+
+export { parseJoinCallRequests, joinCallRequestSchema } from "./join-call-parser.js";
+export type { JoinCallRequest } from "./join-call-parser.js";
+
+export { parseRouteRequests, routeRequestSchema } from "./route-parser.js";
+export type { RouteRequest } from "./route-parser.js";
+
+export { McpServer } from "./mcp-server.js";
+export type { McpServiceHooks } from "./mcp-server.js";
+
+export { shouldCompact, compactContext } from "./compaction.js";
+export type { CompactionInput, CompactionResult } from "./compaction.js";
+
+export { BrowserTool } from "./tools/browser.js";

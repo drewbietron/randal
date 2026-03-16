@@ -20,7 +20,10 @@
 			"@randal/memory": ["./packages/memory/src/index.ts"],
 			"@randal/credentials": ["./packages/credentials/src/index.ts"],
 			"@randal/dashboard": ["./packages/dashboard/src/app.ts"],
-			"@randal/harness": ["./packages/harness/src/index.ts"]
+			"@randal/harness": ["./packages/harness/src/index.ts"],
+			"@randal/analytics": ["./packages/analytics/src/index.ts"],
+			"@randal/voice": ["./packages/voice/src/index.ts"],
+			"@randal/mesh": ["./packages/mesh/src/index.ts"]
 		}
 	},
 	"references": [
@@ -31,7 +34,10 @@
 		{ "path": "./packages/gateway" },
 		{ "path": "./packages/memory" },
 		{ "path": "./packages/harness" },
-		{ "path": "./packages/cli" }
+		{ "path": "./packages/cli" },
+		{ "path": "./packages/analytics" },
+		{ "path": "./packages/voice" },
+		{ "path": "./packages/mesh" }
 	],
 	"include": [],
 	"exclude": ["node_modules", "dist"]

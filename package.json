@@ -11,6 +11,10 @@
 		"test:unit": "bun test packages/",
 		"test:integration": "bun test tests/integration/",
 		"test:e2e": "bun test tests/e2e/",
+		"test:voice": "bun test packages/voice/",
+		"test:mesh": "bun test packages/mesh/",
+		"test:analytics": "bun test packages/analytics/",
+		"test:channels": "bun test packages/gateway/src/channels/",
 		"typecheck": "bunx tsc --noEmit",
 		"lint": "bunx biome check .",
 		"check": "bun run typecheck && bun run lint && bun run test"

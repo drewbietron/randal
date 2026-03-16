@@ -30,6 +30,9 @@ function printHelp(): void {
     \x1b[36mskills\x1b[0m <sub>           📚 Skill management (list, search, show)
     \x1b[36mcron\x1b[0m <sub>             📅 Cron job management (list, add, remove)
     \x1b[36mheartbeat\x1b[0m <sub>        💓 Heartbeat control (status, trigger)
+    \x1b[36mmesh\x1b[0m <sub>             🌐 Mesh operations (status, route)
+    \x1b[36manalytics\x1b[0m <sub>        📈 Analytics (scores, recommendations)
+    \x1b[36mvoice\x1b[0m <sub>            🎙️  Voice sessions (status)
     \x1b[36maudit\x1b[0m                   🔍 Audit ambient host auth (--json)
     \x1b[36mupdate\x1b[0m                  ⬆️  Self-update (--check, --pin, --dry-run)
 
@@ -119,6 +122,9 @@ export async function run(argv: string[]): Promise<void> {
 				"cron",
 				"heartbeat",
 				"posse",
+				"mesh",
+				"analytics",
+				"voice",
 			].includes(command)
 		) {
 			config = null as unknown as RandalConfig;
@@ -194,6 +200,21 @@ export async function run(argv: string[]): Promise<void> {
 		case "posse": {
 			const { posseCommand } = await import("./commands/posse.js");
 			await posseCommand(args.slice(1), ctx);
+			break;
+		}
+		case "mesh": {
+			const { meshCommand } = await import("./commands/mesh.js");
+			await meshCommand(args.slice(1), ctx);
+			break;
+		}
+		case "analytics": {
+			const { analyticsCommand } = await import("./commands/analytics.js");
+			await analyticsCommand(args.slice(1), ctx);
+			break;
+		}
+		case "voice": {
+			const { voiceCommand } = await import("./commands/voice.js");
+			await voiceCommand(args.slice(1), ctx);
 			break;
 		}
 		default:

@@ -38,6 +38,11 @@ export type {
 	SkillDoc,
 	SkillDeployment,
 	SkillCleanup,
+	AnnotationVerdict,
+	Annotation,
+	MeshInstance,
+	ReliabilityScore,
+	Recommendation,
 } from "./types.js";
 
 export { posseConfigSchema, parsePosseConfig } from "./posse-config.js";
