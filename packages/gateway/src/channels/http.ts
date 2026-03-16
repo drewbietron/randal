@@ -2,7 +2,13 @@ import { timingSafeEqual } from "node:crypto";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
-import type { MemoryManager, SkillManager } from "@randal/memory";
+import {
+	type MemoryManager,
+	type RegistryDoc,
+	type SkillManager,
+	queryPosseMembers,
+	searchCrossAgent,
+} from "@randal/memory";
 import { type Runner, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
 import { Hono } from "hono";
@@ -44,6 +50,8 @@ export interface HttpChannelOptions {
 	memoryManager?: MemoryManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
+	/** Meilisearch client for posse registry queries. */
+	posseClient?: unknown;
 }
 
 export function createHttpApp(options: HttpChannelOptions): Hono {
@@ -371,6 +379,129 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			const results = await memoryManager.recent(limit);
 			return c.json(results);
 		}
+		return c.json([]);
+	});
+
+	// ---- Posse endpoints ----
+
+	// Posse info (R5.1)
+	app.get("/posse", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		let agents: RegistryDoc[] = [];
+		if (options.posseClient) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			agents = await queryPosseMembers(
+				config,
+				options.posseClient as Parameters<typeof queryPosseMembers>[1],
+			);
+		}
+
+		return c.json({
+			posse: config.posse,
+			agents,
+			self: config.name,
+		});
+	});
+
+	// Posse memory search (R5.2)
+	app.get("/posse/memory/search", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		const q = c.req.query("q");
+		if (!q) return c.json({ error: "q parameter required" }, 400);
+
+		const scope = c.req.query("scope") ?? "self";
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (scope === "self") {
+			if (memoryManager) {
+				const results = await memoryManager.search(q, limit);
+				return c.json(results);
+			}
+			return c.json([]);
+		}
+
+		if (scope === "shared") {
+			// Search only the shared posse index
+			const readFrom = config.memory.sharing.readFrom.filter((idx) => idx.startsWith("shared-"));
+			if (readFrom.length === 0) return c.json([]);
+
+			try {
+				const results = await searchCrossAgent(
+					q,
+					{
+						...config,
+						memory: { ...config.memory, sharing: { ...config.memory.sharing, readFrom } },
+					},
+					limit,
+				);
+				return c.json(results);
+			} catch {
+				return c.json([]);
+			}
+		}
+
+		// scope === "all": search own + all sharing indexes
+		if (memoryManager) {
+			const ownResults = await memoryManager.search(q, limit);
+			let crossResults: unknown[] = [];
+
+			if (config.memory.sharing.readFrom.length > 0) {
+				try {
+					crossResults = await searchCrossAgent(q, config, limit);
+				} catch {
+					// Continue with own results only
+				}
+			}
+
+			// Merge and deduplicate
+			const seen = new Set<string>();
+			const merged: unknown[] = [];
+
+			for (const doc of ownResults as Array<{ contentHash?: string }>) {
+				const hash = doc.contentHash;
+				if (hash && seen.has(hash)) continue;
+				if (hash) seen.add(hash);
+				merged.push(doc);
+			}
+
+			for (const doc of crossResults as Array<{ contentHash?: string }>) {
+				const hash = doc.contentHash;
+				if (hash && seen.has(hash)) continue;
+				if (hash) seen.add(hash);
+				merged.push(doc);
+			}
+
+			return c.json(merged.slice(0, limit));
+		}
+
+		return c.json([]);
+	});
+
+	// Posse memory recent (R5.3)
+	app.get("/posse/memory/recent", async (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		const scope = c.req.query("scope") ?? "all";
+		const limit = Number.parseInt(c.req.query("limit") ?? "10", 10);
+
+		if (scope === "self" && memoryManager) {
+			const results = await memoryManager.recent(limit);
+			return c.json(results);
+		}
+
+		if (memoryManager) {
+			const results = await memoryManager.recent(limit);
+			return c.json(results);
+		}
+
 		return c.json([]);
 	});
 

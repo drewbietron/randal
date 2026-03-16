@@ -39,3 +39,9 @@ export type {
 	SkillDeployment,
 	SkillCleanup,
 } from "./types.js";
+
+export { posseConfigSchema, parsePosseConfig } from "./posse-config.js";
+export type { PosseConfig } from "./posse-config.js";
+
+export { resolvePosseConfig } from "./posse-resolve.js";
+export type { ResolvedAgentConfig } from "./posse-resolve.js";

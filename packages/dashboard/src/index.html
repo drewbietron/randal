@@ -140,6 +140,7 @@
 			<button class="active" data-page="home">Home</button>
 			<button data-page="history">History</button>
 			<button data-page="memory">Memory</button>
+			<button data-page="posse" id="nav-posse" style="display:none">Posse</button>
 			<button data-page="settings">Settings</button>
 		</nav>
 
@@ -219,9 +220,39 @@
 				<h2>Memory Search</h2>
 				<div class="memory-search">
 					<input type="text" id="memory-query" placeholder="Search memories..." />
+					<select id="memory-scope" style="display:none">
+						<option value="self" selected>Self</option>
+						<option value="shared">Shared</option>
+						<option value="all">All</option>
+					</select>
 					<button class="btn" onclick="searchMemory()">Search</button>
 				</div>
 				<div id="memory-results"></div>
+			</div>
+		</div>
+
+		<!-- Posse Page -->
+		<div class="page" id="page-posse">
+			<div class="section">
+				<h2>Posse Agents</h2>
+				<div id="posse-agents"></div>
+			</div>
+			<div class="section">
+				<h2>Posse Memory Search</h2>
+				<div class="memory-search">
+					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." />
+					<select id="posse-scope">
+						<option value="all" selected>All</option>
+						<option value="self">Self</option>
+						<option value="shared">Shared</option>
+					</select>
+					<button class="btn" onclick="searchPosseMemory()">Search</button>
+				</div>
+				<div id="posse-memory-results"></div>
+			</div>
+			<div class="section">
+				<h2>Recent Activity</h2>
+				<div id="posse-recent"></div>
 			</div>
 		</div>
 
@@ -256,6 +287,7 @@
 
 			if (name === 'history') loadHistory();
 			if (name === 'settings') loadSettings();
+			if (name === 'posse') { loadPosseAgents(); loadPosseRecent(); }
 		}
 
 		function showJobDetail(id) {
@@ -274,6 +306,7 @@
 				var statusEl = document.getElementById('instance-status');
 				statusEl.textContent = data.status;
 				statusEl.className = 'instance-status ' + data.status;
+				checkPosse(data);
 			} catch(e) {}
 		}
 
@@ -418,7 +451,9 @@
 			var q = document.getElementById('memory-query').value;
 			if (!q) return;
 			try {
-				var res = await fetch('/memory/search?q=' + encodeURIComponent(q), { headers: headers });
+				var scope = document.getElementById('memory-scope').value;
+				var url = (isPosseMember && scope !== 'self') ? '/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope : '/memory/search?q=' + encodeURIComponent(q);
+				var res = await fetch(url, { headers: headers });
 				var docs = await res.json();
 				var container = document.getElementById('memory-results');
 				if (docs.length === 0) {
@@ -501,6 +536,81 @@
 				if (currentJobId) loadJobDetail(currentJobId);
 			});
 		});
+
+		// Posse functions
+		var isPosseMember = false;
+
+		async function checkPosse(data) {
+			if (data && data.posse) {
+				isPosseMember = true;
+				document.getElementById('nav-posse').style.display = '';
+				document.getElementById('memory-scope').style.display = '';
+			}
+		}
+
+		async function loadPosseAgents() {
+			if (!isPosseMember) return;
+			try {
+				var res = await fetch('/posse', { headers: headers });
+				if (!res.ok) return;
+				var data = await res.json();
+				var container = document.getElementById('posse-agents');
+				if (!data.agents || data.agents.length === 0) {
+					container.innerHTML = '<div class="empty">No agents registered</div>';
+					return;
+				}
+				container.innerHTML = data.agents.map(function(a) {
+					var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
+					var heartbeat = a.lastHeartbeat ? new Date(a.lastHeartbeat).toLocaleString() : '-';
+					return '<div class="job-card"><h3>' + a.name + (a.name === data.self ? ' (self)' : '') + '</h3>' +
+						'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + a.status + '</span>' +
+						'<span>' + a.agent + '</span>' +
+						'<span>v' + a.version + '</span></div>' +
+						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		async function searchPosseMemory() {
+			var q = document.getElementById('posse-memory-query').value;
+			if (!q) return;
+			var scope = document.getElementById('posse-scope').value;
+			try {
+				var res = await fetch('/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope, { headers: headers });
+				var docs = await res.json();
+				var container = document.getElementById('posse-memory-results');
+				if (docs.length === 0) {
+					container.innerHTML = '<div class="empty">No results</div>';
+					return;
+				}
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
+					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
+						'<div class="content">' + d.content + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
+
+		async function loadPosseRecent() {
+			if (!isPosseMember) return;
+			try {
+				var res = await fetch('/posse/memory/recent?scope=all&limit=10', { headers: headers });
+				if (!res.ok) return;
+				var docs = await res.json();
+				var container = document.getElementById('posse-recent');
+				if (docs.length === 0) {
+					container.innerHTML = '<div class="empty">No recent activity</div>';
+					return;
+				}
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
+					var time = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
+					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
+						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
+						'<div class="content">' + d.content + '</div></div>';
+				}).join('');
+			} catch(e) { console.error(e); }
+		}
 
 		// Init
 		loadInstance();

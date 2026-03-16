@@ -156,3 +156,114 @@ describe("HTTP API", () => {
 		expect(res.status).toBe(400);
 	});
 });
+
+// ---- Posse endpoint tests ----
+
+function makePosseTestApp() {
+	const config = parseConfig(`
+name: test-agent
+posse: test-team
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+memory:
+  sharing:
+    publishTo: "shared-test-team"
+    readFrom: ["shared-test-team"]
+`);
+
+	const eventBus = new EventBus();
+	const runner = new Runner({
+		config,
+		onEvent: (e) => eventBus.emit(e),
+	});
+
+	const app = createHttpApp({ config, runner, eventBus });
+	return { app, config, runner, eventBus };
+}
+
+describe("Posse HTTP API", () => {
+	test("GET /posse returns 404 when posse not configured", async () => {
+		const { app } = makeTestApp(); // no posse in config
+		const res = await app.request("/posse", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(404);
+		const data = await res.json();
+		expect(data.error).toBe("Not a posse member");
+	});
+
+	test("GET /posse returns posse info when configured", async () => {
+		const { app } = makePosseTestApp();
+		const res = await app.request("/posse", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.posse).toBe("test-team");
+		expect(data.self).toBe("test-agent");
+		expect(Array.isArray(data.agents)).toBe(true);
+	});
+
+	test("GET /posse/memory/search returns 404 when no posse", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/posse/memory/search?q=test", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(404);
+	});
+
+	test("GET /posse/memory/search requires q parameter", async () => {
+		const { app } = makePosseTestApp();
+		const res = await app.request("/posse/memory/search", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(400);
+	});
+
+	test("GET /posse/memory/search?scope=self returns empty without memory manager", async () => {
+		const { app } = makePosseTestApp();
+		const res = await app.request("/posse/memory/search?q=test&scope=self", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(Array.isArray(data)).toBe(true);
+	});
+
+	test("GET /posse/memory/recent returns 404 when no posse", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/posse/memory/recent", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(404);
+	});
+
+	test("GET /posse/memory/recent returns empty without memory manager", async () => {
+		const { app } = makePosseTestApp();
+		const res = await app.request("/posse/memory/recent?scope=self", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(Array.isArray(data)).toBe(true);
+	});
+
+	test("All /posse/* endpoints require authentication", async () => {
+		const { app } = makePosseTestApp();
+
+		const endpoints = ["/posse", "/posse/memory/search?q=test", "/posse/memory/recent"];
+		for (const ep of endpoints) {
+			const res = await app.request(ep);
+			expect(res.status).toBe(401);
+		}
+	});
+});

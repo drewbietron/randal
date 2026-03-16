@@ -1,8 +1,15 @@
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { createLogger } from "@randal/core";
-import { MemoryManager, SkillManager } from "@randal/memory";
+import {
+	MemoryManager,
+	SkillManager,
+	deregisterAgent,
+	registerAgent,
+	updateHeartbeat,
+} from "@randal/memory";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
+import { MeiliSearch } from "meilisearch";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
 import { DiscordChannel } from "./channels/discord.js";
 import { createHttpApp } from "./channels/http.js";
@@ -130,7 +137,17 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		}
 	}
 
-	// Create HTTP app — pass scheduler and skillManager
+	// Create Meilisearch client for posse operations (if posse configured)
+	// biome-ignore lint/suspicious/noExplicitAny: MeiliSearch client has complex generics, typed loosely for registry operations
+	let posseClient: any;
+	if (config.posse && config.memory.store === "meilisearch") {
+		posseClient = new MeiliSearch({
+			host: config.memory.url,
+			apiKey: config.memory.apiKey,
+		});
+	}
+
+	// Create HTTP app — pass scheduler, skillManager, and posseClient
 	const app = createHttpApp({
 		config,
 		runner,
@@ -138,6 +155,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		memoryManager,
 		scheduler,
 		skillManager,
+		posseClient,
 	});
 
 	// Mount hooks router if enabled
@@ -194,6 +212,35 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		fetch: app.fetch,
 	});
 
+	// Register in posse registry (R3.3)
+	if (posseClient && config.posse) {
+		try {
+			await registerAgent(config, posseClient);
+			logger.info("Registered in posse registry", { posse: config.posse });
+		} catch (err) {
+			logger.warn("Posse registration failed, continuing", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	// Setup posse heartbeat interval (R3.4)
+	let posseHeartbeatInterval: ReturnType<typeof setInterval> | undefined;
+	if (posseClient && config.posse) {
+		posseHeartbeatInterval = setInterval(
+			async () => {
+				try {
+					const activeJobs = runner.getActiveJobs();
+					const status = activeJobs.length > 0 ? "busy" : "idle";
+					await updateHeartbeat(config, posseClient, status as "idle" | "busy");
+				} catch {
+					// Non-fatal
+				}
+			},
+			5 * 60 * 1000,
+		); // Every 5 minutes
+	}
+
 	logger.info("Gateway started", {
 		name: config.name,
 		port,
@@ -205,6 +252,14 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 
 	return {
 		stop: () => {
+			// Deregister from posse registry (R3.5)
+			if (posseClient && config.posse) {
+				deregisterAgent(config, posseClient).catch(() => {});
+			}
+			if (posseHeartbeatInterval) {
+				clearInterval(posseHeartbeatInterval);
+			}
+
 			for (const ch of channelAdapters) {
 				try {
 					ch.stop();

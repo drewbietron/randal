@@ -1,5 +1,6 @@
 import type { MemoryDoc, RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
+import type { MemoryStore } from "./stores/index.js";
 import { MeilisearchStore } from "./stores/meilisearch.js";
 
 const logger = createLogger({ context: { component: "cross-agent" } });
@@ -9,12 +10,28 @@ export interface CrossAgentOptions {
 }
 
 /**
+ * Factory function type for creating MemoryStore instances.
+ * Allows injection of mock/test stores for testability.
+ */
+export type StoreFactory = (options: {
+	url: string;
+	apiKey: string;
+	index: string;
+}) => MemoryStore;
+
+/**
+ * Default store factory that creates MeilisearchStore instances.
+ */
+export const defaultStoreFactory: StoreFactory = (options) => new MeilisearchStore(options);
+
+/**
  * Search across multiple agent memory indexes.
  */
 export async function searchCrossAgent(
 	query: string,
 	config: RandalConfig,
 	limit = 5,
+	storeFactory: StoreFactory = defaultStoreFactory,
 ): Promise<MemoryDoc[]> {
 	const readFrom = config.memory.sharing.readFrom;
 	if (readFrom.length === 0) return [];
@@ -23,7 +40,7 @@ export async function searchCrossAgent(
 
 	for (const indexName of readFrom) {
 		try {
-			const store = new MeilisearchStore({
+			const store = storeFactory({
 				url: config.memory.url,
 				apiKey: config.memory.apiKey,
 				index: indexName,
@@ -49,11 +66,12 @@ export async function searchCrossAgent(
 export async function publishToShared(
 	doc: Omit<MemoryDoc, "id">,
 	config: RandalConfig,
+	storeFactory: StoreFactory = defaultStoreFactory,
 ): Promise<void> {
 	if (!config.memory.sharing.publishTo) return;
 
 	try {
-		const store = new MeilisearchStore({
+		const store = storeFactory({
 			url: config.memory.url,
 			apiKey: config.memory.apiKey,
 			index: config.memory.sharing.publishTo,
@@ -74,6 +92,7 @@ export async function searchSharedSkills(
 	query: string,
 	config: RandalConfig,
 	limit = 5,
+	storeFactory: StoreFactory = defaultStoreFactory,
 ): Promise<MemoryDoc[]> {
 	const readFrom = config.skills.sharing.readFrom;
 	if (readFrom.length === 0) return [];
@@ -82,7 +101,7 @@ export async function searchSharedSkills(
 
 	for (const indexName of readFrom) {
 		try {
-			const store = new MeilisearchStore({
+			const store = storeFactory({
 				url: config.memory.url,
 				apiKey: config.memory.apiKey,
 				index: indexName,
@@ -107,11 +126,12 @@ export async function searchSharedSkills(
 export async function publishSkillToShared(
 	doc: Omit<MemoryDoc, "id">,
 	config: RandalConfig,
+	storeFactory: StoreFactory = defaultStoreFactory,
 ): Promise<void> {
 	if (!config.skills.sharing.publishTo) return;
 
 	try {
-		const store = new MeilisearchStore({
+		const store = storeFactory({
 			url: config.memory.url,
 			apiKey: config.memory.apiKey,
 			index: config.skills.sharing.publishTo,

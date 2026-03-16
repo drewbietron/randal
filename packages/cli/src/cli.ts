@@ -118,6 +118,7 @@ export async function run(argv: string[]): Promise<void> {
 				"skills",
 				"cron",
 				"heartbeat",
+				"posse",
 			].includes(command)
 		) {
 			config = null as unknown as RandalConfig;
@@ -188,6 +189,11 @@ export async function run(argv: string[]): Promise<void> {
 		case "heartbeat": {
 			const { heartbeatCommand } = await import("./commands/heartbeat.js");
 			await heartbeatCommand(args.slice(1), ctx);
+			break;
+		}
+		case "posse": {
+			const { posseCommand } = await import("./commands/posse.js");
+			await posseCommand(args.slice(1), ctx);
 			break;
 		}
 		default:

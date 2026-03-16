@@ -1,0 +1,35 @@
+# Posse manifest — declares agents and shared infrastructure
+#
+# This manifest drives auto-generation of per-agent memory.sharing config.
+# Instead of manually configuring readFrom/publishTo in each agent's config,
+# you declare the posse topology here and run `resolvePosseConfig()` to
+# generate the sharing config for each agent.
+#
+# Topology options:
+#   full-mesh  — every agent reads from shared + all other agents' private indexes
+#   hub-spoke  — every agent reads only from the shared index (not others' private indexes)
+#   manual     — no auto-injection; configure sharing per-agent manually
+
+name: research-team
+version: "0.1"
+
+# Infrastructure: shared Meilisearch for all agents
+# mode: "embedded" (default) = each agent runs its own Meilisearch
+# mode: "shared"  = all agents connect to a single shared instance
+infrastructure:
+  meilisearch:
+    mode: shared
+    url: "${MEILI_URL}"
+    apiKey: "${MEILI_MASTER_KEY}"
+
+# Agents in this posse
+agents:
+  - name: agent-alpha
+    config: ./agent-a.config.yaml
+  - name: agent-beta
+    config: ./agent-b.config.yaml
+
+# Memory topology
+memory:
+  topology: full-mesh
+  # sharedIndex defaults to "shared-<posse-name>" (shared-research-team)
