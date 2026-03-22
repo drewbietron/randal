@@ -130,10 +130,29 @@ export class IMessageChannel implements ChannelAdapter {
 		} else {
 			const isActive = await checkIMessageActive();
 			if (!isActive) {
-				const appleId = process.env.APPLE_ID ?? "(not set)";
-				this.logger.warn(
-					`iMessage does not appear to be active. Ensure Messages.app is signed into Apple ID: ${appleId}`,
-				);
+				// Auto-start Messages.app
+				this.logger.info("Messages.app not running, attempting to start...");
+				try {
+					Bun.spawnSync(["osascript", "-e", 'tell application "Messages" to activate'], {
+						timeout: 10_000,
+					});
+					// Give it a moment to launch
+					await new Promise((r) => setTimeout(r, 3000));
+					const nowActive = await checkIMessageActive();
+					if (nowActive) {
+						this.logger.info("Messages.app started successfully");
+					} else {
+						const appleId = process.env.APPLE_ID ?? "(not set)";
+						this.logger.warn(
+							`Messages.app started but iMessage may not be signed in. Apple ID: ${appleId}`,
+						);
+					}
+				} catch {
+					const appleId = process.env.APPLE_ID ?? "(not set)";
+					this.logger.warn(
+						`Failed to start Messages.app. Ensure it is signed into Apple ID: ${appleId}`,
+					);
+				}
 			}
 		}
 
