@@ -1,3 +1,5 @@
+import { writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { resolve } from "node:path";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
@@ -241,6 +243,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		); // Every 5 minutes
 	}
 
+	// Write PID file for process management
+	const pidDir = resolve(process.env.HOME ?? ".", ".randal");
+	const pidFile = resolve(pidDir, "gateway.pid");
+	try {
+		mkdirSync(pidDir, { recursive: true });
+		writeFileSync(pidFile, String(process.pid));
+	} catch {
+		logger.warn("Failed to write PID file", { pidFile });
+	}
+
 	logger.info("Gateway started", {
 		name: config.name,
 		port,
@@ -249,9 +261,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 
 	console.log(`Randal gateway started: http://localhost:${port}`);
 	console.log(`Dashboard: http://localhost:${port}/`);
+	console.log(`PID: ${process.pid} (${pidFile})`);
 
 	return {
 		stop: () => {
+			// Remove PID file
+			try {
+				unlinkSync(pidFile);
+			} catch {
+				/* already removed */
+			}
 			// Deregister from posse registry (R3.5)
 			if (posseClient && config.posse) {
 				deregisterAgent(config, posseClient).catch(() => {});

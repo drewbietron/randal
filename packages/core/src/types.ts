@@ -55,6 +55,7 @@ export interface RunnerEvent {
 		contextText?: string;
 		error?: string;
 		exitCode?: number;
+		output?: string;
 		plan?: JobPlanTask[];
 		delegationTask?: string;
 		delegationJobId?: string;
@@ -144,7 +145,9 @@ export interface JobIteration {
 	exitCode: number;
 	promiseFound: boolean;
 	summary: string;
+	output?: string;
 	stderr?: string;
+	fatalError?: string | null;
 	planUpdate?: JobPlanTask[];
 	progress?: string;
 	delegationRequests?: DelegationRequest[];

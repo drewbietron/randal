@@ -156,8 +156,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return next();
 		}
 		if (authToken) {
+			// Support both Authorization header and ?token= query param (for EventSource/SSE which can't send headers)
 			const header = c.req.header("Authorization");
-			const token = header?.replace("Bearer ", "");
+			const headerToken = header?.replace("Bearer ", "");
+			const queryToken = new URL(c.req.url).searchParams.get("token");
+			const token = headerToken || queryToken;
 			if (!token || !safeCompare(token, authToken)) {
 				return c.json({ error: "Unauthorized" }, 401);
 			}

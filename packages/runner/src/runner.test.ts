@@ -71,9 +71,9 @@ credentials:
   inherit: [PATH, HOME, SHELL]
 `);
 
-		// Script that never outputs the promise
+		// Script that never outputs the promise but produces file change indicators
 		const scriptPath = join(workdir, "stuck.sh");
-		writeFileSync(scriptPath, '#!/bin/bash\necho "Still working..."\n', { mode: 0o755 });
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Modified src/index.ts"\n', { mode: 0o755 });
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });

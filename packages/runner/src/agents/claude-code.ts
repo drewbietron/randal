@@ -9,8 +9,12 @@ export const claudeCode: AgentAdapter = {
 	skillDir: ".claude/skills",
 
 	buildCommand(opts) {
-		const args = ["--print", "--dangerously-skip-permissions"];
-		if (opts.model) args.push("--model", opts.model);
+		const args = ["--print", "--dangerously-skip-permissions", "--effort", "max"];
+		if (opts.model) {
+			// Strip provider prefix (e.g. "anthropic/claude-opus-4-6" → "claude-opus-4-6")
+			const cliModel = opts.model.replace(/^anthropic\//, "");
+			args.push("--model", cliModel);
+		}
 		if (opts.systemPrompt) args.push("--append-system-prompt", opts.systemPrompt);
 		args.push(opts.prompt);
 		return args;

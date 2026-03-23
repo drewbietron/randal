@@ -6,12 +6,18 @@ import {
 	Events,
 	GatewayIntentBits,
 	Partials,
+	type ThreadChannel,
 } from "discord.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
 
 /** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
 interface SendableChannel {
 	send(content: string): Promise<unknown>;
+}
+
+/** Sendable channel that supports threads (guild text channels) */
+interface ThreadableMessage {
+	startThread(options: { name: string }): Promise<ThreadChannel>;
 }
 
 // Extract discord channel config type from the discriminated union
@@ -27,6 +33,7 @@ export class DiscordChannel implements ChannelAdapter {
 	private client: Client;
 	private unsubscribe?: () => void;
 	private logger = createLogger({ context: { component: "channel:discord" } });
+	private jobThreads = new Map<string, ThreadChannel>();
 
 	constructor(
 		private channelConfig: DiscordChannelConfig,
@@ -53,13 +60,45 @@ export class DiscordChannel implements ChannelAdapter {
 		});
 
 		// Login
-		await this.client.login(this.channelConfig.token);
+		try {
+			await this.client.login(this.channelConfig.token);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (msg.includes("disallowed intents") || msg.includes("Disallowed intent")) {
+				const help = [
+					"",
+					"  \x1b[1m\x1b[31mDiscord bot failed: Privileged Gateway Intents are not enabled.\x1b[0m",
+					"",
+					"  Randal needs the \x1b[1mMessage Content Intent\x1b[0m to read messages.",
+					"  Enable it in the Discord Developer Portal:",
+					"",
+					"    1. Go to \x1b[36mhttps://discord.com/developers/applications\x1b[0m",
+					"    2. Select your bot application",
+					"    3. Click \x1b[1mBot\x1b[0m in the left sidebar",
+					"    4. Scroll to \x1b[1mPrivileged Gateway Intents\x1b[0m",
+					"    5. Enable \x1b[1mMessage Content Intent\x1b[0m",
+					"    6. Click \x1b[1mSave Changes\x1b[0m",
+					"",
+					"  Then restart randal.",
+					"",
+				].join("\n");
+				console.error(help);
+			}
+			throw err;
+		}
 
 		// Subscribe to EventBus for outbound notifications
 		this.unsubscribe = this.deps.eventBus.subscribe((event) => this.onRunnerEvent(event));
 	}
 
 	private async onMessage(msg: DiscordMessage): Promise<void> {
+		this.logger.info("Discord message received", {
+			author: msg.author.id,
+			bot: msg.author.bot,
+			guild: !!msg.guild,
+			content: msg.content.slice(0, 50),
+		});
+
 		// Ignore bot messages
 		if (msg.author.bot) return;
 
@@ -92,7 +131,20 @@ export class DiscordChannel implements ChannelAdapter {
 
 		try {
 			const response = await handleCommand(text, this.deps, origin);
-			await this.sendReply(msg.channel as SendableChannel, response);
+			const sentMessage = await msg.reply(response);
+
+			// If a job was started, create a thread for follow-up messages
+			const jobIdMatch = response.match(/Job `([a-f0-9]+)` started/);
+			if (jobIdMatch && sentMessage && "startThread" in sentMessage) {
+				try {
+					const thread = await (sentMessage as unknown as ThreadableMessage).startThread({
+						name: `Job ${jobIdMatch[1]}`,
+					});
+					this.jobThreads.set(jobIdMatch[1], thread);
+				} catch {
+					// DMs don't support threads — that's fine, replies go to the DM channel
+				}
+			}
 		} catch (err) {
 			this.logger.error("Discord message handling failed", {
 				error: err instanceof Error ? err.message : String(err),
@@ -150,17 +202,25 @@ export class DiscordChannel implements ChannelAdapter {
 		const job = this.deps.runner.getJob(event.jobId);
 		if (!job?.origin || job.origin.channel !== "discord") return;
 
-		const channel = this.client.channels.cache.get(job.origin.replyTo);
-		if (!channel || !("send" in channel)) return;
+		// Prefer thread if available, fall back to channel
+		const thread = this.jobThreads.get(event.jobId);
+		const fallbackChannel = this.client.channels.cache.get(job.origin.replyTo);
+		const target = thread ?? fallbackChannel;
+		if (!target || !("send" in target)) return;
 
-		const sendable = channel as SendableChannel;
+		const sendable = target as SendableChannel;
 		const message = formatEvent(event);
-		sendable.send(message).catch((err: unknown) => {
+		this.sendReply(sendable, message).catch((err: unknown) => {
 			this.logger.warn("Failed to send Discord notification", {
 				error: err instanceof Error ? err.message : String(err),
 				jobId: event.jobId,
 			});
 		});
+
+		// Clean up thread reference on terminal events
+		if (event.type === "job.complete" || event.type === "job.failed") {
+			this.jobThreads.delete(event.jobId);
+		}
 	}
 
 	stop(): void {

@@ -1,5 +1,7 @@
 #!/bin/bash
-set -e
+
+# cd to repo root regardless of where the script is invoked from
+cd "$(dirname "$0")/.."
 
 echo "=== Randal Setup ==="
 
@@ -14,11 +16,14 @@ echo "Bun: $(bun --version)"
 
 # Install dependencies
 echo "Installing dependencies..."
-bun install
+if ! bun install; then
+  echo "  ! bun install failed — are you in the randal repo root?"
+  exit 1
+fi
 
 # Register randal CLI globally
 echo "Linking randal CLI..."
-bun link
+bun link || echo "  ! bun link failed (non-fatal, continuing)"
 
 # Build tools
 echo ""
@@ -47,6 +52,23 @@ if ! command -v tmux &> /dev/null; then
   echo "  - tmux not found (drive requires tmux: brew install tmux)"
 fi
 
+# Install BlueBubbles on macOS if not present
+if [[ "$(uname)" == "Darwin" ]]; then
+  if [ ! -d "/Applications/BlueBubbles.app" ]; then
+    echo ""
+    echo "Installing BlueBubbles Server (iMessage bridge)..."
+    if command -v brew &> /dev/null; then
+      brew install --cask bluebubbles --no-quarantine 2>/dev/null && \
+        echo "  + BlueBubbles Server installed" || \
+        echo "  ! BlueBubbles install via Homebrew failed (can be installed during init)"
+    else
+      echo "  - Homebrew not found — BlueBubbles will be installed during init if needed"
+    fi
+  else
+    echo "  + BlueBubbles Server already installed"
+  fi
+fi
+
 # Detect agent CLIs
 echo ""
 echo "Detecting agent CLIs..."
@@ -73,6 +95,20 @@ done
 echo ""
 echo "Initializing Randal..."
 bun run packages/cli/src/index.ts init "$@"
+
+# Auto-generate API tokens if empty
+if [ -f .env ]; then
+  if grep -q "^RANDAL_API_TOKEN=$" .env 2>/dev/null; then
+    TOKEN=$(openssl rand -hex 32)
+    sed -i '' "s/^RANDAL_API_TOKEN=$/RANDAL_API_TOKEN=$TOKEN/" .env
+    echo "  + Generated RANDAL_API_TOKEN in .env"
+  fi
+  if grep -q "^RANDAL_HOOK_TOKEN=$" .env 2>/dev/null; then
+    HOOK_TOKEN=$(openssl rand -hex 32)
+    sed -i '' "s/^RANDAL_HOOK_TOKEN=$/RANDAL_HOOK_TOKEN=$HOOK_TOKEN/" .env
+    echo "  + Generated RANDAL_HOOK_TOKEN in .env"
+  fi
+fi
 
 # Start Meilisearch if selected in config
 if [ -f randal.config.yaml ] && grep -q "store: meilisearch" randal.config.yaml; then

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { JobIteration } from "@randal/core";
-import { detectStruggle } from "./struggle.js";
+import { detectFatalError, detectStruggle } from "./struggle.js";
 
 const defaultConfig = { noChangeThreshold: 3, maxRepeatedErrors: 3 };
 
@@ -87,5 +87,103 @@ describe("detectStruggle", () => {
 		const result = detectStruggle(history, defaultConfig);
 		expect(result.isStuck).toBe(true);
 		expect(result.indicators.length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+describe("detectFatalError", () => {
+	test("detects 'not logged in' in output", () => {
+		const result = detectFatalError("Error: Not logged in. Please run /login to authenticate.");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Agent is not logged in");
+	});
+
+	test("detects 'please run /login' in output", () => {
+		const result = detectFatalError("please run /login");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Agent is not logged in");
+	});
+
+	test("detects login required in stderr", () => {
+		const result = detectFatalError("", "authentication required");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Agent is not logged in");
+	});
+
+	test("detects invalid API key", () => {
+		const result = detectFatalError("Error: API key is invalid. Check your credentials.");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("API key is invalid or missing");
+	});
+
+	test("detects expired API key", () => {
+		const result = detectFatalError("Your API key has expired");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("API key is invalid or missing");
+	});
+
+	test("detects missing API key", () => {
+		const result = detectFatalError("API key not set");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("API key is invalid or missing");
+	});
+
+	test("detects rate limit exceeded", () => {
+		const result = detectFatalError("Error: Rate limit exceeded. Try again later.");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Rate limit or quota exceeded");
+	});
+
+	test("detects quota exceeded", () => {
+		const result = detectFatalError("quota exceeded for this billing period");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Rate limit or quota exceeded");
+	});
+
+	test("detects permission denied", () => {
+		const result = detectFatalError("permission denied: cannot access /workspace");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Permission denied");
+	});
+
+	test("detects billing issues", () => {
+		const result = detectFatalError("billing issue: payment required to continue");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Billing issue");
+	});
+
+	test("detects model not found", () => {
+		const result = detectFatalError("The model 'claude-opus-99' does not exist");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Model not available");
+	});
+
+	test("detects model may not exist or no access", () => {
+		const result = detectFatalError("There's an issue with the selected model (anthropic/claude-sonnet-4). It may not exist or you may not have access to it.");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Model not available");
+	});
+
+	test("returns not fatal for normal output", () => {
+		const result = detectFatalError("Created file src/index.ts\nModified package.json");
+		expect(result.isFatal).toBe(false);
+		expect(result.error).toBeNull();
+	});
+
+	test("returns not fatal for empty output", () => {
+		const result = detectFatalError("");
+		expect(result.isFatal).toBe(false);
+		expect(result.error).toBeNull();
+	});
+
+	test("returns not fatal for normal error output", () => {
+		const result = detectFatalError("", "TypeScript error: Cannot find module");
+		expect(result.isFatal).toBe(false);
+		expect(result.error).toBeNull();
+	});
+
+	test("checks stderr when output is clean", () => {
+		const result = detectFatalError("normal output here", "not logged in");
+		expect(result.isFatal).toBe(true);
+		expect(result.error).toBe("Agent is not logged in");
 	});
 });

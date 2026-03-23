@@ -19,7 +19,7 @@ import { readAndClearContext } from "./context.js";
 import { parseDelegationRequests, parsePlanUpdate, parseProgress } from "./plan-parser.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
-import { type StruggleConfig, detectStruggle } from "./struggle.js";
+import { type StruggleConfig, detectFatalError, detectStruggle } from "./struggle.js";
 
 export type EventHandler = (event: RunnerEvent) => void;
 
@@ -265,6 +265,9 @@ async function executeIteration(
 	// Check for completion promise using the clean agent output
 	const promiseFound = findCompletionPromise(agentOutput, completionPromiseTag);
 
+	// Check for fatal errors in agent output (auth failures, etc.)
+	const fatalCheck = detectFatalError(agentOutput, stderr);
+
 	// Parse structured output tags (non-fatal — null/empty on failure)
 	const planUpdate = parsePlanUpdate(agentOutput);
 	const progress = parseProgress(agentOutput);
@@ -279,7 +282,9 @@ async function executeIteration(
 		exitCode: sentinelExitCode,
 		promiseFound,
 		summary,
+		output: agentOutput || undefined,
 		stderr: stderr.trim() || undefined,
+		fatalError: fatalCheck.isFatal ? fatalCheck.error : undefined,
 		planUpdate: planUpdate ?? undefined,
 		progress: progress ?? undefined,
 		delegationRequests: delegationReqs.length > 0 ? delegationReqs : undefined,
@@ -559,6 +564,7 @@ export class Runner {
 			}
 		}
 
+		let stuckWarned = false;
 		try {
 			for (let i = 0; i < job.maxIterations; i++) {
 				const entry = this.activeJobs.get(job.id);
@@ -681,6 +687,19 @@ export class Runner {
 					});
 				}
 
+				// Check for fatal errors that make retrying pointless
+				if (iteration.fatalError) {
+					job.status = "failed";
+					job.error = `Fatal: ${iteration.fatalError}`;
+					job.completedAt = new Date().toISOString();
+					job.duration = Math.round((Date.now() - loopStart) / 1000);
+					this.emit("job.failed", job, {
+						error: job.error,
+						iteration: iteration.number,
+					});
+					return job;
+				}
+
 				// Check for completion promise (detected in executeIteration using clean agent output)
 				if (iteration.promiseFound) {
 					job.status = "complete";
@@ -689,6 +708,32 @@ export class Runner {
 					this.emit("job.complete", job, {
 						iteration: iteration.number,
 						duration: job.duration,
+						summary: iteration.summary,
+						output: iteration.output,
+					});
+					return job;
+				}
+
+				// Auto-complete conversational responses: if the agent exited cleanly
+				// with output but no file changes, plan updates, or delegations,
+				// treat the first such iteration as a complete response.
+				if (
+					iteration.exitCode === 0 &&
+					iteration.summary &&
+					iteration.filesChanged.length === 0 &&
+					!iteration.planUpdate &&
+					!iteration.promiseFound &&
+					(!iteration.delegationRequests || iteration.delegationRequests.length === 0) &&
+					iteration.number === 1
+				) {
+					job.status = "complete";
+					job.completedAt = new Date().toISOString();
+					job.duration = Math.round((Date.now() - loopStart) / 1000);
+					this.emit("job.complete", job, {
+						iteration: iteration.number,
+						duration: job.duration,
+						summary: iteration.summary,
+						output: iteration.output,
 					});
 					return job;
 				}
@@ -696,13 +741,13 @@ export class Runner {
 				// Check for struggle
 				const struggle = detectStruggle(job.iterations.history, struggleConfig);
 				if (struggle.isStuck) {
-					this.emit("job.stuck", job, {
-						iteration: iteration.number,
-						struggleIndicators: struggle.indicators,
-					});
+					const struggleAction = this.config.runner.struggle.action;
 
-					// Act on struggle based on config
-					if (this.config.runner.struggle.action === "stop") {
+					if (struggleAction === "stop") {
+						this.emit("job.stuck", job, {
+							iteration: iteration.number,
+							struggleIndicators: struggle.indicators,
+						});
 						job.status = "failed";
 						job.error = `Stopped due to struggle: ${struggle.indicators.join(", ")}`;
 						job.completedAt = new Date().toISOString();
@@ -710,6 +755,18 @@ export class Runner {
 						this.emit("job.failed", job, { error: job.error });
 						return job;
 					}
+
+					// "warn" action: only emit once to avoid spamming
+					if (!stuckWarned) {
+						stuckWarned = true;
+						this.emit("job.stuck", job, {
+							iteration: iteration.number,
+							struggleIndicators: struggle.indicators,
+						});
+					}
+				} else {
+					// Reset warning if agent recovers
+					stuckWarned = false;
 				}
 			}
 

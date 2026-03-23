@@ -6,25 +6,44 @@ describe("claude-code adapter", () => {
 		expect(claudeCode.binary).toBe("claude");
 	});
 
-	test("builds basic command with --print and --dangerously-skip-permissions", () => {
+	test("builds basic command with --print, --dangerously-skip-permissions, and --effort max", () => {
 		const cmd = claudeCode.buildCommand({
 			prompt: "fix the bug",
 			workdir: "/tmp",
 		});
-		expect(cmd).toEqual(["--print", "--dangerously-skip-permissions", "fix the bug"]);
+		expect(cmd).toEqual(["--print", "--dangerously-skip-permissions", "--effort", "max", "fix the bug"]);
 	});
 
-	test("includes model flag", () => {
+	test("includes model flag and strips anthropic/ prefix", () => {
 		const cmd = claudeCode.buildCommand({
 			prompt: "fix the bug",
-			model: "claude-sonnet-4",
+			model: "anthropic/claude-sonnet-4-6",
 			workdir: "/tmp",
 		});
 		expect(cmd).toEqual([
 			"--print",
 			"--dangerously-skip-permissions",
+			"--effort",
+			"max",
 			"--model",
-			"claude-sonnet-4",
+			"claude-sonnet-4-6",
+			"fix the bug",
+		]);
+	});
+
+	test("passes model without prefix unchanged", () => {
+		const cmd = claudeCode.buildCommand({
+			prompt: "fix the bug",
+			model: "claude-sonnet-4-6",
+			workdir: "/tmp",
+		});
+		expect(cmd).toEqual([
+			"--print",
+			"--dangerously-skip-permissions",
+			"--effort",
+			"max",
+			"--model",
+			"claude-sonnet-4-6",
 			"fix the bug",
 		]);
 	});
@@ -38,6 +57,8 @@ describe("claude-code adapter", () => {
 		expect(cmd).toEqual([
 			"--print",
 			"--dangerously-skip-permissions",
+			"--effort",
+			"max",
 			"--append-system-prompt",
 			"You are a helper",
 			"fix the bug",

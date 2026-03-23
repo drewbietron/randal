@@ -33,6 +33,7 @@ function printHelp(): void {
     \x1b[36mmesh\x1b[0m <sub>             🌐 Mesh operations (status, route)
     \x1b[36manalytics\x1b[0m <sub>        📈 Analytics (scores, recommendations)
     \x1b[36mvoice\x1b[0m <sub>            🎙️  Voice sessions (status)
+    \x1b[36mgateway\x1b[0m <sub>           🚦 Gateway management (status, kill, restart, token)
     \x1b[36maudit\x1b[0m                   🔍 Audit ambient host auth (--json)
     \x1b[36mupdate\x1b[0m                  ⬆️  Self-update (--check, --pin, --dry-run)
 
@@ -125,6 +126,7 @@ export async function run(argv: string[]): Promise<void> {
 				"mesh",
 				"analytics",
 				"voice",
+			"gateway",
 			].includes(command)
 		) {
 			config = null as unknown as RandalConfig;
@@ -215,6 +217,11 @@ export async function run(argv: string[]): Promise<void> {
 		case "voice": {
 			const { voiceCommand } = await import("./commands/voice.js");
 			await voiceCommand(args.slice(1), ctx);
+			break;
+		}
+		case "gateway": {
+			const { gatewayCommand } = await import("./commands/gateway.js");
+			await gatewayCommand(args.slice(1), ctx);
 			break;
 		}
 		default:

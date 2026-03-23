@@ -27,7 +27,7 @@ describe("configSchema", () => {
 		expect(result.runner.struggle.noChangeThreshold).toBe(3);
 		expect(result.runner.struggle.maxRepeatedErrors).toBe(3);
 		expect(result.credentials.envFile).toBe("./.env");
-		expect(result.credentials.inherit).toEqual(["PATH", "HOME", "SHELL", "TERM"]);
+		expect(result.credentials.inherit).toEqual(["PATH", "HOME", "USER", "SHELL", "TERM"]);
 		expect(result.memory.url).toBe("http://localhost:7700");
 		expect(result.memory.apiKey).toBe("");
 		expect(result.memory.files).toEqual(["MEMORY.md"]);

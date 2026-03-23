@@ -16,6 +16,54 @@ import {
 import { configSchema } from "@randal/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
+// ── Agent / Model Definitions ───────────────────────────────────────────
+
+interface ModelOption {
+	value: string;
+	label: string;
+	hint?: string;
+}
+
+const CLAUDE_CODE_MODELS: ModelOption[] = [
+	{ value: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", hint: "most capable" },
+	{ value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "fast + capable" },
+	{ value: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5", hint: "fastest + cheapest" },
+];
+
+const CODEX_MODELS: ModelOption[] = [
+	{ value: "openai/o3", label: "o3", hint: "most capable reasoning" },
+	{ value: "openai/o4-mini", label: "o4-mini", hint: "fast reasoning" },
+	{ value: "openai/gpt-4.1", label: "GPT-4.1", hint: "balanced" },
+	{ value: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini", hint: "fast + cheap" },
+];
+
+const OPENCODE_MODELS: ModelOption[] = [
+	{ value: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", hint: "Anthropic — most capable" },
+	{ value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "Anthropic — fast + capable" },
+	{ value: "openai/o3", label: "o3", hint: "OpenAI — reasoning" },
+	{ value: "openai/gpt-4.1", label: "GPT-4.1", hint: "OpenAI — balanced" },
+	{ value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Google — via OpenRouter" },
+	{ value: "deepseek/deepseek-r1", label: "DeepSeek R1", hint: "DeepSeek — via OpenRouter" },
+];
+
+function getModelsForAgent(agent: string): ModelOption[] {
+	switch (agent) {
+		case "claude-code":
+			return CLAUDE_CODE_MODELS;
+		case "codex":
+			return CODEX_MODELS;
+		case "opencode":
+			return OPENCODE_MODELS;
+		default:
+			return OPENCODE_MODELS;
+	}
+}
+
+function getDefaultModel(agent: string): string {
+	const models = getModelsForAgent(agent);
+	return models[0].value;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function handleCancel(value: unknown): void {
@@ -55,6 +103,53 @@ function startMessagesApp(): boolean {
 			timeout: 10_000,
 		});
 		return proc.exitCode === 0;
+	} catch {
+		return false;
+	}
+}
+
+async function installBlueBubblesDMG(): Promise<boolean> {
+	try {
+		// Fetch latest release URL from GitHub API
+		const res = await fetch("https://api.github.com/repos/BlueBubblesApp/bluebubbles-server/releases/latest", {
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!res.ok) return false;
+
+		const release = (await res.json()) as { assets: { name: string; browser_download_url: string }[] };
+		const dmgAsset = release.assets.find((a) => a.name.endsWith(".dmg"));
+		if (!dmgAsset) return false;
+
+		const tmpDmg = "/tmp/BlueBubbles.dmg";
+
+		// Download
+		const dl = Bun.spawnSync(["curl", "-fsSL", "-o", tmpDmg, dmgAsset.browser_download_url], {
+			timeout: 120_000,
+		});
+		if (dl.exitCode !== 0) return false;
+
+		// Mount, copy, unmount
+		const mount = Bun.spawnSync(["hdiutil", "attach", tmpDmg, "-nobrowse", "-quiet"]);
+		if (mount.exitCode !== 0) return false;
+
+		// Find the mounted volume
+		const findVol = Bun.spawnSync(["bash", "-c", "ls -d /Volumes/BlueBubbles*/ 2>/dev/null | head -1"]);
+		const volPath = findVol.stdout.toString().trim();
+		if (!volPath) {
+			Bun.spawnSync(["hdiutil", "detach", volPath, "-quiet"]);
+			return false;
+		}
+
+		const cp = Bun.spawnSync(["cp", "-R", `${volPath}BlueBubbles.app`, "/Applications/"]);
+		Bun.spawnSync(["hdiutil", "detach", volPath, "-quiet"]);
+		Bun.spawnSync(["rm", "-f", tmpDmg]);
+
+		// Remove quarantine attribute
+		if (cp.exitCode === 0) {
+			Bun.spawnSync(["xattr", "-rd", "com.apple.quarantine", "/Applications/BlueBubbles.app"]);
+		}
+
+		return cp.exitCode === 0;
 	} catch {
 		return false;
 	}
@@ -157,6 +252,28 @@ function appendEnvValues(envPath: string, entries: Record<string, string>): void
 	}
 }
 
+/**
+ * Ensure RANDAL_API_TOKEN and RANDAL_HOOK_TOKEN have values in .env.
+ * If they exist but are empty (e.g. "RANDAL_API_TOKEN="), fill them with generated secrets.
+ */
+function ensureEnvSecrets(envPath: string): void {
+	if (!existsSync(envPath)) return;
+	let content = readFileSync(envPath, "utf-8");
+	let changed = false;
+
+	for (const key of ["RANDAL_API_TOKEN", "RANDAL_HOOK_TOKEN"]) {
+		const emptyPattern = new RegExp(`^${key}=\\s*$`, "m");
+		if (emptyPattern.test(content)) {
+			content = content.replace(emptyPattern, `${key}=${generateSecret()}`);
+			changed = true;
+		}
+	}
+
+	if (changed) {
+		writeFileSync(envPath, content, "utf-8");
+	}
+}
+
 function buildConfigYaml(opts: {
 	name: string;
 	workdir: string;
@@ -193,7 +310,7 @@ function buildConfigYaml(opts: {
 		"",
 		"runner:",
 		`  defaultAgent: ${opts.agent}`,
-		`  defaultModel: ${opts.model ?? "anthropic/claude-sonnet-4"}`,
+		`  defaultModel: ${opts.model ?? getDefaultModel(opts.agent)}`,
 		`  defaultMaxIterations: ${opts.maxIterations ?? 20}`,
 		`  workdir: ${opts.workdir}`,
 		'  completionPromise: "DONE"',
@@ -202,7 +319,9 @@ function buildConfigYaml(opts: {
 		"  envFile: ./.env",
 		"  allow:",
 		"    - ANTHROPIC_API_KEY",
-		"  inherit: [PATH, HOME, SHELL, TERM]",
+		"    - GH_TOKEN",
+		"    - GITHUB_TOKEN",
+		"  inherit: [PATH, HOME, USER, SHELL, TERM]",
 		"",
 		"gateway:",
 		"  channels:",
@@ -305,6 +424,16 @@ function buildConfigYaml(opts: {
 	return lines.join("\n");
 }
 
+function generateSecret(bytes = 32): string {
+	const proc = Bun.spawnSync(["openssl", "rand", "-hex", String(bytes)]);
+	const secret = proc.stdout.toString().trim();
+	if (secret) return secret;
+	// Fallback: use crypto
+	return Array.from(crypto.getRandomValues(new Uint8Array(bytes)))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+}
+
 function generateEnvTemplate(opts?: {
 	discordEnabled?: boolean;
 	imessageEnabled?: boolean;
@@ -313,6 +442,9 @@ function generateEnvTemplate(opts?: {
 	blueBubblesUrl?: string;
 	blueBubblesPassword?: string;
 }): string {
+	const apiToken = generateSecret();
+	const hookToken = generateSecret();
+
 	const lines = [
 		"# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 		"# 🤠 Randal Environment Variables",
@@ -321,14 +453,14 @@ function generateEnvTemplate(opts?: {
 		"# Required: your Anthropic API key",
 		`ANTHROPIC_API_KEY=${opts?.anthropicApiKey ?? ""}`,
 		"",
-		"# Gateway auth token (any random string)",
-		"RANDAL_API_TOKEN=",
+		"# Gateway auth token (auto-generated)",
+		`RANDAL_API_TOKEN=${apiToken}`,
 		"",
 		"# Meilisearch master key (if using meilisearch memory)",
 		"# MEILI_MASTER_KEY=",
 		"",
-		"# Hook token (for webhook authentication)",
-		"# RANDAL_HOOK_TOKEN=",
+		"# Hook token (for webhook authentication, auto-generated)",
+		`RANDAL_HOOK_TOKEN=${hookToken}`,
 	];
 
 	if (opts?.discordEnabled) {
@@ -355,11 +487,31 @@ function generateEnvTemplate(opts?: {
 
 const IDENTITY_MD_TEMPLATE = `# {{name}}
 
-You are {{name}}, a helpful AI assistant.
+You are {{name}}, an autonomous AI agent running on a Mac. You have full control of this computer.
+
+## Capabilities
+
+You are a **coding agent** AND a **computer use agent**:
+
+- **Terminal**: You can run any shell command via Bash. Use this for coding tasks, file operations, git, builds, tests, and system administration.
+- **GUI automation**: You have \`steer\` — a native macOS tool that lets you see the screen, click UI elements, type text, press hotkeys, scroll, drag, manage windows, and read text via OCR. Use this to interact with any application on the desktop.
+- **Web browsing**: Use \`steer\` to control Safari or Chrome — navigate to URLs, read page content, fill forms, click buttons.
+
+When a task involves the GUI or visual interaction (browsing the web, checking an app, reading something on screen), use \`steer\`. When a task involves code, files, or the terminal, use Bash directly.
+
+## How to Use Steer
+
+1. \`steer see --json\` — take a screenshot and get the element tree
+2. Read the screenshot image to understand what's on screen
+3. Perform ONE action (click, type, hotkey, scroll)
+4. \`steer see --json\` — verify the action worked
+5. Repeat
+
+Always use \`--json\` for structured output. Always verify after every action.
 
 ## Responsibilities
 - Respond to user requests accurately and concisely
-- Escalate issues you cannot resolve
+- Use the right tool for the job — terminal for code, steer for GUI
 - Maintain a record of your work in MEMORY.md
 
 ## Tone
@@ -391,6 +543,38 @@ You are \${ctx.vars?.name ?? "a helpful AI assistant"}.
 \`;
 }
 `;
+}
+
+/**
+ * Validate a Discord bot token by calling the Discord API.
+ * Returns { valid, botName, intentsOk } — intentsOk is null if we can't check
+ * (intents are only enforced at gateway connect, not REST, so we warn proactively).
+ */
+async function validateDiscordToken(token: string): Promise<{
+	valid: boolean;
+	botName?: string;
+	applicationId?: string;
+}> {
+	try {
+		const res = await fetch("https://discord.com/api/v10/users/@me", {
+			headers: { Authorization: `Bot ${token}` },
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (!res.ok) return { valid: false };
+		const data = (await res.json()) as { username: string; id: string };
+		return { valid: true, botName: data.username, applicationId: data.id };
+	} catch {
+		return { valid: false };
+	}
+}
+
+/**
+ * Generate a Discord bot invite URL with the permissions Randal needs.
+ */
+function discordInviteUrl(applicationId: string): string {
+	// Permissions: Send Messages (2048), Read Message History (65536), View Channels (1024)
+	const permissions = 2048 + 65536 + 1024;
+	return `https://discord.com/oauth2/authorize?client_id=${applicationId}&permissions=${permissions}&scope=bot`;
 }
 
 // ── ASCII Banner ────────────────────────────────────────────────────────
@@ -504,10 +688,20 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 		},
 	);
 
+	const agentName = results.agent as string;
+	const modelOptions = getModelsForAgent(agentName);
+	const modelChoice = await select({
+		message: "Default model",
+		options: modelOptions,
+		initialValue: modelOptions[0].value,
+	});
+	handleCancel(modelChoice);
+
 	await writeConfig({
 		name: results.name as string,
 		workdir: results.workdir as string,
-		agent: results.agent as string,
+		agent: agentName,
+		model: modelChoice as string,
 		useMeilisearch: env.hasMeili,
 	});
 }
@@ -578,19 +772,21 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		"🎯 Runner",
 	);
 
+	const agentChoice = await select({
+		message: "Agent CLI",
+		options: agentOptions,
+		initialValue: agentOptions[0].value,
+	});
+	handleCancel(agentChoice);
+
+	const modelOptions = getModelsForAgent(agentChoice as string);
 	const runner = await group(
 		{
-			agent: () =>
-				select({
-					message: "Agent CLI",
-					options: agentOptions,
-					initialValue: agentOptions[0].value,
-				}),
 			model: () =>
-				text({
+				select({
 					message: "Default model",
-					placeholder: "anthropic/claude-sonnet-4",
-					defaultValue: "anthropic/claude-sonnet-4",
+					options: modelOptions,
+					initialValue: modelOptions[0].value,
 				}),
 			workdir: () =>
 				text({
@@ -616,6 +812,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 			},
 		},
 	);
+	(runner as Record<string, unknown>).agent = agentChoice;
 
 	// ── Claude Code Setup ──
 
@@ -687,6 +884,69 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		}
 	}
 
+	// ── GitHub Setup ──
+
+	const ghInstalled = Bun.spawnSync(["which", "gh"]).exitCode === 0;
+	if (ghInstalled) {
+		const ghAuth = Bun.spawnSync(["gh", "auth", "status"], {
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const ghLoggedIn = ghAuth.exitCode === 0;
+
+		if (ghLoggedIn) {
+			const ghUser = Bun.spawnSync(["gh", "api", "user", "--jq", ".login"], {
+				stdout: "pipe",
+			});
+			const username = ghUser.stdout.toString().trim();
+			log.success(`GitHub authenticated as ${username || "unknown"}`);
+		} else {
+			note(
+				"GitHub CLI is installed but not authenticated.\nThis lets your agent create PRs, manage issues, and push code.",
+				"🐙 GitHub",
+			);
+
+			const setupGh = await confirm({
+				message: "Log in to GitHub now?",
+				initialValue: true,
+			});
+			handleCancel(setupGh);
+
+			if (setupGh) {
+				note("Opening browser for GitHub authentication...", "GitHub Login");
+				const proc = Bun.spawnSync(["gh", "auth", "login", "--web", "--git-protocol", "https"], {
+					stdin: "inherit",
+					stdout: "inherit",
+					stderr: "inherit",
+					timeout: 120_000,
+				});
+				if (proc.exitCode === 0) {
+					log.success("GitHub authentication complete");
+
+					// Configure git identity from GitHub profile
+					const nameProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".name"], { stdout: "pipe" });
+					const emailProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".email"], { stdout: "pipe" });
+					const ghName = nameProc.stdout.toString().trim();
+					const ghEmail = emailProc.stdout.toString().trim();
+
+					if (ghName) {
+						Bun.spawnSync(["git", "config", "--global", "user.name", ghName]);
+					}
+					if (ghEmail) {
+						Bun.spawnSync(["git", "config", "--global", "user.email", ghEmail]);
+					}
+					if (ghName || ghEmail) {
+						log.success(`Git identity set: ${ghName} <${ghEmail}>`);
+					}
+				} else {
+					log.warn("GitHub login may not have completed. Retry later with: gh auth login");
+				}
+			}
+		}
+	} else {
+		log.info("GitHub CLI not found — install gh to enable PR/issue management");
+	}
+
 	// ── Gateway ──
 
 	note("The HTTP gateway exposes the API, SSE stream, and web dashboard.", "📡 Gateway");
@@ -735,10 +995,9 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 				"1. Go to https://discord.com/developers/applications",
 				"2. Click 'New Application' → name it → click 'Bot' in sidebar",
 				"3. Click 'Reset Token' → copy the token",
-				"4. Under 'Privileged Gateway Intents', enable 'Message Content Intent'",
-				"5. Go to OAuth2 → URL Generator → select 'bot' scope",
-				"   Permissions: Send Messages, Read Message History, View Channels",
-				"6. Open the generated URL to invite the bot to your server",
+				"4. Under 'Privileged Gateway Intents', enable:",
+				"   ✓ Message Content Intent  (REQUIRED)",
+				"5. Paste the token below — we'll validate it and generate an invite link",
 			].join("\n"),
 			"Discord Bot Setup",
 		);
@@ -752,6 +1011,37 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		});
 		handleCancel(tokenInput);
 		discordToken = (tokenInput as string).trim();
+
+		// Validate the token against Discord API
+		const vs = spinner();
+		vs.start("Validating Discord bot token...");
+		const validation = await validateDiscordToken(discordToken);
+		if (validation.valid) {
+			vs.stop(`Token valid — bot: ${validation.botName}`);
+
+			// Generate and show invite URL
+			if (validation.applicationId) {
+				const inviteUrl = discordInviteUrl(validation.applicationId);
+				note(
+					[
+						`Bot name:   ${validation.botName}`,
+						`App ID:     ${validation.applicationId}`,
+						"",
+						"Invite your bot to a server with this link:",
+						inviteUrl,
+						"",
+						"⚠️  Make sure 'Message Content Intent' is enabled in the",
+						"   Developer Portal → Bot → Privileged Gateway Intents.",
+						"   Without it, the bot will connect but can't read messages.",
+					].join("\n"),
+					"✅ Discord Bot Verified",
+				);
+			}
+		} else {
+			vs.stop("Token validation failed");
+			log.warn("Could not validate bot token. Double-check the token and try again.");
+			log.warn("The token will still be saved — you can fix it later in .env");
+		}
 
 		const allowFromInput = await text({
 			message: "Discord user IDs to allow (comma-separated, or leave blank for all)",
@@ -787,15 +1077,53 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 			await new Promise((r) => setTimeout(r, 2000));
 			ms.stop("Messages.app started");
 
+			// Auto-install BlueBubbles if not already installed
+			const bbInstalled = existsSync("/Applications/BlueBubbles.app");
+			if (!bbInstalled) {
+				const bs = spinner();
+				bs.start("Installing BlueBubbles Server via Homebrew...");
+				const brewInstall = Bun.spawnSync(
+					["brew", "install", "--cask", "bluebubbles", "--no-quarantine"],
+					{ timeout: 120_000 },
+				);
+				if (brewInstall.exitCode === 0) {
+					bs.stop("BlueBubbles Server installed");
+				} else {
+					bs.stop("Homebrew install failed — trying direct download...");
+					// Fallback: download DMG from GitHub releases
+					const dmgInstalled = await installBlueBubblesDMG();
+					if (!dmgInstalled) {
+						log.warn("Could not auto-install BlueBubbles. Install manually from https://bluebubbles.app");
+					}
+				}
+			} else {
+				log.info("BlueBubbles Server already installed");
+			}
+
+			// Generate a password for BlueBubbles
+			blueBubblesPassword = generateSecret(16);
+			blueBubblesUrl = "http://localhost:1234";
+
+			// Launch BlueBubbles
+			const launchBb = spinner();
+			launchBb.start("Launching BlueBubbles Server...");
+			Bun.spawnSync(["open", "-a", "BlueBubbles"]);
+			await new Promise((r) => setTimeout(r, 3000));
+			launchBb.stop("BlueBubbles Server launched");
+
+			const port = gateway.port ?? "7600";
 			note(
 				[
-					"BlueBubbles bridges iMessage to Randal via webhooks.",
+					"BlueBubbles Server has been installed and launched.",
 					"",
-					"If you haven't installed BlueBubbles yet:",
-					"  1. Download from https://bluebubbles.app",
-					"  2. Open BlueBubbles Server and sign into your Apple ID",
+					"Complete the one-time setup in the BlueBubbles window:",
+					`  1. Set your server password to: ${blueBubblesPassword}`,
+					"  2. Choose 'REST API' as your connection method",
 					"  3. In Settings → Webhooks, add:",
-					`     http://localhost:${gateway.port ?? "7600"}/webhooks/imessage`,
+					`     URL: http://localhost:${port}/webhooks/imessage`,
+					"     Events: select 'New Message'",
+					"",
+					"The password has been saved to your .env automatically.",
 				].join("\n"),
 				"iMessage / BlueBubbles Setup",
 			);
@@ -803,20 +1131,10 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 			const urlInput = await text({
 				message: "BlueBubbles server URL",
 				placeholder: "http://localhost:1234",
-				defaultValue: "http://localhost:1234",
+				defaultValue: blueBubblesUrl,
 			});
 			handleCancel(urlInput);
 			blueBubblesUrl = (urlInput as string).trim();
-
-			const passwordInput = await text({
-				message: "BlueBubbles server password",
-				placeholder: "your-bluebubbles-password",
-				validate: (value) => {
-					if (!value.trim()) return "BlueBubbles password is required";
-				},
-			});
-			handleCancel(passwordInput);
-			blueBubblesPassword = (passwordInput as string).trim();
 
 			const allowFromInput = await text({
 				message: "Phone numbers to allow (comma-separated, or leave blank for all)",
@@ -988,6 +1306,9 @@ async function writeConfig(opts: {
 		if (opts.blueBubblesUrl) creds.BLUEBUBBLES_URL = opts.blueBubblesUrl;
 		if (opts.blueBubblesPassword) creds.BLUEBUBBLES_PASSWORD = opts.blueBubblesPassword;
 		appendEnvValues(envPath, creds);
+
+		// Auto-generate tokens if they're empty in existing .env
+		ensureEnvSecrets(envPath);
 	}
 
 	await new Promise((r) => setTimeout(r, 400));
@@ -1044,6 +1365,13 @@ async function writeConfig(opts: {
 	}
 	if (opts.imessageEnabled) {
 		summaryLines.push("iMessage: enabled (BlueBubbles)");
+	}
+
+	// Show token hint
+	if (envCreated) {
+		summaryLines.push("");
+		summaryLines.push("API tokens were auto-generated in .env");
+		summaryLines.push("View with: grep RANDAL_API_TOKEN .env");
 	}
 
 	note(summaryLines.join("\n"), "✅ Created");
@@ -1112,6 +1440,8 @@ async function initFrom(configPath: string): Promise<void> {
 
 	if (!existsSync(resolve(".env"))) {
 		writeFileSync(resolve(".env"), generateEnvTemplate(), "utf-8");
+	} else {
+		ensureEnvSecrets(resolve(".env"));
 	}
 	await new Promise((r) => setTimeout(r, 300));
 	ws.stop("Config written");
@@ -1146,7 +1476,9 @@ function initNonInteractive(): void {
 
 	if (!existsSync(resolve(".env"))) {
 		writeFileSync(resolve(".env"), generateEnvTemplate(), "utf-8");
-		console.log("  ✅ Created .env template");
+		console.log("  ✅ Created .env template (tokens auto-generated)");
+	} else {
+		ensureEnvSecrets(resolve(".env"));
 	}
 
 	console.log("\n  Run: randal serve");

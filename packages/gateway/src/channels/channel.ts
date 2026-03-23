@@ -194,9 +194,17 @@ export async function handleCommand(
 export function formatEvent(event: RunnerEvent): string {
 	switch (event.type) {
 		case "job.complete": {
+			// Use full output if available, fall back to summary
+			const response = event.data.output || event.data.summary;
+
+			// Single-iteration completion = conversational response, show it directly
+			if (response && event.data.iteration === 1) {
+				return response;
+			}
 			const iterPart = event.data.iteration ? ` (${event.data.iteration} iterations)` : "";
 			const durPart = event.data.duration ? ` in ${event.data.duration}s` : "";
-			return `Job \`${event.jobId}\` complete${iterPart}${durPart}`;
+			const responsePart = response ? `\n${response}` : "";
+			return `Job \`${event.jobId}\` complete${iterPart}${durPart}${responsePart}`;
 		}
 		case "job.failed":
 			return `Job \`${event.jobId}\` failed: ${event.data.error ?? "unknown error"}`;

@@ -659,8 +659,8 @@
 			} catch(e) { console.error(e); }
 		}
 
-		// SSE
-		var evtSource = new EventSource('/events');
+		// SSE (EventSource can't send Authorization headers, so pass token as query param)
+		var evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
 		var eventsLog = document.getElementById('events-log');
 
 		function addEvent(type, data) {
@@ -678,6 +678,10 @@
 				if (currentJobId) loadJobDetail(currentJobId);
 			});
 		});
+
+		evtSource.onerror = function() {
+			addEvent('system', 'SSE connection lost — reconnecting...');
+		};
 
 		// Voice functions
 		async function loadVoiceSessions() {

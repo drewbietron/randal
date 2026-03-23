@@ -260,7 +260,7 @@ export const configSchema = z.object({
 		.object({
 			envFile: z.string().default("./.env"),
 			allow: z.array(z.string()).default([]),
-			inherit: z.array(z.string()).default(["PATH", "HOME", "SHELL", "TERM"]),
+			inherit: z.array(z.string()).default(["PATH", "HOME", "USER", "SHELL", "TERM"]),
 		})
 		.default({}),
 

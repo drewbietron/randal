@@ -10,6 +10,56 @@ export interface StruggleResult {
 	indicators: string[];
 }
 
+export interface FatalErrorResult {
+	isFatal: boolean;
+	error: string | null;
+}
+
+/**
+ * Patterns that indicate the agent cannot proceed and retrying is pointless.
+ * Each entry has a regex pattern and a human-readable error message.
+ */
+const FATAL_ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
+	{
+		pattern: /not logged in|please run \/login|authentication required|login required/i,
+		message: "Agent is not logged in",
+	},
+	{
+		pattern: /api key.{0,20}(?:invalid|expired|missing|not found|not set)/i,
+		message: "API key is invalid or missing",
+	},
+	{
+		pattern: /(?:rate limit|quota) exceeded/i,
+		message: "Rate limit or quota exceeded",
+	},
+	{
+		pattern: /(?:permission|access) denied|forbidden/i,
+		message: "Permission denied",
+	},
+	{
+		pattern: /billing.{0,30}(?:issue|problem|required|inactive)|payment required/i,
+		message: "Billing issue",
+	},
+	{
+		pattern: /model.{0,60}(?:not found|does not exist|may not exist|unavailable|deprecated|not have access)/i,
+		message: "Model not available",
+	},
+];
+
+/**
+ * Detect fatal errors in agent output that make retrying pointless.
+ * Checks both stdout and stderr for known unrecoverable error patterns.
+ */
+export function detectFatalError(output: string, stderr?: string): FatalErrorResult {
+	const combined = `${output}\n${stderr ?? ""}`;
+	for (const { pattern, message } of FATAL_ERROR_PATTERNS) {
+		if (pattern.test(combined)) {
+			return { isFatal: true, error: message };
+		}
+	}
+	return { isFatal: false, error: null };
+}
+
 /**
  * Detect if the agent is struggling based on iteration history.
  */

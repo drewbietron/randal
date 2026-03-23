@@ -431,10 +431,24 @@ DISCORD_BOT_TOKEN=your-bot-token-here
 - Messages.app signed into an Apple ID with iMessage active
 - Set `APPLE_ID` in your `.env` file for reference
 
-**Steps:**
+**Automatic Setup (recommended):**
 
-1. Download and install [BlueBubbles Server](https://bluebubbles.app) on your Mac.
-2. Open BlueBubbles Server, set a server password, and choose a connection method (local network or Cloudflare/Ngrok for remote access).
+BlueBubbles Server is automatically installed during `randal init` (or via `install.sh` / `scripts/setup.sh`). The setup wizard will:
+
+1. Install BlueBubbles Server via Homebrew (or direct DMG download as fallback)
+2. Generate a server password and save it to `.env`
+3. Launch BlueBubbles Server
+4. Configure the iMessage channel in `randal.config.yaml`
+
+You only need to complete the one-time BlueBubbles window setup:
+1. Set the server password to the value shown by the wizard (also in `.env` as `BLUEBUBBLES_PASSWORD`)
+2. Choose 'REST API' as the connection method
+3. In Settings → Webhooks, add the URL shown by the wizard (e.g. `http://localhost:7600/webhooks/imessage`) with the 'New Message' event
+
+**Manual Setup (if needed):**
+
+1. Install: `brew install --cask bluebubbles --no-quarantine`
+2. Open BlueBubbles Server, set a server password, and choose a connection method.
 3. In BlueBubbles Server settings, add a webhook:
    - URL: `http://<randal-host>:<port>/webhooks/imessage`
    - Events: select at minimum **New Message**
