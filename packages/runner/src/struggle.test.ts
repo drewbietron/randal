@@ -158,7 +158,9 @@ describe("detectFatalError", () => {
 	});
 
 	test("detects model may not exist or no access", () => {
-		const result = detectFatalError("There's an issue with the selected model (anthropic/claude-sonnet-4). It may not exist or you may not have access to it.");
+		const result = detectFatalError(
+			"There's an issue with the selected model (anthropic/claude-sonnet-4). It may not exist or you may not have access to it.",
+		);
 		expect(result.isFatal).toBe(true);
 		expect(result.error).toBe("Model not available");
 	});

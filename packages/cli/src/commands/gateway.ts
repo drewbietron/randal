@@ -1,4 +1,4 @@
-import { readFileSync, unlinkSync, existsSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CliContext } from "../cli.js";
 
@@ -37,7 +37,9 @@ function killGateway(signal: NodeJS.Signals = "SIGTERM"): boolean {
 		console.log(`Sent ${signal} to gateway (PID ${pid}).`);
 		return true;
 	} catch (err) {
-		console.error(`Failed to kill gateway (PID ${pid}): ${err instanceof Error ? err.message : err}`);
+		console.error(
+			`Failed to kill gateway (PID ${pid}): ${err instanceof Error ? err.message : err}`,
+		);
 		return false;
 	}
 }
@@ -69,7 +71,9 @@ export async function gatewayCommand(args: string[], ctx: CliContext): Promise<v
 				try {
 					const res = await fetch(`${url}/health`);
 					if (res.ok) {
-						console.log(`Gateway is running at ${url} (no PID file — started before PID tracking was added).`);
+						console.log(
+							`Gateway is running at ${url} (no PID file — started before PID tracking was added).`,
+						);
 					} else {
 						console.log("Gateway is not running.");
 					}

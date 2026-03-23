@@ -126,7 +126,7 @@ export async function run(argv: string[]): Promise<void> {
 				"mesh",
 				"analytics",
 				"voice",
-			"gateway",
+				"gateway",
 			].includes(command)
 		) {
 			config = null as unknown as RandalConfig;

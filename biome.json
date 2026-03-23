@@ -19,6 +19,15 @@
 		"lineWidth": 100
 	},
 	"files": {
-		"ignore": ["node_modules", "dist", ".randal", ".opencode", ".ralph", "bun.lock"]
+		"ignore": [
+			"node_modules",
+			"dist",
+			".randal",
+			".opencode",
+			".ralph",
+			"bun.lock",
+			"tools/steer/.build",
+			"tools/drive"
+		]
 	}
 }
