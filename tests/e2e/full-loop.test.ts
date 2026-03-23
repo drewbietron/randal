@@ -61,7 +61,7 @@ credentials:
 ITER_FILE="/tmp/randal-e2e-iter-\${RANDAL_JOB_ID:-default}"
 CURRENT=\$(($(cat "\$ITER_FILE" 2>/dev/null || echo 0) + 1))
 echo "\$CURRENT" > "\$ITER_FILE"
-echo "Mock iteration \$CURRENT"
+echo "Modified src/iter-\$CURRENT.ts"
 echo "Tokens used: input=3000, output=800"
 if [ "\$CURRENT" -ge 3 ]; then
   echo "<promise>DONE</promise>"

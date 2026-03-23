@@ -41,7 +41,8 @@ const FATAL_ERROR_PATTERNS: Array<{ pattern: RegExp; message: string }> = [
 		message: "Billing issue",
 	},
 	{
-		pattern: /model.{0,60}(?:not found|does not exist|may not exist|unavailable|deprecated|not have access)/i,
+		pattern:
+			/model.{0,60}(?:not found|does not exist|may not exist|unavailable|deprecated|not have access)/i,
 		message: "Model not available",
 	},
 ];

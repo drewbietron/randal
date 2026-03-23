@@ -11,7 +11,13 @@ describe("claude-code adapter", () => {
 			prompt: "fix the bug",
 			workdir: "/tmp",
 		});
-		expect(cmd).toEqual(["--print", "--dangerously-skip-permissions", "--effort", "max", "fix the bug"]);
+		expect(cmd).toEqual([
+			"--print",
+			"--dangerously-skip-permissions",
+			"--effort",
+			"max",
+			"fix the bug",
+		]);
 	});
 
 	test("includes model flag and strips anthropic/ prefix", () => {

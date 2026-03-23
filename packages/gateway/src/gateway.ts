@@ -1,4 +1,4 @@
-import { writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { createLogger } from "@randal/core";

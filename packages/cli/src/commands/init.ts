@@ -38,8 +38,16 @@ const CODEX_MODELS: ModelOption[] = [
 ];
 
 const OPENCODE_MODELS: ModelOption[] = [
-	{ value: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", hint: "Anthropic — most capable" },
-	{ value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "Anthropic — fast + capable" },
+	{
+		value: "anthropic/claude-opus-4-6",
+		label: "Claude Opus 4.6",
+		hint: "Anthropic — most capable",
+	},
+	{
+		value: "anthropic/claude-sonnet-4-6",
+		label: "Claude Sonnet 4.6",
+		hint: "Anthropic — fast + capable",
+	},
 	{ value: "openai/o3", label: "o3", hint: "OpenAI — reasoning" },
 	{ value: "openai/gpt-4.1", label: "GPT-4.1", hint: "OpenAI — balanced" },
 	{ value: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro", hint: "Google — via OpenRouter" },
@@ -111,12 +119,17 @@ function startMessagesApp(): boolean {
 async function installBlueBubblesDMG(): Promise<boolean> {
 	try {
 		// Fetch latest release URL from GitHub API
-		const res = await fetch("https://api.github.com/repos/BlueBubblesApp/bluebubbles-server/releases/latest", {
-			signal: AbortSignal.timeout(10_000),
-		});
+		const res = await fetch(
+			"https://api.github.com/repos/BlueBubblesApp/bluebubbles-server/releases/latest",
+			{
+				signal: AbortSignal.timeout(10_000),
+			},
+		);
 		if (!res.ok) return false;
 
-		const release = (await res.json()) as { assets: { name: string; browser_download_url: string }[] };
+		const release = (await res.json()) as {
+			assets: { name: string; browser_download_url: string }[];
+		};
 		const dmgAsset = release.assets.find((a) => a.name.endsWith(".dmg"));
 		if (!dmgAsset) return false;
 
@@ -133,7 +146,11 @@ async function installBlueBubblesDMG(): Promise<boolean> {
 		if (mount.exitCode !== 0) return false;
 
 		// Find the mounted volume
-		const findVol = Bun.spawnSync(["bash", "-c", "ls -d /Volumes/BlueBubbles*/ 2>/dev/null | head -1"]);
+		const findVol = Bun.spawnSync([
+			"bash",
+			"-c",
+			"ls -d /Volumes/BlueBubbles*/ 2>/dev/null | head -1",
+		]);
 		const volPath = findVol.stdout.toString().trim();
 		if (!volPath) {
 			Bun.spawnSync(["hdiutil", "detach", volPath, "-quiet"]);
@@ -205,7 +222,7 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 		if (await detectMeilisearch()) return { started: true, apiKey };
 	}
 
-	return { started: true, apiKey };
+	return { started: false };
 }
 
 async function ensureClaudeCode(): Promise<boolean> {
@@ -702,7 +719,7 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 		workdir: results.workdir as string,
 		agent: agentName,
 		model: modelChoice as string,
-		useMeilisearch: env.hasMeili,
+		useMeilisearch: true,
 	});
 }
 
@@ -924,8 +941,12 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 					log.success("GitHub authentication complete");
 
 					// Configure git identity from GitHub profile
-					const nameProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".name"], { stdout: "pipe" });
-					const emailProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".email"], { stdout: "pipe" });
+					const nameProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".name"], {
+						stdout: "pipe",
+					});
+					const emailProc = Bun.spawnSync(["gh", "api", "user", "--jq", ".email"], {
+						stdout: "pipe",
+					});
 					const ghName = nameProc.stdout.toString().trim();
 					const ghEmail = emailProc.stdout.toString().trim();
 
@@ -1093,7 +1114,9 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 					// Fallback: download DMG from GitHub releases
 					const dmgInstalled = await installBlueBubblesDMG();
 					if (!dmgInstalled) {
-						log.warn("Could not auto-install BlueBubbles. Install manually from https://bluebubbles.app");
+						log.warn(
+							"Could not auto-install BlueBubbles. Install manually from https://bluebubbles.app",
+						);
 					}
 				}
 			} else {
@@ -1162,19 +1185,19 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		message: "Memory backend",
 		options: [
 			{
-				value: "file",
-				label: "📄 File-based",
-				hint: "Simple. Stores in MEMORY.md.",
-			},
-			{
 				value: "meilisearch",
-				label: "🔍 Meilisearch",
+				label: "🔍 Meilisearch (recommended)",
 				hint: env.hasMeili
 					? "detected on :7700 — full-text search + cross-agent sharing"
-					: "not detected — we'll start it via Docker for you",
+					: "auto-started on serve — full-text search + skill discovery",
+			},
+			{
+				value: "file",
+				label: "📄 File-based",
+				hint: "Simple flat file. No search, no skill matching.",
 			},
 		],
-		initialValue: env.hasMeili ? "meilisearch" : "file",
+		initialValue: "meilisearch",
 	});
 	handleCancel(memoryBackend);
 
@@ -1465,7 +1488,7 @@ function initNonInteractive(): void {
 		name: "randal-agent",
 		workdir: ".",
 		agent,
-		useMeilisearch: false,
+		useMeilisearch: true,
 	});
 
 	writeFileSync(resolve("randal.config.yaml"), configYaml, "utf-8");
