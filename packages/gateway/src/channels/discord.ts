@@ -45,6 +45,8 @@ export class DiscordChannel implements ChannelAdapter {
 	private conversations = new Map<string, Conversation>();
 	// Map job ID → channel ID for routing events
 	private jobToChannel = new Map<string, string>();
+	// Map job ID → typing interval for "is typing..." indicator
+	private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
 	constructor(
 		private channelConfig: DiscordChannelConfig,
@@ -218,6 +220,10 @@ export class DiscordChannel implements ChannelAdapter {
 			activeJobId: jobId,
 		});
 		this.jobToChannel.set(jobId, conversationChannelId);
+
+		// Show typing indicator while job is running
+		const typingTarget = threadChannel ?? (msg.channel as unknown as SendableChannel);
+		this.startTyping(jobId, typingTarget);
 	}
 
 	/**
@@ -266,6 +272,10 @@ export class DiscordChannel implements ChannelAdapter {
 		// Update conversation state
 		convo.activeJobId = jobId;
 		this.jobToChannel.set(jobId, channelId);
+
+		// Show typing indicator while job is running
+		const typingTarget = convo.threadChannel ?? (msg.channel as unknown as SendableChannel);
+		this.startTyping(jobId, typingTarget);
 	}
 
 	/**
@@ -284,6 +294,35 @@ export class DiscordChannel implements ChannelAdapter {
 		});
 
 		return `## Conversation History\n${contextLines.join("\n\n")}\n\n## Current Request\nContinue the conversation. Respond to the user's latest message above.`;
+	}
+
+	/**
+	 * Start showing "is typing..." indicator for a job in a channel.
+	 * Refreshes every 8 seconds (Discord typing expires after 10s).
+	 */
+	private startTyping(jobId: string, channel: SendableChannel): void {
+		if (this.typingIntervals.has(jobId)) return;
+
+		const sendTyping = () => {
+			if ("sendTyping" in channel && typeof channel.sendTyping === "function") {
+				(channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {});
+			}
+		};
+
+		sendTyping();
+		const interval = setInterval(sendTyping, 8000);
+		this.typingIntervals.set(jobId, interval);
+	}
+
+	/**
+	 * Stop showing "is typing..." indicator for a job.
+	 */
+	private stopTyping(jobId: string): void {
+		const interval = this.typingIntervals.get(jobId);
+		if (interval) {
+			clearInterval(interval);
+			this.typingIntervals.delete(jobId);
+		}
 	}
 
 	/**
@@ -373,13 +412,18 @@ export class DiscordChannel implements ChannelAdapter {
 			});
 		});
 
-		// Clean up job mapping on terminal events (but keep conversation alive)
+		// Clean up on terminal events (but keep conversation alive)
 		if (event.type === "job.complete" || event.type === "job.failed") {
+			this.stopTyping(event.jobId);
 			this.jobToChannel.delete(event.jobId);
 		}
 	}
 
 	stop(): void {
+		for (const interval of this.typingIntervals.values()) {
+			clearInterval(interval);
+		}
+		this.typingIntervals.clear();
 		if (this.unsubscribe) {
 			this.unsubscribe();
 			this.unsubscribe = undefined;
