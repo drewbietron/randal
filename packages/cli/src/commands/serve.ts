@@ -52,42 +52,89 @@ async function ensureMeilisearch(ctx: CliContext): Promise<boolean> {
 		// Not running — start it
 	}
 
-	// Find meilisearch binary
-	const which = Bun.spawnSync(["which", "meilisearch"]);
-	if (which.exitCode !== 0) {
-		console.log("\x1b[33mMeilisearch not found. Install with: brew install meilisearch\x1b[0m");
-		return envModified;
-	}
-	const binary = which.stdout.toString().trim();
-
-	// Start meilisearch in background
 	const { mkdirSync } = await import("node:fs");
 	const { resolve } = await import("node:path");
 	const dbPath = resolve(process.env.HOME ?? ".", ".randal/meili-data");
 	mkdirSync(dbPath, { recursive: true });
 
-	console.log("  Starting Meilisearch...");
-	const proc = Bun.spawn([binary, "--db-path", dbPath, "--master-key", masterKey], {
-		stdout: "ignore",
-		stderr: "ignore",
-		stdin: "ignore",
-	});
-	proc.unref();
+	// Try native binary first
+	let which = Bun.spawnSync(["which", "meilisearch"]);
 
-	// Wait for it to be ready (up to 5s)
-	for (let i = 0; i < 25; i++) {
-		await Bun.sleep(200);
-		try {
-			const res = await fetch(`${url}/health`);
-			if (res.ok) {
-				console.log(`  + Meilisearch running on ${url}`);
-				return envModified;
+	// Auto-install if missing (macOS)
+	if (which.exitCode !== 0 && process.platform === "darwin") {
+		const brewCheck = Bun.spawnSync(["which", "brew"]);
+		if (brewCheck.exitCode === 0) {
+			console.log("  Installing Meilisearch via Homebrew...");
+			const install = Bun.spawnSync(["brew", "install", "meilisearch"], {
+				stdout: "inherit",
+				stderr: "inherit",
+			});
+			if (install.exitCode === 0) {
+				which = Bun.spawnSync(["which", "meilisearch"]);
 			}
-		} catch {
-			// Not ready yet
 		}
 	}
-	console.log("\x1b[33m  ! Meilisearch failed to start within 5s\x1b[0m");
+
+	if (which.exitCode === 0) {
+		const binary = which.stdout.toString().trim();
+		console.log("  Starting Meilisearch...");
+		const proc = Bun.spawn([binary, "--db-path", dbPath, "--master-key", masterKey], {
+			stdout: "ignore",
+			stderr: "ignore",
+			stdin: "ignore",
+		});
+		proc.unref();
+
+		// Wait for it to be ready (up to 5s)
+		for (let i = 0; i < 25; i++) {
+			await Bun.sleep(200);
+			try {
+				const res = await fetch(`${url}/health`);
+				if (res.ok) {
+					console.log(`  + Meilisearch running on ${url}`);
+					return envModified;
+				}
+			} catch {
+				// Not ready yet
+			}
+		}
+		console.log("\x1b[33m  ! Meilisearch failed to start within 5s\x1b[0m");
+		return envModified;
+	}
+
+	// Fallback: try Docker
+	const dockerCheck = Bun.spawnSync(["which", "docker"]);
+	if (dockerCheck.exitCode === 0) {
+		console.log("  Starting Meilisearch via Docker...");
+		Bun.spawnSync(["docker", "rm", "-f", "randal-meilisearch"], { stdout: "ignore", stderr: "ignore" });
+		const proc = Bun.spawnSync([
+			"docker", "run", "-d",
+			"--name", "randal-meilisearch",
+			"--restart", "unless-stopped",
+			"-p", "7700:7700",
+			"-v", `${dbPath}:/meili_data`,
+			"-e", `MEILI_MASTER_KEY=${masterKey}`,
+			"getmeili/meilisearch:v1.12",
+		]);
+		if (proc.exitCode === 0) {
+			for (let i = 0; i < 25; i++) {
+				await Bun.sleep(200);
+				try {
+					const res = await fetch(`${url}/health`);
+					if (res.ok) {
+						console.log(`  + Meilisearch running on ${url} (Docker)`);
+						return envModified;
+					}
+				} catch {
+					// Not ready yet
+				}
+			}
+		}
+		console.log("\x1b[33m  ! Meilisearch Docker container failed to start\x1b[0m");
+		return envModified;
+	}
+
+	console.log("\x1b[33m  ! Meilisearch not found. Install with: brew install meilisearch\x1b[0m");
 	return envModified;
 }
 

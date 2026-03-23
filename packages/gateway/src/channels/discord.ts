@@ -1,5 +1,6 @@
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
+import { writeContext } from "@randal/runner";
 import {
 	Client,
 	type Message as DiscordMessage,
@@ -9,6 +10,7 @@ import {
 	type ThreadChannel,
 } from "discord.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { parseCommand } from "../router.js";
 
 /** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
 interface SendableChannel {
@@ -34,6 +36,7 @@ export class DiscordChannel implements ChannelAdapter {
 	private unsubscribe?: () => void;
 	private logger = createLogger({ context: { component: "channel:discord" } });
 	private jobThreads = new Map<string, ThreadChannel>();
+	private threadToJob = new Map<string, string>();
 
 	constructor(
 		private channelConfig: DiscordChannelConfig,
@@ -104,12 +107,13 @@ export class DiscordChannel implements ChannelAdapter {
 
 		const isDM = !msg.guild;
 		const allowFrom = this.channelConfig.allowFrom;
+		const isJobThread = msg.channel.isThread() && this.threadToJob.has(msg.channel.id);
 
 		// allowFrom filter
 		if (allowFrom && allowFrom.length > 0) {
 			if (!allowFrom.includes(msg.author.id)) return;
-		} else if (!isDM) {
-			// No allowFrom set + guild message: only respond if bot is mentioned
+		} else if (!isDM && !isJobThread) {
+			// No allowFrom + guild message + not a job thread: only respond if bot is mentioned
 			const botUser = this.client.user;
 			if (!botUser || !msg.mentions.has(botUser)) return;
 		}
@@ -123,6 +127,12 @@ export class DiscordChannel implements ChannelAdapter {
 
 		if (!text) return;
 
+		// Route thread replies to the associated job
+		if (isJobThread) {
+			await this.handleThreadReply(msg, text);
+			return;
+		}
+
 		const origin = {
 			channel: "discord" as const,
 			replyTo: msg.channel.id,
@@ -133,14 +143,18 @@ export class DiscordChannel implements ChannelAdapter {
 			const response = await handleCommand(text, this.deps, origin);
 			const sentMessage = await msg.reply(response);
 
-			// If a job was started, create a thread for follow-up messages
+			// If a job was started, create a thread with a human-readable name
 			const jobIdMatch = response.match(/Job `([a-f0-9]+)` started/);
 			if (jobIdMatch && sentMessage && "startThread" in sentMessage) {
 				try {
+					const jobId = jobIdMatch[1];
+					const job = this.deps.runner.getJob(jobId);
+					const threadName = this.generateThreadName(job?.prompt ?? text);
 					const thread = await (sentMessage as unknown as ThreadableMessage).startThread({
-						name: `Job ${jobIdMatch[1]}`,
+						name: threadName,
 					});
-					this.jobThreads.set(jobIdMatch[1], thread);
+					this.jobThreads.set(jobId, thread);
+					this.threadToJob.set(thread.id, jobId);
 				} catch {
 					// DMs don't support threads — that's fine, replies go to the DM channel
 				}
@@ -193,6 +207,79 @@ export class DiscordChannel implements ChannelAdapter {
 		}
 	}
 
+	/**
+	 * Generate a human-readable thread name from a job prompt.
+	 */
+	private generateThreadName(prompt: string): string {
+		let name = prompt.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+		if (name.length > 80) {
+			// Cut at word boundary to avoid mid-word truncation
+			name = name.slice(0, 77).replace(/\s+\S*$/, "") + "...";
+		}
+		return name || "New task";
+	}
+
+	/**
+	 * Handle a reply within a job thread.
+	 * Active jobs get context injected; completed jobs start a new run.
+	 */
+	private async handleThreadReply(msg: DiscordMessage, text: string): Promise<void> {
+		const threadChannel = msg.channel as ThreadChannel;
+		const jobId = this.threadToJob.get(threadChannel.id)!;
+		const activeJob = this.deps.runner.getJob(jobId);
+
+		try {
+			if (activeJob && (activeJob.status === "running" || activeJob.status === "queued")) {
+				// Explicit commands target the thread's job
+				const parsed = parseCommand(text);
+				if (parsed?.command === "stop") {
+					this.deps.runner.stop(jobId);
+					await msg.reply("Stopping job.");
+					return;
+				}
+				if (parsed?.command === "status") {
+					const iter = activeJob.iterations.current;
+					const max = activeJob.maxIterations;
+					await msg.reply(`Running — iteration ${iter}/${max}`);
+					return;
+				}
+
+				// Anything else is context for the running agent
+				writeContext(activeJob.workdir, text);
+				await msg.reply("Sent to agent.");
+				return;
+			}
+
+			// Job is not active — treat as a new command in this thread
+			const origin = {
+				channel: "discord" as const,
+				replyTo: threadChannel.id,
+				from: msg.author.id,
+			};
+
+			const response = await handleCommand(text, this.deps, origin);
+			await msg.reply(response);
+
+			// If a new job started, update thread mapping so events route here
+			const newJobIdMatch = response.match(/Job `([a-f0-9]+)` started/);
+			if (newJobIdMatch) {
+				const newJobId = newJobIdMatch[1];
+				this.jobThreads.set(newJobId, threadChannel);
+				this.threadToJob.set(threadChannel.id, newJobId);
+			}
+		} catch (err) {
+			this.logger.error("Thread reply handling failed", {
+				error: err instanceof Error ? err.message : String(err),
+				jobId,
+			});
+			try {
+				await msg.reply("Something went wrong.");
+			} catch {
+				// Can't reply
+			}
+		}
+	}
+
 	private onRunnerEvent(event: RunnerEvent): void {
 		// Only send significant events
 		const significant = ["job.complete", "job.failed", "job.stuck"];
@@ -217,7 +304,7 @@ export class DiscordChannel implements ChannelAdapter {
 			});
 		});
 
-		// Clean up thread reference on terminal events
+		// Clean up jobThreads but keep threadToJob for follow-up replies
 		if (event.type === "job.complete" || event.type === "job.failed") {
 			this.jobThreads.delete(event.jobId);
 		}

@@ -205,7 +205,7 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 		if (await detectMeilisearch()) return { started: true, apiKey };
 	}
 
-	return { started: true, apiKey };
+	return { started: false };
 }
 
 async function ensureClaudeCode(): Promise<boolean> {
@@ -702,7 +702,7 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 		workdir: results.workdir as string,
 		agent: agentName,
 		model: modelChoice as string,
-		useMeilisearch: env.hasMeili,
+		useMeilisearch: true,
 	});
 }
 
@@ -1162,19 +1162,19 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		message: "Memory backend",
 		options: [
 			{
-				value: "file",
-				label: "📄 File-based",
-				hint: "Simple. Stores in MEMORY.md.",
-			},
-			{
 				value: "meilisearch",
-				label: "🔍 Meilisearch",
+				label: "🔍 Meilisearch (recommended)",
 				hint: env.hasMeili
 					? "detected on :7700 — full-text search + cross-agent sharing"
-					: "not detected — we'll start it via Docker for you",
+					: "auto-started on serve — full-text search + skill discovery",
+			},
+			{
+				value: "file",
+				label: "📄 File-based",
+				hint: "Simple flat file. No search, no skill matching.",
 			},
 		],
-		initialValue: env.hasMeili ? "meilisearch" : "file",
+		initialValue: "meilisearch",
 	});
 	handleCancel(memoryBackend);
 
@@ -1465,7 +1465,7 @@ function initNonInteractive(): void {
 		name: "randal-agent",
 		workdir: ".",
 		agent,
-		useMeilisearch: false,
+		useMeilisearch: true,
 	});
 
 	writeFileSync(resolve("randal.config.yaml"), configYaml, "utf-8");
