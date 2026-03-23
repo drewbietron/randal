@@ -7,6 +7,7 @@ import {
 	SkillManager,
 	deregisterAgent,
 	registerAgent,
+	startSync,
 	updateHeartbeat,
 } from "@randal/memory";
 import { Runner } from "@randal/runner";
@@ -49,6 +50,23 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		logger.warn("Memory manager initialization failed, continuing without memory", {
 			error: err instanceof Error ? err.message : String(err),
 		});
+	}
+
+	// Start memory file sync (watches MEMORY.md → indexes into Meilisearch)
+	let memorySync: { stop: () => void } | undefined;
+	if (memoryManager && config.memory.files.length > 0) {
+		try {
+			memorySync = startSync({
+				config,
+				basePath: configBasePath ?? ".",
+				memoryManager,
+			});
+			logger.info("Memory sync started", { files: config.memory.files });
+		} catch (err) {
+			logger.warn("Memory sync failed to start", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	// Initialize skill manager
@@ -287,6 +305,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 				}
 			}
 			skillWatcher?.stop();
+			memorySync?.stop();
 			scheduler.stop();
 			server.stop();
 			logger.info("Gateway stopped");

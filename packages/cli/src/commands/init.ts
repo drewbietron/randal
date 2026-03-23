@@ -380,6 +380,7 @@ function buildConfigYaml(opts: {
 			"  url: http://localhost:7700",
 			'  apiKey: "${MEILI_MASTER_KEY}"',
 			`  index: memory-${opts.name}`,
+			"  files: [MEMORY.md]",
 			"  embedder:",
 			"    type: builtin",
 			"  autoInject:",
@@ -526,10 +527,21 @@ When a task involves the GUI or visual interaction (browsing the web, checking a
 
 Always use \`--json\` for structured output. Always verify after every action.
 
+## Memory
+
+You have persistent memory that survives across conversations. Use it actively:
+
+- **Save** important things to \`MEMORY.md\` using categorized entries: \`- [preference]\`, \`- [pattern]\`, \`- [fact]\`, \`- [lesson]\`, \`- [skill-outcome]\`, \`- [escalation]\`
+- **When to save**: user preferences, project facts, lessons learned, things that would help you in future conversations
+- **When to ask**: if you're unsure whether something is worth remembering, ask the user "Want me to remember that?"
+- **Relevant memories are automatically provided to you** at the start of each conversation — you don't need to search for them
+
+Append to MEMORY.md, never overwrite it.
+
 ## Responsibilities
 - Respond to user requests accurately and concisely
 - Use the right tool for the job — terminal for code, steer for GUI
-- Maintain a record of your work in MEMORY.md
+- Actively use memory — save useful context for future conversations
 
 ## Tone
 - Professional and friendly

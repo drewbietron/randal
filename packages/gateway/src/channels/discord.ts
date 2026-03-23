@@ -30,13 +30,23 @@ type DiscordChannelConfig = Extract<
 
 const DISCORD_MAX_LENGTH = 2000;
 
+interface Conversation {
+	threadChannel: ThreadChannel | null; // null for DMs
+	history: Array<{ role: "user" | "assistant"; content: string }>;
+	activeJobId: string | null;
+}
+
 export class DiscordChannel implements ChannelAdapter {
 	readonly name = "discord";
 	private client: Client;
 	private unsubscribe?: () => void;
 	private logger = createLogger({ context: { component: "channel:discord" } });
-	private jobThreads = new Map<string, ThreadChannel>();
-	private threadToJob = new Map<string, string>();
+	// Map thread/DM channel ID → conversation state
+	private conversations = new Map<string, Conversation>();
+	// Map job ID → channel ID for routing events
+	private jobToChannel = new Map<string, string>();
+	// Map job ID → typing interval for "is typing..." indicator
+	private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
 	constructor(
 		private channelConfig: DiscordChannelConfig,
@@ -107,13 +117,14 @@ export class DiscordChannel implements ChannelAdapter {
 
 		const isDM = !msg.guild;
 		const allowFrom = this.channelConfig.allowFrom;
-		const isJobThread = msg.channel.isThread() && this.threadToJob.has(msg.channel.id);
+		const isThread = msg.channel.isThread();
+		const isKnownThread = isThread && this.conversations.has(msg.channel.id);
 
 		// allowFrom filter
 		if (allowFrom && allowFrom.length > 0) {
 			if (!allowFrom.includes(msg.author.id)) return;
-		} else if (!isDM && !isJobThread) {
-			// No allowFrom + guild message + not a job thread: only respond if bot is mentioned
+		} else if (!isDM && !isKnownThread) {
+			// No allowFrom + guild message + not a known thread: only respond if bot is mentioned
 			const botUser = this.client.user;
 			if (!botUser || !msg.mentions.has(botUser)) return;
 		}
@@ -127,47 +138,190 @@ export class DiscordChannel implements ChannelAdapter {
 
 		if (!text) return;
 
-		// Route thread replies to the associated job
-		if (isJobThread) {
-			await this.handleThreadReply(msg, text);
+		// Check for explicit commands (status, stop, jobs, etc.) — handle globally
+		const parsed = parseCommand(text);
+		if (parsed && parsed.command !== "run") {
+			const origin = {
+				channel: "discord" as const,
+				replyTo: msg.channel.id,
+				from: msg.author.id,
+			};
+			const response = await handleCommand(text, this.deps, origin);
+			await msg.reply(response);
 			return;
 		}
 
+		// Everything else is a conversation message
+		const messageText = parsed?.args ?? text;
+
+		if (isKnownThread || isDM) {
+			// Continue existing conversation
+			const channelId = msg.channel.id;
+			await this.continueConversation(msg, channelId, messageText);
+		} else {
+			// New conversation from a guild channel — create a thread
+			await this.startNewConversation(msg, messageText);
+		}
+	}
+
+	/**
+	 * Start a new conversation: create a thread (guild) or use the DM channel,
+	 * submit the first job, and track the conversation.
+	 */
+	private async startNewConversation(msg: DiscordMessage, text: string): Promise<void> {
+		const isDM = !msg.guild;
+
+		// Build conversation history with just this first message
+		const history: Conversation["history"] = [{ role: "user", content: text }];
+
+		// Create origin pointing to where responses should go
 		const origin = {
 			channel: "discord" as const,
 			replyTo: msg.channel.id,
 			from: msg.author.id,
 		};
 
-		try {
-			const response = await handleCommand(text, this.deps, origin);
-			const sentMessage = await msg.reply(response);
+		// Submit the job
+		const { jobId, done } = this.deps.runner.submit({ prompt: text, origin });
+		done.catch(() => {});
 
-			// If a job was started, create a thread with a human-readable name
-			const jobIdMatch = response.match(/Job `([a-f0-9]+)` started/);
-			if (jobIdMatch && sentMessage && "startThread" in sentMessage) {
-				try {
-					const jobId = jobIdMatch[1];
-					const job = this.deps.runner.getJob(jobId);
-					const threadName = this.generateThreadName(job?.prompt ?? text);
-					const thread = await (sentMessage as unknown as ThreadableMessage).startThread({
+		// Try to create a thread (guild only)
+		let threadChannel: ThreadChannel | null = null;
+		let conversationChannelId: string;
+
+		if (!isDM) {
+			try {
+				const threadName = this.generateThreadName(text);
+				const startMsg = await msg.reply(`Starting: **${threadName}**`);
+				if ("startThread" in startMsg) {
+					threadChannel = await (startMsg as unknown as ThreadableMessage).startThread({
 						name: threadName,
 					});
-					this.jobThreads.set(jobId, thread);
-					this.threadToJob.set(thread.id, jobId);
-				} catch {
-					// DMs don't support threads — that's fine, replies go to the DM channel
+					conversationChannelId = threadChannel.id;
+				} else {
+					conversationChannelId = msg.channel.id;
 				}
-			}
-		} catch (err) {
-			this.logger.error("Discord message handling failed", {
-				error: err instanceof Error ? err.message : String(err),
-			});
-			try {
-				await msg.reply("Something went wrong processing your request.");
 			} catch {
-				// Can't reply — channel may be inaccessible
+				conversationChannelId = msg.channel.id;
 			}
+		} else {
+			// DMs — use the DM channel as the conversation
+			conversationChannelId = msg.channel.id;
+			// For DMs, if this is the first message ever, register the channel
+			if (!this.conversations.has(conversationChannelId)) {
+				// Don't send "Starting:" for DMs — just let the response come through
+			}
+		}
+
+		// Track the conversation
+		this.conversations.set(conversationChannelId, {
+			threadChannel,
+			history,
+			activeJobId: jobId,
+		});
+		this.jobToChannel.set(jobId, conversationChannelId);
+
+		// Show typing indicator while job is running
+		const typingTarget = threadChannel ?? (msg.channel as unknown as SendableChannel);
+		this.startTyping(jobId, typingTarget);
+	}
+
+	/**
+	 * Continue an existing conversation: include prior history in the prompt
+	 * and submit a new job in the same thread.
+	 */
+	private async continueConversation(
+		msg: DiscordMessage,
+		channelId: string,
+		text: string,
+	): Promise<void> {
+		const convo = this.conversations.get(channelId);
+
+		// For DMs on first message, start a new conversation
+		if (!convo) {
+			await this.startNewConversation(msg, text);
+			return;
+		}
+
+		// If a job is currently running, inject context
+		if (convo.activeJobId) {
+			const activeJob = this.deps.runner.getJob(convo.activeJobId);
+			if (activeJob && (activeJob.status === "running" || activeJob.status === "queued")) {
+				writeContext(activeJob.workdir, text);
+				await msg.reply("*(sent to running agent)*");
+				return;
+			}
+		}
+
+		// Add user message to history
+		convo.history.push({ role: "user", content: text });
+
+		// Build a prompt that includes conversation history
+		const prompt = this.buildConversationPrompt(convo.history);
+
+		const origin = {
+			channel: "discord" as const,
+			replyTo: channelId,
+			from: msg.author.id,
+		};
+
+		// Submit job with conversation context
+		const { jobId, done } = this.deps.runner.submit({ prompt, origin });
+		done.catch(() => {});
+
+		// Update conversation state
+		convo.activeJobId = jobId;
+		this.jobToChannel.set(jobId, channelId);
+
+		// Show typing indicator while job is running
+		const typingTarget = convo.threadChannel ?? (msg.channel as unknown as SendableChannel);
+		this.startTyping(jobId, typingTarget);
+	}
+
+	/**
+	 * Build a prompt that includes conversation history for context.
+	 */
+	private buildConversationPrompt(history: Conversation["history"]): string {
+		if (history.length <= 1) {
+			return history[0]?.content ?? "";
+		}
+
+		// Include recent history (last 10 exchanges to avoid token bloat)
+		const recent = history.slice(-20);
+		const contextLines = recent.map((entry) => {
+			const prefix = entry.role === "user" ? "User" : "Assistant";
+			return `${prefix}: ${entry.content}`;
+		});
+
+		return `## Conversation History\n${contextLines.join("\n\n")}\n\n## Current Request\nContinue the conversation. Respond to the user's latest message above.`;
+	}
+
+	/**
+	 * Start showing "is typing..." indicator for a job in a channel.
+	 * Refreshes every 8 seconds (Discord typing expires after 10s).
+	 */
+	private startTyping(jobId: string, channel: SendableChannel): void {
+		if (this.typingIntervals.has(jobId)) return;
+
+		const sendTyping = () => {
+			if ("sendTyping" in channel && typeof channel.sendTyping === "function") {
+				(channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {});
+			}
+		};
+
+		sendTyping();
+		const interval = setInterval(sendTyping, 8000);
+		this.typingIntervals.set(jobId, interval);
+	}
+
+	/**
+	 * Stop showing "is typing..." indicator for a job.
+	 */
+	private stopTyping(jobId: string): void {
+		const interval = this.typingIntervals.get(jobId);
+		if (interval) {
+			clearInterval(interval);
+			this.typingIntervals.delete(jobId);
 		}
 	}
 
@@ -219,68 +373,6 @@ export class DiscordChannel implements ChannelAdapter {
 		return name || "New task";
 	}
 
-	/**
-	 * Handle a reply within a job thread.
-	 * Active jobs get context injected; completed jobs start a new run.
-	 */
-	private async handleThreadReply(msg: DiscordMessage, text: string): Promise<void> {
-		const threadChannel = msg.channel as ThreadChannel;
-		const jobId = this.threadToJob.get(threadChannel.id);
-		if (!jobId) return;
-		const activeJob = this.deps.runner.getJob(jobId);
-
-		try {
-			if (activeJob && (activeJob.status === "running" || activeJob.status === "queued")) {
-				// Explicit commands target the thread's job
-				const parsed = parseCommand(text);
-				if (parsed?.command === "stop") {
-					this.deps.runner.stop(jobId);
-					await msg.reply("Stopping job.");
-					return;
-				}
-				if (parsed?.command === "status") {
-					const iter = activeJob.iterations.current;
-					const max = activeJob.maxIterations;
-					await msg.reply(`Running — iteration ${iter}/${max}`);
-					return;
-				}
-
-				// Anything else is context for the running agent
-				writeContext(activeJob.workdir, text);
-				await msg.reply("Sent to agent.");
-				return;
-			}
-
-			// Job is not active — treat as a new command in this thread
-			const origin = {
-				channel: "discord" as const,
-				replyTo: threadChannel.id,
-				from: msg.author.id,
-			};
-
-			const response = await handleCommand(text, this.deps, origin);
-			await msg.reply(response);
-
-			// If a new job started, update thread mapping so events route here
-			const newJobIdMatch = response.match(/Job `([a-f0-9]+)` started/);
-			if (newJobIdMatch) {
-				const newJobId = newJobIdMatch[1];
-				this.jobThreads.set(newJobId, threadChannel);
-				this.threadToJob.set(threadChannel.id, newJobId);
-			}
-		} catch (err) {
-			this.logger.error("Thread reply handling failed", {
-				error: err instanceof Error ? err.message : String(err),
-				jobId,
-			});
-			try {
-				await msg.reply("Something went wrong.");
-			} catch {
-				// Can't reply
-			}
-		}
-	}
-
 	private onRunnerEvent(event: RunnerEvent): void {
 		// Only send significant events
 		const significant = ["job.complete", "job.failed", "job.stuck"];
@@ -290,14 +382,29 @@ export class DiscordChannel implements ChannelAdapter {
 		const job = this.deps.runner.getJob(event.jobId);
 		if (!job?.origin || job.origin.channel !== "discord") return;
 
-		// Prefer thread if available, fall back to channel
-		const thread = this.jobThreads.get(event.jobId);
-		const fallbackChannel = this.client.channels.cache.get(job.origin.replyTo);
-		const target = thread ?? fallbackChannel;
+		// Find the conversation channel for this job
+		const channelId = this.jobToChannel.get(event.jobId);
+		const convo = channelId ? this.conversations.get(channelId) : undefined;
+
+		// Determine where to send: thread, or fallback to origin channel
+		const target =
+			convo?.threadChannel ??
+			(channelId ? this.client.channels.cache.get(channelId) : null) ??
+			this.client.channels.cache.get(job.origin.replyTo);
 		if (!target || !("send" in target)) return;
 
 		const sendable = target as SendableChannel;
 		const message = formatEvent(event);
+
+		// Update conversation history with assistant response
+		if (convo && event.type === "job.complete") {
+			const response = event.data.output || event.data.summary || message;
+			convo.history.push({ role: "assistant", content: response });
+			convo.activeJobId = null;
+		} else if (convo && event.type === "job.failed") {
+			convo.activeJobId = null;
+		}
+
 		this.sendReply(sendable, message).catch((err: unknown) => {
 			this.logger.warn("Failed to send Discord notification", {
 				error: err instanceof Error ? err.message : String(err),
@@ -305,13 +412,18 @@ export class DiscordChannel implements ChannelAdapter {
 			});
 		});
 
-		// Clean up jobThreads but keep threadToJob for follow-up replies
+		// Clean up on terminal events (but keep conversation alive)
 		if (event.type === "job.complete" || event.type === "job.failed") {
-			this.jobThreads.delete(event.jobId);
+			this.stopTyping(event.jobId);
+			this.jobToChannel.delete(event.jobId);
 		}
 	}
 
 	stop(): void {
+		for (const interval of this.typingIntervals.values()) {
+			clearInterval(interval);
+		}
+		this.typingIntervals.clear();
 		if (this.unsubscribe) {
 			this.unsubscribe();
 			this.unsubscribe = undefined;
