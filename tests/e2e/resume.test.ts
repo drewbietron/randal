@@ -22,7 +22,7 @@ credentials:
 
 		// Script that never outputs the promise
 		const scriptPath = join(workdir, "agent.sh");
-		writeFileSync(scriptPath, '#!/bin/bash\necho "Working but not done"\n', { mode: 0o755 });
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Modified src/task.ts"\n', { mode: 0o755 });
 
 		// 1. Run a job that fails (max iterations reached without promise)
 		const runner = new Runner({ config });
