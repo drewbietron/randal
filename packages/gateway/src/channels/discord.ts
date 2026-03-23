@@ -9,8 +9,8 @@ import {
 	Partials,
 	type ThreadChannel,
 } from "discord.js";
-import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
 import { parseCommand } from "../router.js";
+import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
 
 /** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
 interface SendableChannel {
@@ -214,7 +214,7 @@ export class DiscordChannel implements ChannelAdapter {
 		let name = prompt.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
 		if (name.length > 80) {
 			// Cut at word boundary to avoid mid-word truncation
-			name = name.slice(0, 77).replace(/\s+\S*$/, "") + "...";
+			name = `${name.slice(0, 77).replace(/\s+\S*$/, "")}...`;
 		}
 		return name || "New task";
 	}
@@ -225,7 +225,8 @@ export class DiscordChannel implements ChannelAdapter {
 	 */
 	private async handleThreadReply(msg: DiscordMessage, text: string): Promise<void> {
 		const threadChannel = msg.channel as ThreadChannel;
-		const jobId = this.threadToJob.get(threadChannel.id)!;
+		const jobId = this.threadToJob.get(threadChannel.id);
+		if (!jobId) return;
 		const activeJob = this.deps.runner.getJob(jobId);
 
 		try {

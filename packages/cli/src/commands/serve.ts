@@ -106,14 +106,24 @@ async function ensureMeilisearch(ctx: CliContext): Promise<boolean> {
 	const dockerCheck = Bun.spawnSync(["which", "docker"]);
 	if (dockerCheck.exitCode === 0) {
 		console.log("  Starting Meilisearch via Docker...");
-		Bun.spawnSync(["docker", "rm", "-f", "randal-meilisearch"], { stdout: "ignore", stderr: "ignore" });
+		Bun.spawnSync(["docker", "rm", "-f", "randal-meilisearch"], {
+			stdout: "ignore",
+			stderr: "ignore",
+		});
 		const proc = Bun.spawnSync([
-			"docker", "run", "-d",
-			"--name", "randal-meilisearch",
-			"--restart", "unless-stopped",
-			"-p", "7700:7700",
-			"-v", `${dbPath}:/meili_data`,
-			"-e", `MEILI_MASTER_KEY=${masterKey}`,
+			"docker",
+			"run",
+			"-d",
+			"--name",
+			"randal-meilisearch",
+			"--restart",
+			"unless-stopped",
+			"-p",
+			"7700:7700",
+			"-v",
+			`${dbPath}:/meili_data`,
+			"-e",
+			`MEILI_MASTER_KEY=${masterKey}`,
 			"getmeili/meilisearch:v1.12",
 		]);
 		if (proc.exitCode === 0) {
