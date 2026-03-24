@@ -1,20 +1,42 @@
 import { createLogger } from "@randal/core";
-import type { RandalConfig, RunnerEvent } from "@randal/core";
+import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
 import { writeContext } from "@randal/runner";
 import {
 	Client,
+	type Interaction,
 	type Message as DiscordMessage,
 	Events,
 	GatewayIntentBits,
 	Partials,
+	REST,
+	Routes,
 	type ThreadChannel,
 } from "discord.js";
+import { listJobs, loadJob } from "../jobs.js";
 import { parseCommand } from "../router.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import {
+	SLASH_COMMANDS,
+	buildCompletionButtons,
+	buildContextModal,
+	buildCustomCommand,
+	buildCustomCommandPrompt,
+	buildDashboardEmbed,
+	buildDashboardRefreshButton,
+	buildDisabledProgressButtons,
+	buildFailureButtons,
+	buildJobEmbed,
+	buildMemoryModal,
+	buildProgressButtons,
+	buildThreadName,
+	parseButtonId,
+	type DiscordServerConfig,
+	type ThreadLifecycleState,
+} from "./discord-components.js";
 
 /** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
 interface SendableChannel {
-	send(content: string): Promise<unknown>;
+	send(content: string | { content?: string; embeds?: unknown[]; components?: unknown[] }): Promise<unknown>;
 }
 
 /** Sendable channel that supports threads (guild text channels) */
@@ -45,6 +67,10 @@ export class DiscordChannel implements ChannelAdapter {
 	private conversations = new Map<string, Conversation>();
 	// Map job ID → channel ID for routing events
 	private jobToChannel = new Map<string, string>();
+	// Map guild ID → server config for per-server commands/overrides
+	private serverConfigs = new Map<string, DiscordServerConfig>();
+	// Set of custom command names registered across all servers (for routing)
+	private customCommandNames = new Set<string>();
 	// Map job ID → typing interval for "is typing..." indicator
 	private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 	// Map job ID → progress state for edit-in-place status messages
@@ -78,15 +104,40 @@ export class DiscordChannel implements ChannelAdapter {
 			],
 			partials: [Partials.Channel], // Required for DM support
 		});
+
+		// Index server configs by guild ID
+		for (const server of this.channelConfig.servers ?? []) {
+			this.serverConfigs.set(server.guildId, server);
+			for (const cmd of server.commands) {
+				this.customCommandNames.add(cmd.name);
+			}
+		}
 	}
 
 	async start(): Promise<void> {
 		// Register message handler
 		this.client.on(Events.MessageCreate, (msg) => this.onMessage(msg));
 
-		// Log when ready, then preload recent conversations from Meilisearch
+		// Register interaction handler (buttons, slash commands, modals)
+		this.client.on(Events.InteractionCreate, (interaction) => {
+			this.onInteraction(interaction).catch((err) => {
+				this.logger.warn("Interaction handler error", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
+		});
+
+		// Log when ready, register slash commands, preload conversations
 		this.client.once(Events.ClientReady, (c) => {
 			this.logger.info("Discord bot connected", { tag: c.user.tag });
+
+			// Register slash commands
+			this.registerSlashCommands(c.user.id).catch((err) => {
+				this.logger.warn("Failed to register slash commands", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
+
 			this.preloadConversations().catch((err) => {
 				this.logger.warn("Failed to preload conversations on startup", {
 					error: err instanceof Error ? err.message : String(err),
@@ -331,8 +382,8 @@ export class DiscordChannel implements ChannelAdapter {
 
 		if (!isDM) {
 			try {
-				const threadName = this.generateThreadName(text);
-				const startMsg = await msg.reply(`Starting: **${threadName}**`);
+				const threadName = buildThreadName({ state: "started", topic: this.generateThreadName(text) });
+				const startMsg = await msg.reply(`Starting: **${this.generateThreadName(text)}**`);
 				if ("startThread" in startMsg) {
 					threadChannel = await (startMsg as unknown as ThreadableMessage).startThread({
 						name: threadName,
@@ -529,102 +580,6 @@ export class DiscordChannel implements ChannelAdapter {
 		return name || "New task";
 	}
 
-	/**
-	 * Pick a category emoji based on keywords in the text.
-	 */
-	private pickThreadEmoji(text: string): string {
-		const lower = text.toLowerCase();
-		const emojiMap: [string, string[]][] = [
-			["🐛", ["fix", "bug", "error", "issue", "broken", "crash", "patch"]],
-			["✨", ["add", "new", "create", "feature", "implement", "build"]],
-			["🔧", ["update", "change", "modify", "adjust", "config", "refactor", "tweak"]],
-			["📝", ["doc", "readme", "comment", "write", "draft", "note"]],
-			["🧪", ["test", "spec", "coverage", "assert", "check"]],
-			["🚀", ["deploy", "release", "ship", "launch", "publish", "push"]],
-			["🔍", ["search", "find", "look", "investigate", "explore", "research", "analyze"]],
-			["🎨", ["style", "css", "design", "ui", "layout", "theme", "color"]],
-			["🗑️", ["delete", "remove", "clean", "drop", "prune"]],
-			["📦", ["install", "package", "dependency", "npm", "pip", "upgrade"]],
-			["🔐", ["auth", "security", "permission", "encrypt", "password", "token"]],
-			["💬", ["chat", "discuss", "question", "help", "explain", "review"]],
-		];
-
-		for (const [emoji, keywords] of emojiMap) {
-			if (keywords.some((kw) => lower.includes(kw))) {
-				return emoji;
-			}
-		}
-		return "🤖";
-	}
-
-	/**
-	 * Format a short timestamp string like "3:45 PM".
-	 */
-	private formatUpdateTime(): string {
-		return new Date().toLocaleTimeString("en-US", {
-			hour: "numeric",
-			minute: "2-digit",
-			hour12: true,
-		});
-	}
-
-	/**
-	 * Generate a smart thread title from conversation context and job output.
-	 * Format: "3:45 PM 🔧 Summary of work"
-	 */
-	private generateSmartThreadTitle(convo: Conversation, summary?: string): string {
-		// Best source: job summary. Fallback: latest user message.
-		let topic = summary?.replace(/\n/g, " ").replace(/\s+/g, " ").trim() || "";
-
-		if (!topic) {
-			const lastUserMsg = [...convo.history].reverse().find((m) => m.role === "user");
-			topic = lastUserMsg?.content.replace(/\n/g, " ").replace(/\s+/g, " ").trim() || "Task";
-		}
-
-		// If topic is very long, take the first sentence
-		const firstSentence = topic.match(/^[^.!?]+[.!?]?\s*/);
-		if (firstSentence && topic.length > 60) {
-			topic = firstSentence[0].trim();
-		}
-
-		const emoji = this.pickThreadEmoji(topic);
-		const time = this.formatUpdateTime();
-		const prefix = `${time} ${emoji} `;
-
-		// Discord thread name max is 100 chars
-		const maxTopicLen = 100 - prefix.length;
-		if (topic.length > maxTopicLen) {
-			topic = `${topic.slice(0, maxTopicLen - 3).replace(/\s+\S*$/, "")}...`;
-		}
-
-		return `${prefix}${topic}`;
-	}
-
-	/**
-	 * Update the thread title to reflect conversation progress.
-	 * Called on job completion to keep thread names meaningful.
-	 */
-	private async updateThreadTitle(jobId: string, event: RunnerEvent): Promise<void> {
-		const channelId = this.jobToChannel.get(jobId);
-		if (!channelId) return;
-
-		const convo = this.conversations.get(channelId);
-		if (!convo?.threadChannel) return; // Only update guild threads, not DMs
-
-		const summary = event.data.summary || event.data.output;
-
-		try {
-			const newTitle = this.generateSmartThreadTitle(convo, summary);
-			await convo.threadChannel.setName(newTitle);
-			this.logger.debug("Updated thread title", { jobId, title: newTitle });
-		} catch (err) {
-			this.logger.debug("Failed to update thread title", {
-				error: err instanceof Error ? err.message : String(err),
-				jobId,
-			});
-		}
-	}
-
 	private onRunnerEvent(event: RunnerEvent): void {
 		const terminal = ["job.complete", "job.failed", "job.stuck"];
 		const intermediate = ["iteration.output", "job.plan_updated", "iteration.start"];
@@ -729,7 +684,13 @@ export class DiscordChannel implements ChannelAdapter {
 			}
 		}
 
-		this.sendReply(sendable, message).catch((err: unknown) => {
+		// Send terminal message with appropriate action buttons
+		const terminalState: ThreadLifecycleState = event.type === "job.complete" ? "complete" : "failed";
+		const buttons = event.type === "job.complete"
+			? buildCompletionButtons(event.jobId)
+			: buildFailureButtons(event.jobId);
+
+		this.sendReplyWithComponents(sendable, message, [buttons]).catch((err: unknown) => {
 			this.logger.warn("Failed to send Discord notification", {
 				error: err instanceof Error ? err.message : String(err),
 				jobId: event.jobId,
@@ -738,16 +699,12 @@ export class DiscordChannel implements ChannelAdapter {
 
 		// Clean up on terminal events (but keep conversation alive)
 		if (event.type === "job.complete" || event.type === "job.failed") {
-			// Update thread title before cleaning up jobToChannel mapping
-			this.updateThreadTitle(event.jobId, event).catch((err: unknown) => {
-				this.logger.debug("Thread title update failed", {
-					error: err instanceof Error ? err.message : String(err),
-					jobId: event.jobId,
-				});
-			});
+			// Update thread title with lifecycle state
+			this.updateThreadNameForState(event.jobId, terminalState, event);
 			this.stopTyping(event.jobId);
-			this.jobToChannel.delete(event.jobId);
 			this.finalizeProgressMessage(event);
+			// Delete jobToChannel after thread update has the ID
+			this.jobToChannel.delete(event.jobId);
 		}
 	}
 
@@ -780,7 +737,10 @@ export class DiscordChannel implements ChannelAdapter {
 		}
 
 		const content = parts.join("\n");
-		state.message.edit(content).catch(() => {});
+		state.message.edit({
+			content,
+			components: [buildDisabledProgressButtons(event.jobId)],
+		}).catch(() => {});
 		this.progressState.delete(event.jobId);
 	}
 
@@ -819,11 +779,19 @@ export class DiscordChannel implements ChannelAdapter {
 				break;
 		}
 
+		// Update thread name on iteration transitions (rate-limited by Discord ~2/10min)
+		if (event.type === "iteration.start" && (event.data.iteration ?? 0) >= 2) {
+			this.updateThreadNameForState(event.jobId, "running", event);
+		}
+
 		// First event — send immediately (no debounce needed)
 		if (!state.message) {
 			const content = this.buildProgressContent(state);
 			try {
-				const sent = await channel.send(content);
+				const sent = await channel.send({
+					content,
+					components: [buildProgressButtons(event.jobId)],
+				});
 				state.message = sent;
 				state.lastEditAt = Date.now();
 			} catch (err) {
@@ -860,7 +828,7 @@ export class DiscordChannel implements ChannelAdapter {
 			if (!state.message || typeof state.message.edit !== "function") return;
 			const content = this.buildProgressContent(state);
 			try {
-				await state.message.edit(content);
+				await state.message.edit({ content, components: [buildProgressButtons(jobId)] });
 				state.lastEditAt = Date.now();
 			} catch (err) {
 				this.logger.debug("Failed to edit progress message", {
@@ -912,6 +880,537 @@ export class DiscordChannel implements ChannelAdapter {
 		}
 
 		return parts.join("\n\n") || "⏳ Working...";
+	}
+
+	/**
+	 * Send a reply with optional components (buttons, embeds), splitting long text.
+	 * Components are only attached to the last chunk.
+	 */
+	private async sendReplyWithComponents(
+		channel: SendableChannel,
+		text: string,
+		// biome-ignore lint: discord.js component types vary
+		components: any[],
+	): Promise<void> {
+		if (text.length <= DISCORD_MAX_LENGTH) {
+			await channel.send({ content: text, components });
+			return;
+		}
+
+		// Split text, attach components to last chunk only
+		const chunks: string[] = [];
+		let current = "";
+		for (const line of text.split("\n")) {
+			if (current.length + line.length + 1 > DISCORD_MAX_LENGTH) {
+				if (current) { chunks.push(current); current = ""; }
+				if (line.length > DISCORD_MAX_LENGTH) {
+					for (let i = 0; i < line.length; i += DISCORD_MAX_LENGTH) {
+						chunks.push(line.slice(i, i + DISCORD_MAX_LENGTH));
+					}
+					continue;
+				}
+			}
+			current = current ? `${current}\n${line}` : line;
+		}
+		if (current) chunks.push(current);
+
+		for (let i = 0; i < chunks.length; i++) {
+			if (i === chunks.length - 1) {
+				await channel.send({ content: chunks[i], components });
+			} else {
+				await channel.send(chunks[i]);
+			}
+		}
+	}
+
+	/**
+	 * Register slash commands with Discord API.
+	 * Global commands (universal) propagate to all servers (~1h first time).
+	 * Per-server custom commands register as guild commands (instant).
+	 */
+	private async registerSlashCommands(applicationId: string): Promise<void> {
+		const rest = new REST({ version: "10" }).setToken(this.channelConfig.token);
+		const globalBody = SLASH_COMMANDS.map((cmd) => cmd.toJSON());
+
+		const guildId = this.channelConfig.guildId;
+		if (guildId) {
+			// Legacy single-guild mode: register universal commands to one guild
+			await rest.put(Routes.applicationGuildCommands(applicationId, guildId), { body: globalBody });
+			this.logger.info("Registered guild slash commands", { guildId, count: globalBody.length });
+		} else {
+			// Register universal commands globally
+			await rest.put(Routes.applicationCommands(applicationId), { body: globalBody });
+			this.logger.info("Registered global slash commands", { count: globalBody.length });
+		}
+
+		// Register per-server custom commands as guild commands (instant)
+		for (const [serverGuildId, serverConfig] of this.serverConfigs) {
+			if (serverConfig.commands.length === 0) continue;
+
+			const customBody = serverConfig.commands.map((cmd) => buildCustomCommand(cmd).toJSON());
+
+			// Merge with global commands if this guild doesn't already have them via guildId
+			const body = serverGuildId === guildId
+				? [...globalBody, ...customBody]
+				: customBody;
+
+			// For guilds that got global commands above, we only need to add custom ones.
+			// But Discord's PUT replaces all guild commands, so if this guild was the guildId target,
+			// we re-register global + custom together. Otherwise, just register the custom ones
+			// (global commands already available via global registration).
+			if (serverGuildId === guildId) {
+				await rest.put(Routes.applicationGuildCommands(applicationId, serverGuildId), { body });
+			} else {
+				await rest.put(Routes.applicationGuildCommands(applicationId, serverGuildId), { body: customBody });
+			}
+
+			this.logger.info("Registered server-specific slash commands", {
+				guildId: serverGuildId,
+				customCount: customBody.length,
+			});
+		}
+	}
+
+	/**
+	 * Handle Discord interactions: slash commands, buttons, modals, select menus.
+	 */
+	private async onInteraction(interaction: Interaction): Promise<void> {
+		if (interaction.isChatInputCommand()) {
+			await this.handleSlashCommand(interaction);
+		} else if (interaction.isButton()) {
+			await this.handleButtonInteraction(interaction);
+		} else if (interaction.isModalSubmit()) {
+			await this.handleModalSubmit(interaction);
+		} else if (interaction.isStringSelectMenu()) {
+			await this.handleSelectMenu(interaction);
+		}
+	}
+
+	/**
+	 * Handle slash command interactions.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleSlashCommand(interaction: any): Promise<void> {
+		const origin = {
+			channel: "discord" as const,
+			replyTo: interaction.channelId,
+			from: interaction.user.id,
+		};
+
+		switch (interaction.commandName) {
+			case "run": {
+				const prompt = interaction.options.getString("prompt");
+				if (!prompt) {
+					await interaction.reply({ content: "Prompt is required", ephemeral: true });
+					return;
+				}
+				const response = await handleCommand(`run: ${prompt}`, this.deps, origin);
+				await interaction.reply(response);
+
+				// Also start conversation thread if in a guild
+				if (interaction.guild && interaction.channel) {
+					const { jobId } = this.deps.runner.getActiveJobs().slice(-1)[0]
+						? { jobId: this.deps.runner.getActiveJobs().slice(-1)[0].id }
+						: { jobId: null };
+					if (jobId) {
+						this.jobToChannel.set(jobId, interaction.channelId);
+					}
+				}
+				break;
+			}
+			case "status": {
+				const jobArg = interaction.options.getString("job");
+				const response = await handleCommand(jobArg ? `status: ${jobArg}` : "status", this.deps, origin);
+				// If a specific job ID was given, show a rich embed
+				if (jobArg) {
+					const job = this.deps.runner.getJob(jobArg) ?? loadJob(jobArg);
+					if (job) {
+						const embed = buildJobEmbed(job);
+						await interaction.reply({ embeds: [embed], ephemeral: true });
+						return;
+					}
+				}
+				await interaction.reply({ content: response, ephemeral: true });
+				break;
+			}
+			case "stop": {
+				const jobArg = interaction.options.getString("job");
+				const response = await handleCommand(jobArg ? `stop: ${jobArg}` : "stop", this.deps, origin);
+				await interaction.reply({ content: response, ephemeral: true });
+				break;
+			}
+			case "resume": {
+				const jobArg = interaction.options.getString("job");
+				if (!jobArg) {
+					await interaction.reply({ content: "Job ID is required", ephemeral: true });
+					return;
+				}
+				const response = await handleCommand(`resume: ${jobArg}`, this.deps, origin);
+				await interaction.reply(response);
+				break;
+			}
+			case "jobs": {
+				await this.handleJobsSlashCommand(interaction);
+				break;
+			}
+			case "memory": {
+				const subcommand = interaction.options.getSubcommand();
+				if (subcommand === "search") {
+					const query = interaction.options.getString("query");
+					const response = await handleCommand(`memory: ${query}`, this.deps, origin);
+					await interaction.reply({ content: response, ephemeral: true });
+				} else if (subcommand === "add") {
+					await interaction.showModal(buildMemoryModal());
+				}
+				break;
+			}
+			case "dashboard": {
+				await this.handleDashboardCommand(interaction);
+				break;
+			}
+			default: {
+				// Check if this is a server-specific custom command
+				if (this.customCommandNames.has(interaction.commandName)) {
+					await this.handleCustomSlashCommand(interaction);
+				} else {
+					await interaction.reply({ content: `Unknown command: ${interaction.commandName}`, ephemeral: true });
+				}
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Handle a server-specific custom slash command.
+	 * Resolves the guild's server config, builds a prompt from the command + options,
+	 * and submits a job with any agent/model overrides from the server config.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleCustomSlashCommand(interaction: any): Promise<void> {
+		const guildId = interaction.guildId;
+		const serverConfig = guildId ? this.serverConfigs.get(guildId) : undefined;
+
+		if (!serverConfig) {
+			await interaction.reply({
+				content: `Command \`/${interaction.commandName}\` is not configured for this server`,
+				ephemeral: true,
+			});
+			return;
+		}
+
+		const cmdConfig = serverConfig.commands.find((c) => c.name === interaction.commandName);
+		if (!cmdConfig) {
+			await interaction.reply({
+				content: `Command \`/${interaction.commandName}\` not found in server config`,
+				ephemeral: true,
+			});
+			return;
+		}
+
+		// Collect option values
+		const options: Array<{ name: string; value: unknown }> = [];
+		for (const opt of cmdConfig.options) {
+			const value = interaction.options.get(opt.name)?.value;
+			if (value !== undefined && value !== null) {
+				options.push({ name: opt.name, value });
+			}
+		}
+
+		// Build prompt from command + options + server instructions
+		const prompt = buildCustomCommandPrompt(
+			interaction.commandName,
+			options,
+			serverConfig.instructions,
+		);
+
+		const origin = {
+			channel: "discord" as const,
+			replyTo: interaction.channelId,
+			from: interaction.user.id,
+		};
+
+		// Submit job with server-specific overrides
+		const { jobId } = this.deps.runner.submit({
+			prompt,
+			origin,
+			...(serverConfig.agent && { agent: serverConfig.agent }),
+			...(serverConfig.model && { model: serverConfig.model }),
+		});
+		this.jobToChannel.set(jobId, interaction.channelId);
+
+		const optSummary = options.length > 0
+			? ` (${options.map((o) => `${o.name}=${o.value}`).join(", ")})`
+			: "";
+		await interaction.reply(`Running \`/${interaction.commandName}\`${optSummary} → Job \`${jobId}\``);
+	}
+
+	/**
+	 * Handle button interactions.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleButtonInteraction(interaction: any): Promise<void> {
+		const parsed = parseButtonId(interaction.customId);
+		if (!parsed) return;
+
+		const { action, jobId } = parsed;
+
+		switch (action) {
+			case "stop": {
+				if (!jobId) break;
+				const stopped = this.deps.runner.stop(jobId);
+				await interaction.reply({
+					content: stopped ? `Job \`${jobId}\` stopped` : `Job \`${jobId}\` not found or not running`,
+					ephemeral: true,
+				});
+				break;
+			}
+			case "context": {
+				if (!jobId) break;
+				await interaction.showModal(buildContextModal(jobId));
+				break;
+			}
+			case "details": {
+				if (!jobId) break;
+				const job = this.deps.runner.getJob(jobId) ?? loadJob(jobId);
+				if (!job) {
+					await interaction.reply({ content: `Job \`${jobId}\` not found`, ephemeral: true });
+					break;
+				}
+				const embed = buildJobEmbed(job);
+				await interaction.reply({ embeds: [embed], ephemeral: true });
+				break;
+			}
+			case "retry": {
+				if (!jobId) break;
+				const oldJob = this.deps.runner.getJob(jobId) ?? loadJob(jobId);
+				if (!oldJob) {
+					await interaction.reply({ content: `Job \`${jobId}\` not found`, ephemeral: true });
+					break;
+				}
+				const origin = {
+					channel: "discord" as const,
+					replyTo: interaction.channelId,
+					from: interaction.user.id,
+				};
+				const { jobId: newId } = this.deps.runner.submit({ prompt: oldJob.prompt, origin });
+				this.jobToChannel.set(newId, interaction.channelId);
+
+				// Link to conversation if exists
+				const convo = this.conversations.get(interaction.channelId);
+				if (convo) convo.activeJobId = newId;
+
+				await interaction.reply(`Retrying as job \`${newId}\``);
+				break;
+			}
+			case "resume": {
+				if (!jobId) break;
+				const origin = {
+					channel: "discord" as const,
+					replyTo: interaction.channelId,
+					from: interaction.user.id,
+				};
+				const response = await handleCommand(`resume: ${jobId}`, this.deps, origin);
+				await interaction.reply(response);
+				break;
+			}
+			case "save_memory": {
+				if (!jobId) break;
+				const job = this.deps.runner.getJob(jobId) ?? loadJob(jobId);
+				const defaultText = job
+					? (job.iterations.history.slice(-1)[0]?.summary || job.prompt).slice(0, 4000)
+					: "";
+				await interaction.showModal(buildMemoryModal(defaultText));
+				break;
+			}
+			case "dashboard_refresh": {
+				await this.handleDashboardCommand(interaction);
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Handle modal submissions (context injection, memory add).
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleModalSubmit(interaction: any): Promise<void> {
+		const parsed = parseButtonId(interaction.customId);
+		if (!parsed) return;
+
+		const { action, jobId } = parsed;
+
+		switch (action) {
+			case "modal_context": {
+				if (!jobId) break;
+				const text = interaction.fields.getTextInputValue("context_text");
+				const job = this.deps.runner.getJob(jobId);
+				if (!job || (job.status !== "running" && job.status !== "queued")) {
+					await interaction.reply({ content: `Job \`${jobId}\` is not running`, ephemeral: true });
+					break;
+				}
+				writeContext(job.workdir, text);
+				await interaction.reply({ content: `Context injected into job \`${jobId}\``, ephemeral: true });
+				break;
+			}
+			case "modal_memory": {
+				const text = interaction.fields.getTextInputValue("memory_text");
+				const category = interaction.fields.getTextInputValue("memory_category");
+				if (!this.deps.memoryManager) {
+					await interaction.reply({ content: "Memory not available", ephemeral: true });
+					break;
+				}
+				try {
+					await this.deps.memoryManager.add({
+						content: text,
+						category: category as "fact",
+						source: "human",
+					});
+					await interaction.reply({ content: `Saved to memory (${category})`, ephemeral: true });
+				} catch {
+					await interaction.reply({ content: "Failed to save to memory", ephemeral: true });
+				}
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Handle string select menu interactions.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleSelectMenu(interaction: any): Promise<void> {
+		const parsed = parseButtonId(interaction.customId);
+		if (!parsed) return;
+
+		const selectedJobId = interaction.values?.[0];
+		if (!selectedJobId) return;
+
+		switch (parsed.action) {
+			case "select_details": {
+				const job = this.deps.runner.getJob(selectedJobId) ?? loadJob(selectedJobId);
+				if (job) {
+					await interaction.reply({ embeds: [buildJobEmbed(job)], ephemeral: true });
+				} else {
+					await interaction.reply({ content: `Job \`${selectedJobId}\` not found`, ephemeral: true });
+				}
+				break;
+			}
+			case "select_stop": {
+				const stopped = this.deps.runner.stop(selectedJobId);
+				await interaction.reply({
+					content: stopped ? `Job \`${selectedJobId}\` stopped` : `Not running`,
+					ephemeral: true,
+				});
+				break;
+			}
+			case "select_resume": {
+				const origin = {
+					channel: "discord" as const,
+					replyTo: interaction.channelId,
+					from: interaction.user.id,
+				};
+				const response = await handleCommand(`resume: ${selectedJobId}`, this.deps, origin);
+				await interaction.reply(response);
+				break;
+			}
+		}
+	}
+
+	/**
+	 * Handle /jobs slash command with rich embeds.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleJobsSlashCommand(interaction: any): Promise<void> {
+		const active = this.deps.runner.getActiveJobs();
+		const disk = listJobs();
+		const activeIds = new Set(active.map((j) => j.id));
+		const merged = [...active, ...disk.filter((j) => !activeIds.has(j.id))].slice(0, 10);
+
+		if (merged.length === 0) {
+			await interaction.reply({ content: "No jobs found", ephemeral: true });
+			return;
+		}
+
+		const lines = merged.map((j) => {
+			const emoji = j.status === "running" ? "🔄"
+				: j.status === "complete" ? "✅"
+				: j.status === "failed" ? "❌"
+				: j.status === "stopped" ? "⏸️"
+				: "⏳";
+			const dur = j.duration ? ` (${j.duration}s)` : "";
+			return `${emoji} \`${j.id}\` ${j.status}${dur} — ${j.prompt.slice(0, 60)}`;
+		});
+
+		await interaction.reply({ content: lines.join("\n"), ephemeral: true });
+	}
+
+	/**
+	 * Handle /dashboard command — show system overview with rich embed.
+	 */
+	// biome-ignore lint: discord.js interaction types are complex
+	private async handleDashboardCommand(interaction: any): Promise<void> {
+		const activeJobs = this.deps.runner.getActiveJobs() as Job[];
+		const allJobs = listJobs();
+		const recentJobs = allJobs
+			.filter((j) => j.status !== "running" && j.status !== "queued")
+			.slice(0, 5);
+
+		let memoryCount: number | undefined;
+		if (this.deps.memoryManager) {
+			try {
+				const results = await this.deps.memoryManager.search("*", 0);
+				memoryCount = results.length;
+			} catch {
+				// Non-critical
+			}
+		}
+
+		const embed = buildDashboardEmbed({
+			activeJobs,
+			recentJobs,
+			memoryCount,
+		});
+		const refreshRow = buildDashboardRefreshButton();
+
+		if (interaction.replied || interaction.deferred) {
+			await interaction.editReply({ embeds: [embed], components: [refreshRow] });
+		} else {
+			await interaction.reply({ embeds: [embed], components: [refreshRow] });
+		}
+	}
+
+	/**
+	 * Update thread name to reflect job lifecycle state.
+	 * Rate-limited by Discord (~2 name changes per 10 minutes).
+	 */
+	private updateThreadNameForState(jobId: string, state: ThreadLifecycleState, event: RunnerEvent): void {
+		const channelId = this.jobToChannel.get(jobId);
+		if (!channelId) return;
+
+		const convo = this.conversations.get(channelId);
+		if (!convo?.threadChannel) return;
+
+		const lastUserMsg = [...convo.history].reverse().find((m) => m.role === "user");
+		let topic = event.data.summary || event.data.output || lastUserMsg?.content || "Task";
+		// Take first sentence if long
+		const firstSentence = topic.match(/^[^.!?]+[.!?]?\s*/);
+		if (firstSentence && topic.length > 60) {
+			topic = firstSentence[0].trim();
+		}
+
+		const name = buildThreadName({
+			state,
+			topic,
+			iteration: event.data.iteration,
+			maxIterations: event.data.maxIterations,
+		});
+
+		convo.threadChannel.setName(name).catch((err) => {
+			this.logger.debug("Failed to update thread name", {
+				error: err instanceof Error ? err.message : String(err),
+				jobId,
+			});
+		});
 	}
 
 	/**
@@ -968,6 +1467,16 @@ export class DiscordChannel implements ChannelAdapter {
 			const convo = this.conversations.get(threadId);
 			if (convo) convo.activeJobId = jobId;
 		}
+	}
+
+	/** Get server-specific config for a guild. Returns undefined if no server config exists. */
+	getServerConfig(guildId: string): DiscordServerConfig | undefined {
+		return this.serverConfigs.get(guildId);
+	}
+
+	/** Get all registered custom command names across all servers. */
+	getCustomCommandNames(): ReadonlySet<string> {
+		return this.customCommandNames;
 	}
 
 	stop(): void {

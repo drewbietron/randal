@@ -224,4 +224,87 @@ describe("DiscordChannel", () => {
 		// stop() should not throw even before start
 		expect(() => channel.stop()).not.toThrow();
 	});
+
+	test("indexes server configs by guild ID", () => {
+		const config = makeChannelConfig({
+			servers: [
+				{
+					guildId: "guild-1",
+					agent: "ops-agent",
+					model: "anthropic/claude-sonnet-4",
+					instructions: "You are a DevOps assistant",
+					commands: [
+						{ name: "deploy", description: "Deploy a service", options: [] },
+						{ name: "rollback", description: "Rollback", options: [] },
+					],
+				},
+				{
+					guildId: "guild-2",
+					commands: [
+						{ name: "draft", description: "Create a draft", options: [] },
+					],
+				},
+			],
+		});
+		const deps = makeDeps();
+		const channel = new DiscordChannel(config, deps);
+
+		// Server configs are indexed
+		const s1 = channel.getServerConfig("guild-1");
+		expect(s1).toBeDefined();
+		expect(s1!.agent).toBe("ops-agent");
+		expect(s1!.commands).toHaveLength(2);
+
+		const s2 = channel.getServerConfig("guild-2");
+		expect(s2).toBeDefined();
+		expect(s2!.commands).toHaveLength(1);
+
+		// Non-existent guild returns undefined
+		expect(channel.getServerConfig("guild-999")).toBeUndefined();
+	});
+
+	test("tracks custom command names across all servers", () => {
+		const config = makeChannelConfig({
+			servers: [
+				{
+					guildId: "guild-1",
+					commands: [
+						{ name: "deploy", description: "Deploy", options: [] },
+						{ name: "rollback", description: "Rollback", options: [] },
+					],
+				},
+				{
+					guildId: "guild-2",
+					commands: [
+						{ name: "draft", description: "Draft", options: [] },
+					],
+				},
+			],
+		});
+		const deps = makeDeps();
+		const channel = new DiscordChannel(config, deps);
+
+		const names = channel.getCustomCommandNames();
+		expect(names.has("deploy")).toBe(true);
+		expect(names.has("rollback")).toBe(true);
+		expect(names.has("draft")).toBe(true);
+		expect(names.has("run")).toBe(false); // global, not custom
+	});
+
+	test("handles empty servers array", () => {
+		const config = makeChannelConfig({ servers: [] });
+		const deps = makeDeps();
+		const channel = new DiscordChannel(config, deps);
+
+		expect(channel.getCustomCommandNames().size).toBe(0);
+		expect(channel.getServerConfig("any")).toBeUndefined();
+	});
+
+	test("handles missing servers field (defaults to empty)", () => {
+		const config = makeChannelConfig();
+		const deps = makeDeps();
+		const channel = new DiscordChannel(config, deps);
+
+		expect(channel.getCustomCommandNames().size).toBe(0);
+	});
 });

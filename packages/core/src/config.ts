@@ -12,10 +12,36 @@ const httpChannelSchema = z.object({
 	corsOrigin: z.string().optional(),
 });
 
+const discordCommandOptionSchema = z.object({
+	name: z.string(),
+	description: z.string(),
+	type: z.enum(["string", "integer", "boolean", "number"]).default("string"),
+	required: z.boolean().default(false),
+	choices: z.array(z.string()).optional(),
+});
+
+const discordCustomCommandSchema = z.object({
+	name: z.string(),
+	description: z.string(),
+	options: z.array(discordCommandOptionSchema).default([]),
+});
+
+const discordServerSchema = z.object({
+	guildId: z.string(),
+	agent: z.string().optional(),
+	model: z.string().optional(),
+	instructions: z.string().optional(),
+	commands: z.array(discordCustomCommandSchema).default([]),
+});
+
 const discordChannelSchema = z.object({
 	type: z.literal("discord"),
 	token: z.string(),
 	allowFrom: z.array(z.string()).optional(),
+	/** Guild ID for instant slash command registration. If omitted, uses global (slow propagation). */
+	guildId: z.string().optional(),
+	/** Per-server configuration with custom commands, agent overrides, and instructions. */
+	servers: z.array(discordServerSchema).default([]),
 });
 
 const imessageChannelSchema = z.object({
