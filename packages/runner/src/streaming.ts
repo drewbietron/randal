@@ -46,8 +46,8 @@ export async function readStreamLines(
 	let lineCount = 0;
 	let partialLine = "";
 
-	// Rate limiting for output events
-	const minInterval = 1000 / maxEventsPerSecond;
+	// Rate limiting for output events (0 = unlimited)
+	const minInterval = maxEventsPerSecond > 0 ? 1000 / maxEventsPerSecond : 0;
 	let lastEventTime = 0;
 
 	function processLine(line: string): void {

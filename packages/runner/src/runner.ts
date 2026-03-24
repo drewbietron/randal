@@ -19,9 +19,20 @@ import { readAndClearContext } from "./context.js";
 import { parseDelegationRequests, parsePlanUpdate, parseProgress } from "./plan-parser.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
+import { type StreamingResult, readStreamLines } from "./streaming.js";
 import { type StruggleConfig, detectFatalError, detectStruggle } from "./struggle.js";
 
 export type EventHandler = (event: RunnerEvent) => void;
+
+interface StreamEvent {
+	type: "progress" | "plan_updated" | "tool_use";
+	progress?: string;
+	plan?: unknown[];
+	toolName?: string;
+	toolArgs?: string;
+}
+
+type StreamEventCallback = (event: StreamEvent) => void;
 
 export interface RunnerOptions {
 	config: RandalConfig;
@@ -140,6 +151,67 @@ async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<st
 }
 
 /**
+ * Build a line handler that detects <progress> and <plan-update> tags
+ * in the agent's streaming output and emits events in real-time.
+ */
+function buildStreamLineHandler(callback: StreamEventCallback): (line: string) => void {
+	let tagBuffer: { tag: string; lines: string[] } | null = null;
+
+	function flushTag(tag: string, lines: string[]): void {
+		const fullText = lines.join("\n");
+		const regex = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`);
+		const match = fullText.match(regex);
+		if (!match) return;
+		const content = match[1].trim();
+		if (!content) return;
+
+		if (tag === "progress") {
+			callback({ type: "progress", progress: content });
+		} else if (tag === "plan-update") {
+			try {
+				const parsed = JSON.parse(content);
+				if (
+					Array.isArray(parsed) &&
+					parsed.every(
+						(t: unknown) =>
+							typeof t === "object" &&
+							t !== null &&
+							"task" in t &&
+							"status" in t &&
+							typeof (t as { task: unknown }).task === "string" &&
+							typeof (t as { status: unknown }).status === "string",
+					)
+				) {
+					callback({ type: "plan_updated", plan: parsed });
+				}
+			} catch {
+				/* invalid JSON, skip */
+			}
+		}
+	}
+
+	return (line: string) => {
+		if (tagBuffer) {
+			tagBuffer.lines.push(line);
+			if (line.includes(`</${tagBuffer.tag}>`)) {
+				flushTag(tagBuffer.tag, tagBuffer.lines);
+				tagBuffer = null;
+			}
+			return;
+		}
+
+		const openMatch = line.match(/<(progress|plan-update)>/);
+		if (openMatch) {
+			tagBuffer = { tag: openMatch[1], lines: [line] };
+			if (line.includes(`</${openMatch[1]}>`)) {
+				flushTag(tagBuffer.tag, tagBuffer.lines);
+				tagBuffer = null;
+			}
+		}
+	};
+}
+
+/**
  * Execute a single iteration of the ralph loop.
  * Spawns the agent process, captures output, and parses results.
  */
@@ -151,6 +223,7 @@ async function executeIteration(
 	iterationTimeoutSecs: number,
 	completionPromiseTag: string,
 	activeJobEntry?: { job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> },
+	onStreamEvent?: StreamEventCallback,
 ): Promise<JobIteration> {
 	const iterStart = Date.now();
 	const iterNum = job.iterations.current + 1;
@@ -193,8 +266,15 @@ async function executeIteration(
 		activeJobEntry.proc = proc;
 	}
 
-	// Start reading stdout/stderr concurrently in the background
-	const stdoutPromise = readStream(proc.stdout);
+	// Start reading stdout (streaming with real-time event detection) and stderr (batch)
+	const stdoutPromise = readStreamLines(proc.stdout, {
+		onLine: onStreamEvent ? buildStreamLineHandler(onStreamEvent) : undefined,
+		onToolUse: onStreamEvent
+			? (event) => onStreamEvent({ type: "tool_use", toolName: event.tool, toolArgs: event.args })
+			: undefined,
+		parseToolUse: adapter.parseToolUse,
+		maxEventsPerSecond: 0, // No rate limiting — tag detection needs every line
+	});
 	const stderrPromise = readStream(proc.stderr);
 
 	// Wait for process exit with iteration timeout
@@ -226,10 +306,13 @@ async function executeIteration(
 	}
 
 	// Collect whatever output we have, with a short timeout for stream cleanup
-	const [stdout, stderr] = await Promise.race([
+	const [stdoutResult, stderr] = await Promise.race([
 		Promise.all([stdoutPromise, stderrPromise]),
-		new Promise<[string, string]>((resolve) => setTimeout(() => resolve(["", ""]), 1000)),
+		new Promise<[StreamingResult, string]>((resolve) =>
+			setTimeout(() => resolve([{ output: "", toolUses: [], lineCount: 0 }, ""]), 1000),
+		),
 	]);
+	const stdout = stdoutResult.output;
 
 	const duration = Math.round((Date.now() - iterStart) / 1000);
 
@@ -607,6 +690,29 @@ export class Runner {
 					maxIterations: job.maxIterations,
 				});
 
+				// Build streaming callback for real-time progress events
+				const iterNum = i + 1;
+				const onStreamEvent: StreamEventCallback = (streamEvt) => {
+					if (streamEvt.type === "progress" && streamEvt.progress) {
+						this.emit("iteration.output", job, {
+							iteration: iterNum,
+							maxIterations: job.maxIterations,
+							outputLine: streamEvt.progress,
+						});
+					} else if (streamEvt.type === "plan_updated" && streamEvt.plan) {
+						this.emit("job.plan_updated", job, {
+							plan: streamEvt.plan as RunnerEvent["data"]["plan"],
+							iteration: iterNum,
+						});
+					} else if (streamEvt.type === "tool_use") {
+						this.emit("iteration.tool_use", job, {
+							toolName: streamEvt.toolName,
+							toolArgs: streamEvt.toolArgs,
+							iteration: iterNum,
+						});
+					}
+				};
+
 				// Execute iteration
 				const iteration = await executeIteration(
 					job,
@@ -616,6 +722,7 @@ export class Runner {
 					this.config.runner.iterationTimeout,
 					this.config.runner.completionPromise,
 					entry,
+					onStreamEvent,
 				);
 
 				// Update job state

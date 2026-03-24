@@ -218,6 +218,10 @@ export function formatEvent(event: RunnerEvent): string {
 			const summaryPart = event.data.summary ? ` — ${event.data.summary}` : "";
 			return `Iteration ${event.data.iteration ?? "?"}/${event.data.maxIterations ?? "?"} complete${summaryPart}`;
 		}
+		case "iteration.output": {
+			const text = event.data.outputLine ?? event.data.summary ?? "";
+			return `Progress: ${text}`;
+		}
 		case "job.plan_updated": {
 			const completed = event.data.plan?.filter((t) => t.status === "completed").length ?? 0;
 			const total = event.data.plan?.length ?? 0;
