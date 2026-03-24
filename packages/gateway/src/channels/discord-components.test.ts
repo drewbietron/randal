@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Job } from "@randal/core";
 import {
+	type DiscordCustomCommandConfig,
 	SLASH_COMMANDS,
 	buildCompletionButtons,
 	buildContextModal,
@@ -17,7 +18,6 @@ import {
 	buildThreadName,
 	buttonId,
 	parseButtonId,
-	type DiscordCustomCommandConfig,
 } from "./discord-components.js";
 
 // ── Custom ID helpers ────────────────────────────────────────
@@ -66,11 +66,7 @@ describe("buildProgressButtons", () => {
 	test("buttons have correct custom IDs", () => {
 		const row = buildProgressButtons("job-1");
 		const ids = row.toJSON().components.map((c: { custom_id: string }) => c.custom_id);
-		expect(ids).toEqual([
-			"randal:stop:job-1",
-			"randal:context:job-1",
-			"randal:details:job-1",
-		]);
+		expect(ids).toEqual(["randal:stop:job-1", "randal:context:job-1", "randal:details:job-1"]);
 	});
 });
 
@@ -161,7 +157,9 @@ describe("buildJobEmbed", () => {
 	test("includes error if present", () => {
 		const job = makeJob({ status: "failed", error: "Out of memory" });
 		const data = buildJobEmbed(job).toJSON();
-		expect(data.fields?.some((f) => f.name === "Error" && f.value?.includes("Out of memory"))).toBe(true);
+		expect(data.fields?.some((f) => f.name === "Error" && f.value?.includes("Out of memory"))).toBe(
+			true,
+		);
 	});
 });
 
@@ -229,13 +227,13 @@ describe("SLASH_COMMANDS", () => {
 	});
 
 	test("run command has required prompt option", () => {
-		const run = SLASH_COMMANDS.find((c) => c.toJSON().name === "run")!.toJSON();
+		const run = SLASH_COMMANDS.find((c) => c.toJSON().name === "run")?.toJSON();
 		expect(run.options?.[0]?.name).toBe("prompt");
 		expect(run.options?.[0]?.required).toBe(true);
 	});
 
 	test("memory command has search and add subcommands", () => {
-		const mem = SLASH_COMMANDS.find((c) => c.toJSON().name === "memory")!.toJSON();
+		const mem = SLASH_COMMANDS.find((c) => c.toJSON().name === "memory")?.toJSON();
 		const subNames = mem.options?.map((o: { name: string }) => o.name);
 		expect(subNames).toContain("search");
 		expect(subNames).toContain("add");
@@ -329,10 +327,12 @@ describe("buildCustomCommand", () => {
 		const builder = buildCustomCommand(cmd);
 		const data = builder.toJSON();
 		expect(data.options).toHaveLength(1);
-		expect(data.options![0].name).toBe("service");
-		expect(data.options![0].required).toBe(true);
+		expect(data.options?.[0].name).toBe("service");
+		expect(data.options?.[0].required).toBe(true);
 		// Choices should be mapped to {name, value} objects
-		expect((data.options![0] as { choices: Array<{ name: string; value: string }> }).choices).toEqual([
+		expect(
+			(data.options?.[0] as { choices: Array<{ name: string; value: string }> }).choices,
+		).toEqual([
 			{ name: "api", value: "api" },
 			{ name: "web", value: "web" },
 			{ name: "worker", value: "worker" },
@@ -350,35 +350,31 @@ describe("buildCustomCommand", () => {
 		const builder = buildCustomCommand(cmd);
 		const data = builder.toJSON();
 		expect(data.options).toHaveLength(1);
-		expect(data.options![0].name).toBe("replicas");
+		expect(data.options?.[0].name).toBe("replicas");
 	});
 
 	test("creates command with boolean option", () => {
 		const cmd: DiscordCustomCommandConfig = {
 			name: "deploy",
 			description: "Deploy a service",
-			options: [
-				{ name: "force", description: "Force deploy", type: "boolean", required: false },
-			],
+			options: [{ name: "force", description: "Force deploy", type: "boolean", required: false }],
 		};
 		const builder = buildCustomCommand(cmd);
 		const data = builder.toJSON();
 		expect(data.options).toHaveLength(1);
-		expect(data.options![0].name).toBe("force");
+		expect(data.options?.[0].name).toBe("force");
 	});
 
 	test("creates command with number option", () => {
 		const cmd: DiscordCustomCommandConfig = {
 			name: "threshold",
 			description: "Set threshold",
-			options: [
-				{ name: "value", description: "Threshold value", type: "number", required: true },
-			],
+			options: [{ name: "value", description: "Threshold value", type: "number", required: true }],
 		};
 		const builder = buildCustomCommand(cmd);
 		const data = builder.toJSON();
 		expect(data.options).toHaveLength(1);
-		expect(data.options![0].name).toBe("value");
+		expect(data.options?.[0].name).toBe("value");
 	});
 
 	test("creates command with multiple options", () => {
@@ -386,8 +382,20 @@ describe("buildCustomCommand", () => {
 			name: "deploy",
 			description: "Deploy a service",
 			options: [
-				{ name: "service", description: "Which service", type: "string", required: true, choices: ["api", "web"] },
-				{ name: "env", description: "Environment", type: "string", required: false, choices: ["staging", "production"] },
+				{
+					name: "service",
+					description: "Which service",
+					type: "string",
+					required: true,
+					choices: ["api", "web"],
+				},
+				{
+					name: "env",
+					description: "Environment",
+					type: "string",
+					required: false,
+					choices: ["staging", "production"],
+				},
 				{ name: "force", description: "Force", type: "boolean", required: false },
 			],
 		};

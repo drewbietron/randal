@@ -1,3 +1,4 @@
+import type { Job, RandalConfig } from "@randal/core";
 /**
  * Discord interactive component builders.
  * Pure factory functions — no side effects, fully testable.
@@ -9,16 +10,11 @@ import {
 	EmbedBuilder,
 	ModalBuilder,
 	SlashCommandBuilder,
-	SlashCommandStringOption,
-	SlashCommandIntegerOption,
-	SlashCommandBooleanOption,
-	SlashCommandNumberOption,
 	StringSelectMenuBuilder,
 	StringSelectMenuOptionBuilder,
 	TextInputBuilder,
 	TextInputStyle,
 } from "discord.js";
-import type { Job, JobStatus, RandalConfig } from "@randal/core";
 
 // ── Custom ID helpers ────────────────────────────────────────
 
@@ -369,9 +365,7 @@ export const SLASH_COMMANDS = [
 					opt.setName("query").setDescription("Search query").setRequired(true),
 				),
 		)
-		.addSubcommand((sub) =>
-			sub.setName("add").setDescription("Add a memory (opens a form)"),
-		),
+		.addSubcommand((sub) => sub.setName("add").setDescription("Add a memory (opens a form)")),
 
 	new SlashCommandBuilder().setName("dashboard").setDescription("Show Randal status overview"),
 ];
@@ -440,7 +434,7 @@ export type DiscordServerConfig = Extract<
 export type DiscordCustomCommandConfig = DiscordServerConfig["commands"][number];
 
 /** Option type string → discord.js ApplicationCommandOptionType value */
-const OPTION_TYPE_MAP = {
+const _OPTION_TYPE_MAP = {
 	string: 3,
 	integer: 4,
 	boolean: 5,
@@ -452,9 +446,7 @@ const OPTION_TYPE_MAP = {
  * Used for server-specific commands defined in randal.config.yaml.
  */
 export function buildCustomCommand(cmd: DiscordCustomCommandConfig): SlashCommandBuilder {
-	const builder = new SlashCommandBuilder()
-		.setName(cmd.name)
-		.setDescription(cmd.description);
+	const builder = new SlashCommandBuilder().setName(cmd.name).setDescription(cmd.description);
 
 	for (const opt of cmd.options) {
 		switch (opt.type) {

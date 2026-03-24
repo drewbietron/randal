@@ -240,9 +240,7 @@ describe("DiscordChannel", () => {
 				},
 				{
 					guildId: "guild-2",
-					commands: [
-						{ name: "draft", description: "Create a draft", options: [] },
-					],
+					commands: [{ name: "draft", description: "Create a draft", options: [] }],
 				},
 			],
 		});
@@ -252,12 +250,12 @@ describe("DiscordChannel", () => {
 		// Server configs are indexed
 		const s1 = channel.getServerConfig("guild-1");
 		expect(s1).toBeDefined();
-		expect(s1!.agent).toBe("ops-agent");
-		expect(s1!.commands).toHaveLength(2);
+		expect(s1?.agent).toBe("ops-agent");
+		expect(s1?.commands).toHaveLength(2);
 
 		const s2 = channel.getServerConfig("guild-2");
 		expect(s2).toBeDefined();
-		expect(s2!.commands).toHaveLength(1);
+		expect(s2?.commands).toHaveLength(1);
 
 		// Non-existent guild returns undefined
 		expect(channel.getServerConfig("guild-999")).toBeUndefined();
@@ -275,9 +273,7 @@ describe("DiscordChannel", () => {
 				},
 				{
 					guildId: "guild-2",
-					commands: [
-						{ name: "draft", description: "Draft", options: [] },
-					],
+					commands: [{ name: "draft", description: "Draft", options: [] }],
 				},
 			],
 		});
