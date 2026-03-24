@@ -24,7 +24,15 @@ export class MessageManager {
 
 	async init(): Promise<void> {
 		try {
+			// Explicitly create the index with primaryKey='id' to avoid ambiguity
+			// (MessageDoc has multiple *Id fields: id, threadId, jobId)
+			await this.client.createIndex(this.indexName, { primaryKey: "id" }).catch(() => {
+				// Index may already exist — that's fine
+			});
 			const index = this.client.index(this.indexName);
+
+			// Ensure the primary key is set on existing indexes too
+			await index.update({ primaryKey: "id" });
 
 			await index.updateSearchableAttributes(["content", "speaker", "channel", "threadId"]);
 			await index.updateFilterableAttributes([
