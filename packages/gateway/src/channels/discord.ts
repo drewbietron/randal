@@ -135,7 +135,26 @@ export class DiscordChannel implements ChannelAdapter {
 		const isDM = !msg.guild;
 		const allowFrom = this.channelConfig.allowFrom;
 		const isThread = msg.channel.isThread();
-		const isKnownThread = isThread && this.conversations.has(msg.channel.id);
+		let isKnownThread = isThread && this.conversations.has(msg.channel.id);
+
+		// Recover thread state after gateway restart: if this is a thread
+		// the bot created but we lost the in-memory conversation entry, rebuild it.
+		if (isThread && !isKnownThread) {
+			const botUser = this.client.user;
+			const threadChannel = msg.channel as ThreadChannel;
+			if (botUser && threadChannel.ownerId === botUser.id) {
+				this.logger.info("Recovering conversation for bot-owned thread after restart", {
+					threadId: threadChannel.id,
+					threadName: threadChannel.name,
+				});
+				this.conversations.set(threadChannel.id, {
+					threadChannel,
+					history: [],
+					activeJobId: null,
+				});
+				isKnownThread = true;
+			}
+		}
 
 		// allowFrom filter
 		if (allowFrom && allowFrom.length > 0) {
@@ -179,6 +198,31 @@ export class DiscordChannel implements ChannelAdapter {
 			// New conversation from a guild channel — create a thread
 			await this.startNewConversation(msg, messageText);
 		}
+	}
+
+	/** Log a message to the message history store (fire-and-forget). */
+	private logMessage(opts: {
+		threadId: string;
+		speaker: "user" | "randal";
+		content: string;
+		jobId?: string;
+		pendingAction?: string;
+	}): void {
+		const mm = this.deps.messageManager;
+		if (!mm) return;
+		mm.add({
+			threadId: opts.threadId,
+			speaker: opts.speaker,
+			channel: "discord",
+			content: opts.content,
+			timestamp: new Date().toISOString(),
+			jobId: opts.jobId,
+			pendingAction: opts.pendingAction,
+		}).catch((err) => {
+			this.logger.debug("Failed to log message", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		});
 	}
 
 	/**
@@ -238,6 +282,14 @@ export class DiscordChannel implements ChannelAdapter {
 		});
 		this.jobToChannel.set(jobId, conversationChannelId);
 
+		// Log the inbound user message
+		this.logMessage({
+			threadId: conversationChannelId,
+			speaker: "user",
+			content: text,
+			jobId,
+		});
+
 		// Show typing indicator while job is running
 		const typingTarget = threadChannel ?? (msg.channel as unknown as SendableChannel);
 		this.startTyping(jobId, typingTarget);
@@ -289,6 +341,14 @@ export class DiscordChannel implements ChannelAdapter {
 		// Update conversation state
 		convo.activeJobId = jobId;
 		this.jobToChannel.set(jobId, channelId);
+
+		// Log the inbound user message
+		this.logMessage({
+			threadId: channelId,
+			speaker: "user",
+			content: text,
+			jobId,
+		});
 
 		// Show typing indicator while job is running
 		const typingTarget = convo.threadChannel ?? (msg.channel as unknown as SendableChannel);
@@ -523,8 +583,28 @@ export class DiscordChannel implements ChannelAdapter {
 			const response = event.data.output || event.data.summary || message;
 			convo.history.push({ role: "assistant", content: response });
 			convo.activeJobId = null;
+
+			// Log the outbound response
+			if (channelId) {
+				this.logMessage({
+					threadId: channelId,
+					speaker: "randal",
+					content: response,
+					jobId: event.jobId,
+				});
+			}
 		} else if (convo && event.type === "job.failed") {
 			convo.activeJobId = null;
+
+			// Log the failure
+			if (channelId) {
+				this.logMessage({
+					threadId: channelId,
+					speaker: "randal",
+					content: message,
+					jobId: event.jobId,
+				});
+			}
 		}
 
 		this.sendReply(sendable, message).catch((err: unknown) => {

@@ -1,5 +1,5 @@
 import type { JobOrigin, RandalConfig, RunnerEvent } from "@randal/core";
-import type { MemoryManager, SkillManager } from "@randal/memory";
+import type { MemoryManager, MessageManager, SkillManager } from "@randal/memory";
 import { type Runner, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
 import type { EventBus } from "../events.js";
@@ -19,6 +19,7 @@ export interface ChannelDeps {
 	runner: Runner;
 	eventBus: EventBus;
 	memoryManager?: MemoryManager;
+	messageManager?: MessageManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
 }

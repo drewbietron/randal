@@ -27,6 +27,7 @@ function printHelp(): void {
     \x1b[36mcontext\x1b[0m <text>         💉 Inject context into running job
     \x1b[36mresume\x1b[0m <job-id>        🔄 Resume a failed job
     \x1b[36mmemory\x1b[0m <sub>           🧠 Memory operations (search, list, add)
+    \x1b[36mmessage\x1b[0m <sub>          💬 Message history (add, search, list, thread, pending)
     \x1b[36mskills\x1b[0m <sub>           📚 Skill management (list, search, show)
     \x1b[36mcron\x1b[0m <sub>             📅 Cron job management (list, add, remove)
     \x1b[36mheartbeat\x1b[0m <sub>        💓 Heartbeat control (status, trigger)
@@ -119,6 +120,7 @@ export async function run(argv: string[]): Promise<void> {
 				"context",
 				"resume",
 				"memory",
+				"message",
 				"skills",
 				"cron",
 				"heartbeat",
@@ -182,6 +184,11 @@ export async function run(argv: string[]): Promise<void> {
 		case "memory": {
 			const { memoryCommand } = await import("./commands/memory.js");
 			await memoryCommand(args.slice(1), ctx);
+			break;
+		}
+		case "message": {
+			const { messageCommand } = await import("./commands/message.js");
+			await messageCommand(args.slice(1), ctx);
 			break;
 		}
 		case "skills": {

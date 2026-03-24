@@ -286,3 +286,17 @@ export interface Message {
 	text: string;
 	timestamp: string;
 }
+
+// ---- Message History ----
+export type MessageSpeaker = "user" | "randal" | `agent:${string}`;
+
+export interface MessageDoc {
+	id: string;
+	threadId: string;
+	speaker: MessageSpeaker;
+	channel: string;
+	content: string;
+	timestamp: string;
+	jobId?: string;
+	pendingAction?: string;
+}

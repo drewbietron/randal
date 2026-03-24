@@ -4,6 +4,7 @@ import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
 import {
 	type MemoryManager,
+	type MessageManager,
 	type RegistryDoc,
 	type SkillManager,
 	queryPosseMembers,
@@ -56,6 +57,7 @@ export interface HttpChannelOptions {
 	runner: Runner;
 	eventBus: EventBus;
 	memoryManager?: MemoryManager;
+	messageManager?: MessageManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
 	/** Meilisearch client for posse registry queries. */
@@ -116,6 +118,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		runner,
 		eventBus,
 		memoryManager,
+		messageManager,
 		scheduler,
 		skillManager,
 		analyticsEngine,
@@ -489,6 +492,87 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		if (!memoryManager) return c.json({ error: "Memory not configured" }, 503);
 		// TODO: implement delete by ID
 		return c.json({ error: "Not implemented" }, 501);
+	});
+
+	// ---- Message history endpoints ----
+
+	// Add message
+	app.post("/messages", async (c) => {
+		if (!messageManager) return c.json({ error: "Message history not configured" }, 503);
+
+		const body = (await c.req.json()) as {
+			content: string;
+			threadId: string;
+			speaker?: string;
+			channel?: string;
+			jobId?: string;
+			pendingAction?: string;
+		};
+
+		if (!body.content || !body.threadId) {
+			return c.json({ error: "content and threadId required" }, 400);
+		}
+
+		const id = await messageManager.add({
+			content: body.content,
+			threadId: body.threadId,
+			speaker: (body.speaker ?? "user") as import("@randal/core").MessageSpeaker,
+			channel: body.channel ?? "api",
+			timestamp: new Date().toISOString(),
+			jobId: body.jobId,
+			pendingAction: body.pendingAction,
+		});
+
+		return c.json({ id, threadId: body.threadId }, 201);
+	});
+
+	// Search messages
+	app.get("/messages/search", async (c) => {
+		if (!messageManager) return c.json([]);
+
+		const q = c.req.query("q");
+		if (!q) return c.json({ error: "q parameter required" }, 400);
+
+		const limit = Number.parseInt(c.req.query("limit") ?? "20", 10);
+		const results = await messageManager.search(q, limit);
+		return c.json(results);
+	});
+
+	// Recent messages
+	app.get("/messages/recent", async (c) => {
+		if (!messageManager) return c.json([]);
+
+		const limit = Number.parseInt(c.req.query("limit") ?? "20", 10);
+		const results = await messageManager.recent(limit);
+		return c.json(results);
+	});
+
+	// Get thread
+	app.get("/messages/thread/:threadId", async (c) => {
+		if (!messageManager) return c.json([]);
+
+		const threadId = c.req.param("threadId");
+		const limit = Number.parseInt(c.req.query("limit") ?? "50", 10);
+		const results = await messageManager.thread(threadId, limit);
+		return c.json(results);
+	});
+
+	// Pending actions
+	app.get("/messages/pending", async (c) => {
+		if (!messageManager) return c.json([]);
+
+		const limit = Number.parseInt(c.req.query("limit") ?? "20", 10);
+		const results = await messageManager.pending(limit);
+		return c.json(results);
+	});
+
+	// Resolve pending action
+	app.post("/messages/:id/resolve", async (c) => {
+		if (!messageManager) return c.json({ error: "Message history not configured" }, 503);
+
+		const id = c.req.param("id");
+		await messageManager.resolvePending(id);
+		return c.json({ ok: true, id });
 	});
 
 	// ---- Posse endpoints ----

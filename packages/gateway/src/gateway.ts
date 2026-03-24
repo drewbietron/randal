@@ -4,6 +4,7 @@ import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
 	MemoryManager,
+	MessageManager,
 	SkillManager,
 	deregisterAgent,
 	registerAgent,
@@ -44,6 +45,18 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		logger.info("Memory manager initialized", { url: config.memory.url });
 	} catch (err) {
 		logger.warn("Memory manager initialization failed, continuing without memory", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
+	// Initialize message history manager (Meilisearch-backed)
+	let messageManager: MessageManager | undefined;
+	try {
+		messageManager = new MessageManager({ config });
+		await messageManager.init();
+		logger.info("Message history initialized");
+	} catch (err) {
+		logger.warn("Message history initialization failed, continuing without message history", {
 			error: err instanceof Error ? err.message : String(err),
 		});
 	}
@@ -146,12 +159,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		});
 	}
 
-	// Create HTTP app — pass scheduler, skillManager, and posseClient
+	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
 		runner,
 		eventBus,
 		memoryManager,
+		messageManager,
 		scheduler,
 		skillManager,
 		posseClient,
@@ -172,6 +186,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		runner,
 		eventBus,
 		memoryManager,
+		messageManager,
 		scheduler,
 		skillManager,
 	};
