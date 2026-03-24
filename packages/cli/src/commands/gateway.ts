@@ -159,7 +159,9 @@ export async function gatewayCommand(args: string[], ctx: CliContext): Promise<v
 			console.log(`Sending SIGHUP to gateway (PID ${pid}) for graceful reload...`);
 			try {
 				process.kill(pid, "SIGHUP");
-				console.log("Reload signal sent. The gateway will restart in-place and resume any interrupted jobs.");
+				console.log(
+					"Reload signal sent. The gateway will restart in-place and resume any interrupted jobs.",
+				);
 			} catch (err) {
 				console.error(`Failed to send SIGHUP: ${err instanceof Error ? err.message : err}`);
 				process.exit(1);
