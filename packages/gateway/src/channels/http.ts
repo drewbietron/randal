@@ -451,6 +451,46 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json([]);
 	});
 
+	// Memory add
+	app.post("/memory", async (c) => {
+		if (!memoryManager) return c.json({ error: "Memory not configured" }, 503);
+
+		const body = (await c.req.json()) as {
+			content: string;
+			category?: string;
+		};
+		if (!body.content) return c.json({ error: "content required" }, 400);
+
+		const category = body.category ?? "fact";
+		const { createHash } = await import("node:crypto");
+		const contentHash = createHash("sha256").update(body.content).digest("hex");
+
+		await memoryManager.index({
+			type: "learning",
+			file: "api",
+			content: body.content,
+			contentHash,
+			category: category as
+				| "preference"
+				| "pattern"
+				| "fact"
+				| "lesson"
+				| "skill-outcome"
+				| "escalation",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		return c.json({ saved: true, content: body.content, category });
+	});
+
+	// Memory delete
+	app.delete("/memory/:id", async (c) => {
+		if (!memoryManager) return c.json({ error: "Memory not configured" }, 503);
+		// TODO: implement delete by ID
+		return c.json({ error: "Not implemented" }, 501);
+	});
+
 	// ---- Posse endpoints ----
 
 	// Posse info (R5.1)
