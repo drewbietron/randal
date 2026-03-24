@@ -29,7 +29,14 @@ export class MeilisearchStore implements MemoryStore {
 
 			// Configure searchable and filterable attributes
 			await index.updateSearchableAttributes(["content", "category", "type", "source"]);
-			await index.updateFilterableAttributes(["type", "category", "source", "file", "timestamp"]);
+			await index.updateFilterableAttributes([
+				"type",
+				"category",
+				"source",
+				"file",
+				"timestamp",
+				"contentHash",
+			]);
 			await index.updateSortableAttributes(["timestamp"]);
 
 			this.logger.info("Meilisearch index initialized", {
@@ -61,12 +68,27 @@ export class MeilisearchStore implements MemoryStore {
 
 	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
 		try {
+			const idx = this.client.index(this.indexName);
+
+			// Deduplicate: skip if a doc with the same contentHash already exists
+			if (doc.contentHash) {
+				const existing = await idx.search("", {
+					filter: `contentHash = "${doc.contentHash}"`,
+					limit: 1,
+				});
+				if (existing.hits.length > 0) {
+					this.logger.info("Skipping duplicate memory", {
+						contentHash: doc.contentHash,
+					});
+					return;
+				}
+			}
+
 			const fullDoc: MemoryDoc = {
 				...doc,
 				id: randomUUID(),
 			};
-			const index = this.client.index(this.indexName);
-			await index.addDocuments([fullDoc]);
+			await idx.addDocuments([fullDoc]);
 		} catch (err) {
 			this.logger.error("Meilisearch indexing failed", {
 				error: err instanceof Error ? err.message : String(err),
