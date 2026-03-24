@@ -224,19 +224,10 @@ User (Discord/iMessage)    Gateway              Runner              Agent
 ### Memory Flow
 
 ```
-Agent writes to MEMORY.md
+Agent saves memory via memory API
         │
         ▼
-chokidar detects change
-        │
-        ▼
-SHA-256 hash check (skip if unchanged)
-        │
-        ▼
-Parse learnings: "- [category] content"
-        │
-        ▼
-Index to MemoryStore (file or Meilisearch)
+Index to Meilisearch (with contentHash dedup)
         │
         ▼
 Next iteration: search memory for relevant context
