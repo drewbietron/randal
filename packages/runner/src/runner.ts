@@ -473,6 +473,33 @@ export class Runner {
 	}
 
 	/**
+	 * Resume an existing job that was interrupted (e.g. by a gateway restart).
+	 * Picks up from the last completed iteration and continues the loop.
+	 */
+	resume(job: Job): { jobId: string; done: Promise<Job> } {
+		// Reset status back to running — it was saved as "running" when interrupted
+		job.status = "running";
+		this.activeJobs.set(job.id, { job, aborted: false });
+
+		this.logger.info("Resuming interrupted job", {
+			jobId: job.id,
+			completedIterations: job.iterations.current,
+			maxIterations: job.maxIterations,
+		});
+
+		this.emit("job.resumed", job, {
+			iteration: job.iterations.current,
+			maxIterations: job.maxIterations,
+		});
+
+		const done = this.runLoop(job).finally(() => {
+			this.activeJobs.delete(job.id);
+		});
+
+		return { jobId: job.id, done };
+	}
+
+	/**
 	 * Stop a running job. Kills the child process if one is active.
 	 */
 	stop(jobId: string): boolean {
@@ -597,8 +624,11 @@ export class Runner {
 	}
 
 	private async runLoop(job: Job): Promise<Job> {
-		job.status = "running";
-		job.startedAt = new Date().toISOString();
+		const isResume = job.iterations.current > 0;
+		if (!isResume) {
+			job.status = "running";
+			job.startedAt = new Date().toISOString();
+		}
 		const loopStart = Date.now();
 
 		this.emit("job.started", job);
@@ -649,7 +679,7 @@ export class Runner {
 
 		let stuckWarned = false;
 		try {
-			for (let i = 0; i < job.maxIterations; i++) {
+			for (let i = job.iterations.current; i < job.maxIterations; i++) {
 				const entry = this.activeJobs.get(job.id);
 				if (!entry || entry.aborted) break;
 

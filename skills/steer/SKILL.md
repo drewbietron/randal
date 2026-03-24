@@ -124,6 +124,7 @@ IDs regenerate with each snapshot. Always use IDs from the most recent `steer se
 
 ## Rules
 
+- **Steer is the ONLY browser automation tool** — NEVER use Puppeteer, Playwright, or Selenium. They spawn extra processes, cause CPU spin, and are slower than native macOS automation.
 - **One command per bash call** — never chain steer commands
 - **Always verify** — `steer see` after every action
 - **Focus first** — activate the app before interacting

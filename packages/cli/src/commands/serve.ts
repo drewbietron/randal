@@ -181,5 +181,23 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 		config = loadConfig(ctx.configPath);
 	}
 
-	await startGateway({ config, port });
+	let gateway = await startGateway({ config, port });
+
+	// Graceful restart on SIGHUP — stops the gateway, reloads config, and restarts.
+	// In-flight jobs are saved to disk and will be resumed on the new gateway instance.
+	process.on("SIGHUP", async () => {
+		console.log("\n\x1b[33mSIGHUP received — graceful restart...\x1b[0m");
+		try {
+			gateway.stop();
+			// Reload config to pick up any code/config changes
+			const freshConfig = loadConfig(ctx.configPath);
+			const envChanged = await ensureMeilisearch(ctx);
+			const finalConfig = envChanged ? loadConfig(ctx.configPath) : freshConfig;
+			gateway = await startGateway({ config: finalConfig, port });
+			console.log("\x1b[32mGateway restarted successfully.\x1b[0m");
+		} catch (err) {
+			console.error("\x1b[31mGraceful restart failed:\x1b[0m", err);
+			process.exit(1);
+		}
+	});
 }
