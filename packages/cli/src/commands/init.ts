@@ -647,7 +647,7 @@ async function detectEnvironment(): Promise<EnvDetection> {
 
 	detectionLines.push("");
 	detectionLines.push(
-		`Meilisearch:  ${hasMeili ? "✅ running on :7700" : "⬚  not detected (will use file-based memory)"}`,
+		`Meilisearch:  ${hasMeili ? "✅ running on :7700" : "⬚  not detected (will auto-install on first \`randal serve\`)"}`,
 	);
 
 	note(detectionLines.join("\n"), "🔍 Detection Results");
