@@ -27,6 +27,7 @@ export type RunnerEventType =
 	| "job.complete"
 	| "job.failed"
 	| "job.stopped"
+	| "job.resumed"
 	// Scheduler events:
 	| "heartbeat.tick"
 	| "heartbeat.skip"

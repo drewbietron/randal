@@ -17,7 +17,7 @@ import { DiscordChannel } from "./channels/discord.js";
 import { createHttpApp } from "./channels/http.js";
 import { IMessageChannel } from "./channels/imessage.js";
 import { EventBus } from "./events.js";
-import { saveJob } from "./jobs.js";
+import { listJobs, saveJob, updateJob } from "./jobs.js";
 
 export interface GatewayOptions {
 	config: RandalConfig;
@@ -250,6 +250,42 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		logger.warn("Failed to write PID file", { pidFile });
 	}
 
+	// Resume interrupted jobs from previous gateway run
+	const interruptedJobs = [
+		...listJobs("running" as import("@randal/core").JobStatus),
+		...listJobs("queued" as import("@randal/core").JobStatus),
+	];
+	if (interruptedJobs.length > 0) {
+		logger.info("Found interrupted jobs to resume", { count: interruptedJobs.length });
+		for (const job of interruptedJobs) {
+			try {
+				job.updates.push(`Gateway restarted — resuming from iteration ${job.iterations.current}`);
+				const { done } = runner.resume(job);
+				done.then((completed) => {
+					saveJob(completed);
+					logger.info("Resumed job completed", { jobId: completed.id, status: completed.status });
+				}).catch((err) => {
+					logger.error("Resumed job failed", {
+						jobId: job.id,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
+				logger.info("Resumed interrupted job", { jobId: job.id, iteration: job.iterations.current });
+			} catch (err) {
+				// If resume fails, mark the job as failed so it's not retried forever
+				logger.error("Failed to resume job, marking as failed", {
+					jobId: job.id,
+					error: err instanceof Error ? err.message : String(err),
+				});
+				updateJob(job.id, {
+					status: "failed",
+					error: `Failed to resume after gateway restart: ${err instanceof Error ? err.message : String(err)}`,
+					completedAt: new Date().toISOString(),
+				});
+			}
+		}
+	}
+
 	logger.info("Gateway started", {
 		name: config.name,
 		port,
@@ -259,6 +295,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	console.log(`Randal gateway started: http://localhost:${port}`);
 	console.log(`Dashboard: http://localhost:${port}/`);
 	console.log(`PID: ${process.pid} (${pidFile})`);
+	if (interruptedJobs.length > 0) {
+		console.log(`Resumed ${interruptedJobs.length} interrupted job(s)`);
+	}
 
 	return {
 		stop: () => {

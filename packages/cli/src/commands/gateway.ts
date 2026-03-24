@@ -150,6 +150,23 @@ export async function gatewayCommand(args: string[], ctx: CliContext): Promise<v
 			break;
 		}
 
+		case "reload": {
+			const pid = readPid();
+			if (!pid) {
+				console.error("No running gateway found. Use 'randal serve' to start one.");
+				process.exit(1);
+			}
+			console.log(`Sending SIGHUP to gateway (PID ${pid}) for graceful reload...`);
+			try {
+				process.kill(pid, "SIGHUP");
+				console.log("Reload signal sent. The gateway will restart in-place and resume any interrupted jobs.");
+			} catch (err) {
+				console.error(`Failed to send SIGHUP: ${err instanceof Error ? err.message : err}`);
+				process.exit(1);
+			}
+			break;
+		}
+
 		case "token": {
 			const token = process.env.RANDAL_API_TOKEN;
 			if (token) {
@@ -169,6 +186,7 @@ export async function gatewayCommand(args: string[], ctx: CliContext): Promise<v
     status          Check if gateway is running
     kill [--force]  Kill the running gateway
     restart         Kill and restart the gateway
+    reload          Graceful reload (SIGHUP) — restarts in-place, resumes jobs
     token           Show the dashboard API token
 `);
 			break;
