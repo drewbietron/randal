@@ -8,4 +8,3 @@ export interface MemoryStore {
 }
 
 export { MeilisearchStore } from "./meilisearch.js";
-export { FileStore } from "./file.js";

@@ -28,9 +28,9 @@ describe("configSchema", () => {
 		expect(result.runner.struggle.maxRepeatedErrors).toBe(3);
 		expect(result.credentials.envFile).toBe("./.env");
 		expect(result.credentials.inherit).toEqual(["PATH", "HOME", "USER", "SHELL", "TERM"]);
+		expect(result.memory.store).toBe("meilisearch");
 		expect(result.memory.url).toBe("http://localhost:7700");
 		expect(result.memory.apiKey).toBe("");
-		expect(result.memory.files).toEqual(["MEMORY.md"]);
 		expect(result.memory.autoInject.enabled).toBe(true);
 		expect(result.memory.autoInject.maxResults).toBe(5);
 		expect(result.tools).toEqual([]);
@@ -82,8 +82,6 @@ describe("configSchema", () => {
 				url: "http://localhost:7700",
 				apiKey: "master-key",
 				index: "memory-support",
-				syncInterval: 30,
-				files: ["MEMORY.md", "context.md"],
 				embedder: { type: "builtin" as const },
 				sharing: {
 					publishTo: "shared",

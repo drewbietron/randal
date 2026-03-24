@@ -372,33 +372,19 @@ function buildConfigYaml(opts: {
 
 	lines.push("");
 
-	// Memory section
-	if (opts.useMeilisearch) {
-		lines.push(
-			"memory:",
-			"  store: meilisearch",
-			"  url: http://localhost:7700",
-			'  apiKey: "${MEILI_MASTER_KEY}"',
-			`  index: memory-${opts.name}`,
-			"  files: [MEMORY.md]",
-			"  embedder:",
-			"    type: builtin",
-			"  autoInject:",
-			"    enabled: true",
-			"    maxResults: 5",
-		);
-	} else {
-		lines.push(
-			"memory:",
-			"  store: file",
-			"  files: [MEMORY.md]",
-			"  embedder:",
-			"    type: builtin",
-			"  autoInject:",
-			"    enabled: true",
-			"    maxResults: 5",
-		);
-	}
+	// Memory section — always Meilisearch (auto-installed on first serve)
+	lines.push(
+		"memory:",
+		"  store: meilisearch",
+		"  url: http://localhost:7700",
+		'  apiKey: "${MEILI_MASTER_KEY}"',
+		`  index: memory-${opts.name}`,
+		"  embedder:",
+		"    type: builtin",
+		"  autoInject:",
+		"    enabled: true",
+		"    maxResults: 5",
+	);
 
 	lines.push("");
 
@@ -529,14 +515,19 @@ Always use \`--json\` for structured output. Always verify after every action.
 
 ## Memory
 
-You have persistent memory that survives across conversations. Use it actively:
+You have persistent, searchable memory backed by Meilisearch. It survives across all conversations and is shared across posse members when configured.
 
-- **Save** important things to \`MEMORY.md\` using categorized entries: \`- [preference]\`, \`- [pattern]\`, \`- [fact]\`, \`- [lesson]\`, \`- [skill-outcome]\`, \`- [escalation]\`
-- **When to save**: user preferences, project facts, lessons learned, things that would help you in future conversations
-- **When to ask**: if you're unsure whether something is worth remembering, ask the user "Want me to remember that?"
-- **Relevant memories are automatically provided to you** at the start of each conversation — you don't need to search for them
+### How it works
+- Memories are stored directly in Meilisearch and auto-injected into your context based on relevance
+- You can save memories using the \`memory\` skill or by calling the memory API
+- Categories: \`preference\`, \`pattern\`, \`fact\`, \`lesson\`, \`skill-outcome\`, \`escalation\`
 
-Append to MEMORY.md, never overwrite it.
+### When to save
+- User corrects you or states a preference
+- You discover a non-obvious project fact
+- A tool or approach works well (or badly)
+- You learn about the user's role or expertise
+- Ask "Want me to remember that?" if you're unsure
 
 ## Responsibilities
 - Respond to user requests accurately and concisely
@@ -568,7 +559,7 @@ You are \${ctx.vars?.name ?? "a helpful AI assistant"}.
 ## Responsibilities
 - Respond to user requests accurately and concisely
 - Escalate issues you cannot resolve
-- Maintain a record of your work in MEMORY.md
+- Save important learnings to memory for future conversations
 \`;
 }
 `;
@@ -1189,29 +1180,9 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 	// ── Memory ──
 
 	note(
-		"Memory gives your agent persistent context across runs.\nMeilisearch enables full-text search and cross-agent sharing.",
+		`Memory is backed by Meilisearch — full-text search, cross-agent sharing, and auto-injection.\n${env.hasMeili ? "✅ Detected on :7700" : "Auto-installed on first \`randal serve\`"}`,
 		"🧠 Memory",
 	);
-
-	const memoryBackend = await select({
-		message: "Memory backend",
-		options: [
-			{
-				value: "meilisearch",
-				label: "🔍 Meilisearch (recommended)",
-				hint: env.hasMeili
-					? "detected on :7700 — full-text search + cross-agent sharing"
-					: "auto-started on serve — full-text search + skill discovery",
-			},
-			{
-				value: "file",
-				label: "📄 File-based",
-				hint: "Simple flat file. No search, no skill matching.",
-			},
-		],
-		initialValue: "meilisearch",
-	});
-	handleCancel(memoryBackend);
 
 	// ── Autonomy ──
 
@@ -1255,7 +1226,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		agent: runner.agent as string,
 		model: runner.model as string,
 		persona: identity.persona as string,
-		useMeilisearch: memoryBackend === "meilisearch",
+		useMeilisearch: true,
 		heartbeatEnabled: autonomy.heartbeatEnabled as boolean,
 		heartbeatEvery: autonomy.heartbeatEvery as string,
 		hooksEnabled: autonomy.hooksEnabled as boolean,
@@ -1349,26 +1320,17 @@ async function writeConfig(opts: {
 	await new Promise((r) => setTimeout(r, 400));
 	s.stop("Configuration written");
 
-	// ── Post-setup: Meilisearch ──
-	if (opts.useMeilisearch) {
-		const ms = spinner();
-		ms.start("Starting Meilisearch...");
-		const result = await ensureMeilisearch();
-		if (result.started) {
-			ms.stop("Meilisearch running on :7700");
-			if (result.apiKey) {
-				appendEnvValues(envPath, { MEILI_MASTER_KEY: result.apiKey });
-			}
-		} else {
-			ms.stop("Meilisearch could not be started");
-			const dockerCheck = Bun.spawnSync(["which", "docker"]);
-			if (dockerCheck.exitCode !== 0) {
-				log.warn("Docker not found. Install Docker, then run:");
-				log.warn("  docker run -d -p 7700:7700 getmeili/meilisearch:v1.12");
-			} else {
-				log.warn("Start manually: docker run -d -p 7700:7700 getmeili/meilisearch:v1.12");
-			}
+	// ── Post-setup: Meilisearch (always required) ──
+	const ms = spinner();
+	ms.start("Starting Meilisearch...");
+	const result = await ensureMeilisearch();
+	if (result.started) {
+		ms.stop("Meilisearch running on :7700");
+		if (result.apiKey) {
+			appendEnvValues(envPath, { MEILI_MASTER_KEY: result.apiKey });
 		}
+	} else {
+		ms.stop("Meilisearch could not be started — will auto-start on `randal serve`");
 	}
 
 	// Summary
@@ -1388,7 +1350,7 @@ async function writeConfig(opts: {
 	summaryLines.push(`Agent:    ${opts.name}`);
 	summaryLines.push(`CLI:      ${opts.agent}`);
 	summaryLines.push(`Workdir:  ${opts.workdir}`);
-	summaryLines.push(`Memory:   ${opts.useMeilisearch ? "Meilisearch" : "file-based"}`);
+	summaryLines.push("Memory:   Meilisearch");
 	if (opts.heartbeatEnabled) {
 		summaryLines.push(`Heartbeat: every ${opts.heartbeatEvery ?? "30m"}`);
 	}

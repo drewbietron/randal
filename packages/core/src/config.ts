@@ -278,12 +278,10 @@ export const configSchema = z.object({
 
 	memory: z
 		.object({
-			store: z.enum(["meilisearch", "file"]).default("meilisearch"),
+			store: z.literal("meilisearch").default("meilisearch"),
 			url: z.string().default("http://localhost:7700"),
 			apiKey: z.string().default(""),
 			index: z.string().optional(),
-			syncInterval: z.number().default(60),
-			files: z.array(z.string()).default(["MEMORY.md"]),
 			embedder: embedderSchema.default({ type: "builtin" }),
 			sharing: z
 				.object({
