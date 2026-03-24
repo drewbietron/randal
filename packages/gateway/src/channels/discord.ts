@@ -57,8 +57,13 @@ export class DiscordChannel implements ChannelAdapter {
 			plan: Array<{ task: string; status: string }> | null;
 			iteration: number;
 			maxIterations: number;
+			lastEditAt: number;
+			pendingUpdate: ReturnType<typeof setTimeout> | null;
 		}
 	>();
+
+	/** Minimum ms between Discord message edits (avoid rate limits) */
+	private static readonly EDIT_DEBOUNCE_MS = 2000;
 
 	constructor(
 		private channelConfig: DiscordChannelConfig,
@@ -437,8 +442,41 @@ export class DiscordChannel implements ChannelAdapter {
 		if (event.type === "job.complete" || event.type === "job.failed") {
 			this.stopTyping(event.jobId);
 			this.jobToChannel.delete(event.jobId);
-			this.progressState.delete(event.jobId);
+			this.finalizeProgressMessage(event);
 		}
+	}
+
+	/**
+	 * Edit the progress message to its final state and clean up tracking.
+	 * Shows completion or failure status so it doesn't look stale.
+	 */
+	private finalizeProgressMessage(event: RunnerEvent): void {
+		const state = this.progressState.get(event.jobId);
+		if (!state?.message || typeof state.message.edit !== "function") {
+			this.progressState.delete(event.jobId);
+			return;
+		}
+
+		// Cancel any pending debounced edit
+		if (state.pendingUpdate) {
+			clearTimeout(state.pendingUpdate);
+		}
+
+		const status = event.type === "job.complete" ? "✅ Complete" : "❌ Failed";
+		const parts: string[] = [status];
+
+		// Preserve the plan in final state if it existed
+		if (state.plan && state.plan.length > 0) {
+			const lines = state.plan.map((t) => {
+				const icon = t.status === "completed" ? "✅" : t.status === "failed" ? "❌" : "⬜";
+				return `${icon} ${t.task}`;
+			});
+			parts.push(lines.join("\n"));
+		}
+
+		const content = parts.join("\n");
+		state.message.edit(content).catch(() => {});
+		this.progressState.delete(event.jobId);
 	}
 
 	/**
@@ -454,6 +492,8 @@ export class DiscordChannel implements ChannelAdapter {
 				plan: null,
 				iteration: event.data.iteration ?? 1,
 				maxIterations: event.data.maxIterations ?? 1,
+				lastEditAt: 0,
+				pendingUpdate: null,
 			};
 			this.progressState.set(event.jobId, state);
 		}
@@ -474,23 +514,61 @@ export class DiscordChannel implements ChannelAdapter {
 				break;
 		}
 
-		// Build the status message content
-		const content = this.buildProgressContent(state);
-
-		try {
-			if (!state.message) {
-				// First progress event — send a new status message
+		// First event — send immediately (no debounce needed)
+		if (!state.message) {
+			const content = this.buildProgressContent(state);
+			try {
 				const sent = await channel.send(content);
 				state.message = sent;
-			} else if (typeof state.message.edit === "function") {
-				// Edit existing status message in place
-				await state.message.edit(content);
+				state.lastEditAt = Date.now();
+			} catch (err) {
+				this.logger.debug("Failed to send progress message", {
+					error: err instanceof Error ? err.message : String(err),
+					jobId: event.jobId,
+				});
 			}
-		} catch (err) {
-			this.logger.debug("Failed to update progress message", {
-				error: err instanceof Error ? err.message : String(err),
-				jobId: event.jobId,
-			});
+			return;
+		}
+
+		// Subsequent events — debounce edits to avoid Discord rate limits
+		this.scheduleProgressEdit(event.jobId, state);
+	}
+
+	/**
+	 * Debounce progress message edits. If enough time has elapsed since the last
+	 * edit, fire immediately. Otherwise, schedule a deferred edit.
+	 */
+	private scheduleProgressEdit(
+		jobId: string,
+		state: NonNullable<ReturnType<typeof this.progressState.get>>,
+	): void {
+		if (state.pendingUpdate) {
+			clearTimeout(state.pendingUpdate);
+			state.pendingUpdate = null;
+		}
+
+		const elapsed = Date.now() - state.lastEditAt;
+		const delay = Math.max(0, DiscordChannel.EDIT_DEBOUNCE_MS - elapsed);
+
+		const doEdit = async () => {
+			state.pendingUpdate = null;
+			if (!state.message || typeof state.message.edit !== "function") return;
+			const content = this.buildProgressContent(state);
+			try {
+				await state.message.edit(content);
+				state.lastEditAt = Date.now();
+			} catch (err) {
+				this.logger.debug("Failed to edit progress message", {
+					error: err instanceof Error ? err.message : String(err),
+					jobId,
+				});
+			}
+		};
+
+		if (delay === 0) {
+			doEdit();
+		} else {
+			state.pendingUpdate = setTimeout(doEdit, delay);
 		}
 	}
 
@@ -536,6 +614,9 @@ export class DiscordChannel implements ChannelAdapter {
 			clearInterval(interval);
 		}
 		this.typingIntervals.clear();
+		for (const state of this.progressState.values()) {
+			if (state.pendingUpdate) clearTimeout(state.pendingUpdate);
+		}
 		this.progressState.clear();
 		if (this.unsubscribe) {
 			this.unsubscribe();
