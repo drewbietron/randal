@@ -84,9 +84,14 @@ export class DiscordChannel implements ChannelAdapter {
 		// Register message handler
 		this.client.on(Events.MessageCreate, (msg) => this.onMessage(msg));
 
-		// Log when ready
+		// Log when ready, then preload recent conversations from Meilisearch
 		this.client.once(Events.ClientReady, (c) => {
 			this.logger.info("Discord bot connected", { tag: c.user.tag });
+			this.preloadConversations().catch((err) => {
+				this.logger.warn("Failed to preload conversations on startup", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
 		});
 
 		// Login
@@ -121,6 +126,65 @@ export class DiscordChannel implements ChannelAdapter {
 		this.unsubscribe = this.deps.eventBus.subscribe((event) => this.onRunnerEvent(event));
 	}
 
+	/**
+	 * Preload recent conversations from Meilisearch on startup.
+	 * This ensures that when a user messages in a thread after a gateway restart,
+	 * the full conversation history is available even if no job was running at the
+	 * time of the restart.
+	 */
+	private async preloadConversations(): Promise<void> {
+		const mm = this.deps.messageManager;
+		if (!mm) return;
+
+		const threadIds = await mm.recentThreadIds(100);
+		if (threadIds.length === 0) return;
+
+		let loaded = 0;
+		for (const threadId of threadIds) {
+			// Skip threads we already have in memory (e.g. from recoverJob)
+			if (this.conversations.has(threadId)) continue;
+
+			try {
+				const msgs = await mm.thread(threadId);
+				if (msgs.length === 0) continue;
+
+				const history = msgs.map((m) => ({
+					role: m.speaker === "user" ? ("user" as const) : ("assistant" as const),
+					content: m.content,
+				}));
+
+				// Try to fetch the thread channel from Discord (non-blocking on failure)
+				let threadChannel: ThreadChannel | null = null;
+				try {
+					const channel = await this.client.channels.fetch(threadId);
+					if (channel?.isThread()) {
+						threadChannel = channel as ThreadChannel;
+					}
+				} catch {
+					// Thread may have been deleted or bot lost access — that's fine
+				}
+
+				this.conversations.set(threadId, {
+					threadChannel,
+					history,
+					activeJobId: null,
+				});
+				loaded++;
+			} catch (err) {
+				this.logger.debug("Failed to preload conversation", {
+					threadId,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		this.logger.info("Preloaded conversations from Meilisearch", {
+			total: threadIds.length,
+			loaded,
+			alreadyKnown: threadIds.length - loaded,
+		});
+	}
+
 	private async onMessage(msg: DiscordMessage): Promise<void> {
 		this.logger.info("Discord message received", {
 			author: msg.author.id,
@@ -138,21 +202,36 @@ export class DiscordChannel implements ChannelAdapter {
 		let isKnownThread = isThread && this.conversations.has(msg.channel.id);
 
 		// Recover thread state after gateway restart: if this is a thread
-		// the bot created but we lost the in-memory conversation entry, rebuild it.
+		// we don't have in memory, check Meilisearch for prior conversation history.
+		// This handles both bot-owned threads AND any thread the bot has chatted in.
 		if (isThread && !isKnownThread) {
-			const botUser = this.client.user;
 			const threadChannel = msg.channel as ThreadChannel;
-			if (botUser && threadChannel.ownerId === botUser.id) {
-				this.logger.info("Recovering conversation for bot-owned thread after restart", {
-					threadId: threadChannel.id,
-					threadName: threadChannel.name,
-				});
-				this.conversations.set(threadChannel.id, {
-					threadChannel,
-					history: [],
-					activeJobId: null,
-				});
-				isKnownThread = true;
+			const mm = this.deps.messageManager;
+			if (mm) {
+				try {
+					const msgs = await mm.thread(threadChannel.id);
+					if (msgs.length > 0) {
+						const history = msgs.map((m) => ({
+							role: m.speaker === "user" ? ("user" as const) : ("assistant" as const),
+							content: m.content,
+						}));
+						this.conversations.set(threadChannel.id, {
+							threadChannel,
+							history,
+							activeJobId: null,
+						});
+						isKnownThread = true;
+						this.logger.info("Recovered conversation from Meilisearch", {
+							threadId: threadChannel.id,
+							messageCount: msgs.length,
+						});
+					}
+				} catch (err) {
+					this.logger.warn("Failed to recover conversation history", {
+						threadId: threadChannel.id,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
 			}
 		}
 
@@ -565,9 +644,52 @@ export class DiscordChannel implements ChannelAdapter {
 			convo?.threadChannel ??
 			(channelId ? this.client.channels.cache.get(channelId) : null) ??
 			this.client.channels.cache.get(job.origin.replyTo);
-		if (!target || !("send" in target)) return;
+
+		// If no cached channel found (e.g. after restart), fetch it async
+		if (!target || !("send" in target)) {
+			const fetchId = channelId ?? job.origin.replyTo;
+			this.client.channels
+				.fetch(fetchId)
+				.then((fetched) => {
+					if (fetched && "send" in fetched) {
+						this.handleResolvedEvent(
+							event,
+							fetched as unknown as SendableChannel,
+							convo,
+							channelId,
+						);
+					} else {
+						this.logger.warn("Could not resolve channel for event after fetch", {
+							jobId: event.jobId,
+							channelId: fetchId,
+						});
+					}
+				})
+				.catch((err) => {
+					this.logger.warn("Failed to fetch channel for event routing", {
+						jobId: event.jobId,
+						channelId: fetchId,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
+			return;
+		}
 
 		const sendable = target as SendableChannel;
+		this.handleResolvedEvent(event, sendable, convo, channelId);
+	}
+
+	/**
+	 * Handle an event once we have a resolved sendable channel.
+	 * Shared by the sync path (channel in cache) and async path (fetched after restart).
+	 */
+	private handleResolvedEvent(
+		event: RunnerEvent,
+		sendable: SendableChannel,
+		convo: Conversation | undefined,
+		channelId: string | undefined,
+	): void {
+		const intermediate = ["iteration.output", "job.plan_updated", "iteration.start"];
 
 		// Handle intermediate events as edit-in-place progress messages
 		if (intermediate.includes(event.type)) {
@@ -790,6 +912,62 @@ export class DiscordChannel implements ChannelAdapter {
 		}
 
 		return parts.join("\n\n") || "⏳ Working...";
+	}
+
+	/**
+	 * Recover a job→channel mapping after gateway restart.
+	 * Called by the gateway for each resumed job that originated from Discord.
+	 * Pre-populates jobToChannel and conversations so that when the resumed
+	 * job completes, the response routes back to the correct thread.
+	 */
+	async recoverJob(jobId: string, threadId: string): Promise<void> {
+		this.jobToChannel.set(jobId, threadId);
+
+		if (!this.conversations.has(threadId)) {
+			// Try to fetch the thread channel from Discord
+			let threadChannel: ThreadChannel | null = null;
+			try {
+				const channel = await this.client.channels.fetch(threadId);
+				if (channel?.isThread()) {
+					threadChannel = channel as ThreadChannel;
+				}
+			} catch {
+				this.logger.debug("Could not fetch thread channel for recovery", { threadId });
+			}
+
+			// Load history from Meilisearch
+			let history: Conversation["history"] = [];
+			const mm = this.deps.messageManager;
+			if (mm) {
+				try {
+					const msgs = await mm.thread(threadId);
+					history = msgs.map((m) => ({
+						role: m.speaker === "user" ? ("user" as const) : ("assistant" as const),
+						content: m.content,
+					}));
+					this.logger.info("Recovered conversation for resumed job", {
+						threadId,
+						jobId,
+						messageCount: history.length,
+					});
+				} catch (err) {
+					this.logger.warn("Failed to load history for recovered job", {
+						threadId,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
+			}
+
+			this.conversations.set(threadId, {
+				threadChannel,
+				history,
+				activeJobId: jobId,
+			});
+		} else {
+			// Conversation already exists, just link the job
+			const convo = this.conversations.get(threadId);
+			if (convo) convo.activeJobId = jobId;
+		}
 	}
 
 	stop(): void {

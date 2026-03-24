@@ -276,16 +276,37 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 			try {
 				job.updates.push(`Gateway restarted — resuming from iteration ${job.iterations.current}`);
 				const { done } = runner.resume(job);
-				done.then((completed) => {
-					saveJob(completed);
-					logger.info("Resumed job completed", { jobId: completed.id, status: completed.status });
-				}).catch((err) => {
-					logger.error("Resumed job failed", {
-						jobId: job.id,
-						error: err instanceof Error ? err.message : String(err),
+				done
+					.then((completed) => {
+						saveJob(completed);
+						logger.info("Resumed job completed", { jobId: completed.id, status: completed.status });
+					})
+					.catch((err) => {
+						logger.error("Resumed job failed", {
+							jobId: job.id,
+							error: err instanceof Error ? err.message : String(err),
+						});
 					});
+
+				// Recover channel adapter state so job completions route correctly
+				if (job.origin?.replyTo) {
+					for (const ch of channelAdapters) {
+						if (ch.name === job.origin.channel && ch.recoverJob) {
+							ch.recoverJob(job.id, job.origin.replyTo).catch((err) => {
+								logger.warn("Channel recovery failed for resumed job", {
+									jobId: job.id,
+									channel: ch.name,
+									error: err instanceof Error ? err.message : String(err),
+								});
+							});
+						}
+					}
+				}
+
+				logger.info("Resumed interrupted job", {
+					jobId: job.id,
+					iteration: job.iterations.current,
 				});
-				logger.info("Resumed interrupted job", { jobId: job.id, iteration: job.iterations.current });
 			} catch (err) {
 				// If resume fails, mark the job as failed so it's not retried forever
 				logger.error("Failed to resume job, marking as failed", {

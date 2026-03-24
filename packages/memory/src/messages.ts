@@ -56,14 +56,17 @@ export class MessageManager {
 		}
 	}
 
-	/** Add a message to the history. */
+	/** Add a message to the history. Waits for Meilisearch to finish indexing. */
 	async add(doc: Omit<MessageDoc, "id">): Promise<string> {
 		const id = randomUUID();
 		const fullDoc: MessageDoc = { ...doc, id };
 
 		try {
 			const index = this.client.index(this.indexName);
-			await index.addDocuments([fullDoc]);
+			const task = await index.addDocuments([fullDoc]);
+			// Wait for indexing so the message is searchable immediately
+			// and survives a gateway crash right after logging
+			await this.client.waitForTask(task.taskUid, { timeOutMs: 5000 });
 			this.logger.info("Message saved", {
 				threadId: doc.threadId,
 				speaker: doc.speaker,
@@ -142,6 +145,29 @@ export class MessageManager {
 			return results.hits as unknown as MessageDoc[];
 		} catch (err) {
 			this.logger.error("Pending actions query failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return [];
+		}
+	}
+
+	/** Get all unique threadIds that have recent messages, for startup preloading. */
+	async recentThreadIds(limit = 100): Promise<string[]> {
+		try {
+			const index = this.client.index(this.indexName);
+			// Fetch recent messages and extract unique threadIds
+			const results = await index.search("", {
+				limit,
+				sort: ["timestamp:desc"],
+			});
+			const seen = new Set<string>();
+			for (const hit of results.hits) {
+				const doc = hit as unknown as MessageDoc;
+				if (doc.threadId) seen.add(doc.threadId);
+			}
+			return [...seen];
+		} catch (err) {
+			this.logger.error("Failed to fetch recent threadIds", {
 				error: err instanceof Error ? err.message : String(err),
 			});
 			return [];

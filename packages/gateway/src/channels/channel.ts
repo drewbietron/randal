@@ -12,6 +12,8 @@ export interface ChannelAdapter {
 	readonly name: string;
 	start(): Promise<void>;
 	stop(): void;
+	/** Recover a job→channel mapping after gateway restart. Optional per adapter. */
+	recoverJob?(jobId: string, channelId: string): Promise<void>;
 }
 
 export interface ChannelDeps {
