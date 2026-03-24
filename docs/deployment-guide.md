@@ -326,7 +326,7 @@ See [`examples/imported-service/`](../examples/imported-service/) for a complete
 
 ## 🔍 Meilisearch Setup
 
-Meilisearch is required for full-text memory search and cross-agent sharing. The file-based store works for single-agent, local use but does not support cross-agent queries.
+Meilisearch is the sole memory backend — required for all memory operations, cross-agent sharing, and auto-injection. It is auto-installed on first `randal serve`.
 
 ### 📦 Local Install
 

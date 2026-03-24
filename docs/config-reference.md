@@ -367,12 +367,10 @@ Memory system configuration. Defaults to `{}` if omitted.
 
 | Field | Type | Default | Required | Description |
 |-------|------|---------|----------|-------------|
-| `memory.store` | `"file"` \| `"meilisearch"` | `"file"` | No | Storage backend. |
-| `memory.url` | string | — | No | Meilisearch server URL. Required when `store` is `"meilisearch"`. |
-| `memory.apiKey` | string | — | No | Meilisearch API key. Required when `store` is `"meilisearch"`. |
+| `memory.store` | `"meilisearch"` | `"meilisearch"` | No | Storage backend. Meilisearch is the only supported backend. |
+| `memory.url` | string | `"http://localhost:7700"` | No | Meilisearch server URL. |
+| `memory.apiKey` | string | — | No | Meilisearch API key. |
 | `memory.index` | string | `"memory-{name}"` | No | Meilisearch index name. Falls back to `memory-` + config `name`. |
-| `memory.syncInterval` | number | `60` | No | File sync interval in seconds. |
-| `memory.files` | string[] | `["MEMORY.md"]` | No | Markdown files to watch for memory entries. |
 | `memory.autoInject.enabled` | boolean | `true` | No | Auto-inject relevant memory into agent system prompt. |
 | `memory.autoInject.maxResults` | number | `5` | No | Maximum memory results to inject per iteration. |
 | `memory.sharing.publishTo` | string | — | No | Shared Meilisearch index name to publish learnings to. |
@@ -582,8 +580,7 @@ gateway:
       port: 7600
       auth: "${RANDAL_API_TOKEN}"
 memory:
-  store: file
-  files: [MEMORY.md]
+  store: meilisearch
 ```
 
 ### 🏭 Production Agent with Meilisearch

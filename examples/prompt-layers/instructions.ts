@@ -11,7 +11,7 @@ export default function buildInstructions(ctx: PromptContext): string {
 
 	const baseInstructions = `## System Instructions for ${name}
 
-- Write all learnings and important discoveries to MEMORY.md
+- Save all learnings and important discoveries to memory
 - Use structured headings and bullet points in your responses
 - When you complete a task, summarize what you did`;
 

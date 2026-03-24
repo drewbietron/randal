@@ -4,9 +4,6 @@ export type { MemoryManagerOptions } from "./memory.js";
 export { parseLearnings } from "./learnings.js";
 export type { Learning } from "./learnings.js";
 
-export { startSync, hashContent } from "./sync.js";
-export type { SyncOptions } from "./sync.js";
-
 export { MeilisearchStore } from "./stores/meilisearch.js";
 export type { MemoryStore } from "./stores/index.js";
 

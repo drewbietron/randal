@@ -196,9 +196,6 @@ memory:
   store: meilisearch
   url: ${MEILISEARCH_URL}
   apiKey: ${MEILISEARCH_API_KEY}
-  syncInterval: 60
-  files:
-    - MEMORY.md
   embedder:
     type: openai
     model: text-embedding-3-large

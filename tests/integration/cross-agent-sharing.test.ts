@@ -1,21 +1,20 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MemoryDoc } from "@randal/core";
 import { parseConfig } from "@randal/core";
 import type { StoreFactory } from "@randal/memory";
 import { MemoryManager } from "@randal/memory";
-import { FileStore } from "../../packages/memory/src/stores/file.js";
 import type { MemoryStore } from "../../packages/memory/src/stores/index.js";
 
 /**
- * Integration test: Two MemoryManagers sharing via a "shared" FileStore.
+ * Integration test: Two MemoryManagers sharing via a "shared" InMemoryStore.
  *
- * This proves the core thesis: cross-agent sharing works without Meilisearch.
- * We use FileStore instances as both the agent-private stores and the shared store.
+ * This proves the core thesis: cross-agent sharing works via Meilisearch indexes.
+ * We use InMemoryStore instances as mock Meilisearch stores for testing.
  */
-describe("cross-agent sharing (integration, FileStore)", () => {
+describe("cross-agent sharing (integration)", () => {
 	const dirs: string[] = [];
 
 	afterEach(() => {
@@ -51,8 +50,8 @@ name: ${name}
 runner:
   workdir: ${agentDir}
 memory:
-  store: file
-  files: [MEMORY.md]
+  url: http://localhost:7700
+  apiKey: test
   sharing:
     publishTo: "${sharedIndexName}"
     readFrom: [${readLine}]
@@ -67,16 +66,10 @@ memory:
 		const storeFactory: StoreFactory = (opts) => {
 			const existing = storeMap.get(opts.index);
 			if (existing) return existing;
-			// For unknown indexes, return a fresh in-memory store
 			return new InMemoryStore();
 		};
 
-		// Agent's own store (file-based)
-		writeFileSync(join(agentDir, "MEMORY.md"), "");
-		const ownStore = new FileStore({
-			basePath: agentDir,
-			files: ["MEMORY.md"],
-		});
+		const ownStore = new InMemoryStore();
 
 		const mgr = new MemoryManager({
 			config,
@@ -95,7 +88,6 @@ memory:
 
 		await mgr.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "Agent A learned about Docker deployment",
 			contentHash: "hash-a-docker",
 			category: "fact",
@@ -116,7 +108,6 @@ memory:
 
 		await mgr.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "Agent A learned about Railway deployment",
 			contentHash: "hash-a-railway",
 			category: "lesson",
@@ -144,7 +135,6 @@ memory:
 		// Agent A publishes a learning
 		await agentA.mgr.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "The Supabase connection needs retry logic",
 			contentHash: "hash-a-supabase",
 			category: "lesson",
@@ -172,7 +162,6 @@ memory:
 		// Agent A publishes
 		await agentA.mgr.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "Use bun test for all testing",
 			contentHash: "hash-a-bun",
 			category: "pattern",
@@ -183,7 +172,6 @@ memory:
 		// Agent B publishes
 		await agentB.mgr.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "Always run bun lint before committing",
 			contentHash: "hash-b-bun",
 			category: "pattern",
@@ -216,16 +204,15 @@ name: agent-b
 runner:
   workdir: ${dirB}
 memory:
-  store: file
-  files: [MEMORY.md]
+  url: http://localhost:7700
+  apiKey: test
   sharing:
     readFrom: ["shared-team"]
   autoInject:
     maxResults: 10
 `);
 
-		writeFileSync(join(dirB, "MEMORY.md"), "");
-		const ownStoreB = new FileStore({ basePath: dirB, files: ["MEMORY.md"] });
+		const ownStoreB = new InMemoryStore();
 		const agentB = new MemoryManager({
 			config: configB,
 			store: ownStoreB,
@@ -241,7 +228,6 @@ memory:
 		// Agent B indexes a private learning (no publishTo)
 		await agentB.index({
 			type: "learning",
-			file: "MEMORY.md",
 			content: "Private secret of Agent B",
 			contentHash: "hash-b-secret",
 			category: "fact",
@@ -260,7 +246,7 @@ memory:
 });
 
 /**
- * Simple in-memory store (not file-backed) for use as the shared store.
+ * Simple in-memory store for use as mock Meilisearch in tests.
  */
 class InMemoryStore implements MemoryStore {
 	private docs: MemoryDoc[] = [];

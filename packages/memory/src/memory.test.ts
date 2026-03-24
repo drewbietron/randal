@@ -43,18 +43,6 @@ runner:
 		expect(config.memory.apiKey).toBe("");
 	});
 
-	test("config accepts store field with file value", () => {
-		const config = parseConfig(`
-name: test
-runner:
-  workdir: /tmp
-memory:
-  store: file
-`);
-		expect(config.memory.store).toBe("file");
-		expect(config.memory.url).toBe("http://localhost:7700");
-	});
-
 	test("config defaults store to meilisearch", () => {
 		const config = parseConfig(`
 name: test
@@ -99,7 +87,6 @@ name: test-agent
 runner:
   workdir: /tmp
 memory:
-  store: file
   url: http://localhost:7700
   apiKey: test
   sharing:${publishLine}${readLine}

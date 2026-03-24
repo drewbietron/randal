@@ -48,8 +48,7 @@ gateway:
       auth: "${RANDAL_API_TOKEN}"
 
 memory:
-  store: file
-  files: [MEMORY.md]
+  store: meilisearch
 
 # Layer 1: Heartbeat prompt as a file reference with template vars
 heartbeat:

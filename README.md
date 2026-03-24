@@ -374,10 +374,10 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
                      ▼                            ▼
                ┌──────────────────┐      ┌──────────────────┐
                │  🔐 Credentials  │      │    🧠 Memory     │
-               │ - .env parsing   │      │ - File / Meili   │
-               │ - Allowlist      │      │ - Sync (chokidar)│
-               │ - Inheritance    │      │ - Cross-agent    │
-               └──────────────────┘      │ - Auto-inject    │
+               │ - .env parsing   │      │ - Meilisearch    │
+               │ - Allowlist      │      │ - Cross-agent    │
+               │ - Inheritance    │      │ - Auto-inject    │
+               └──────────────────┘      │ - Posse sharing  │
                                          └──────────────────┘
 ```
 

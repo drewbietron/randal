@@ -6,13 +6,11 @@ import {
 	publishToShared,
 	searchCrossAgent,
 } from "./cross-agent.js";
-import { FileStore } from "./stores/file.js";
 import type { MemoryStore } from "./stores/index.js";
 import { MeilisearchStore } from "./stores/meilisearch.js";
 
 export interface MemoryManagerOptions {
 	config: RandalConfig;
-	basePath?: string;
 	/** Pre-built store instance. When provided, skips config-driven store construction. */
 	store?: MemoryStore;
 	/** Custom store factory for cross-agent operations. Enables testing without Meilisearch. */
@@ -31,11 +29,6 @@ export class MemoryManager {
 
 		if (options.store) {
 			this.store = options.store;
-		} else if (options.config.memory.store === "file") {
-			this.store = new FileStore({
-				basePath: options.basePath ?? ".",
-				files: options.config.memory.files,
-			});
 		} else {
 			this.store = new MeilisearchStore({
 				url: options.config.memory.url,
@@ -50,11 +43,8 @@ export class MemoryManager {
 			await this.store.init();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			if (this.config.memory.store === "file") {
-				throw new Error(`Memory initialization failed: ${msg}`);
-			}
 			throw new Error(
-				`Meilisearch connection failed: ${msg}\nEnsure Meilisearch is running:\n  docker run -d -p 7700:7700 getmeili/meilisearch:latest\nOr configure memory.url and memory.apiKey in your config.`,
+				`Meilisearch connection failed: ${msg}\nEnsure Meilisearch is running (auto-installed on first \`randal serve\`).\nOr start manually: brew install meilisearch && meilisearch`,
 			);
 		}
 	}

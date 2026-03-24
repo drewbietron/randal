@@ -4,7 +4,7 @@
 # This is the simplest possible config to get an agent running.
 # Default agent: opencode
 # Default model: anthropic/claude-sonnet-4
-# Default memory: file store (local MEMORY.md)
+# Default memory: Meilisearch (auto-installed on first serve)
 name: my-agent
 runner:
   workdir: .

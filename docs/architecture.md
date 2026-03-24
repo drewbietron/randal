@@ -48,10 +48,10 @@
            ▼                                            ▼
      ┌──────────────────┐      ┌──────────────────┐   ┌──────────────────┐
      │  🔐 Credentials  │      │    🧠 Memory     │   │   🌐 Mesh        │
-     │ - .env parsing   │      │ - File / Meili   │   │  - Registry      │
-     │ - Allowlist      │      │ - Sync (chokidar)│   │  - Discovery     │
-     │ - Inheritance    │      │ - Cross-agent    │   │  - Router        │
-     └──────────────────┘      │ - Auto-inject    │   │  - Health Mon.   │
+     │ - .env parsing   │      │ - Meilisearch    │   │  - Registry      │
+     │ - Allowlist      │      │ - Cross-agent    │   │  - Discovery     │
+     │ - Inheritance    │      │ - Auto-inject    │   │  - Router        │
+     └──────────────────┘      │ - Posse sharing  │   │  - Health Mon.   │
                                └──────────────────┘   └──────────────────┘
 
      ┌──────────────────┐
@@ -71,7 +71,7 @@
 |---------|------|------|
 | `packages/core` | `@randal/core` | 🧩 Types, config schema (Zod), structured logger. Leaf dependency. |
 | `packages/credentials` | `@randal/credentials` | 🔐 Parses `.env` files, filters by allowlist, inherits parent env vars. |
-| `packages/memory` | `@randal/memory` | 🧠 Memory stores (file, Meilisearch), file sync, cross-agent sharing. |
+| `packages/memory` | `@randal/memory` | 🧠 Meilisearch-backed memory, cross-agent sharing, auto-injection. |
 | `packages/runner` | `@randal/runner` | 🎯 Agent execution loop, adapter pattern, sentinel wrapping, struggle detection. |
 | `packages/scheduler` | `@randal/scheduler` | ⏰ Heartbeat, cron scheduling, webhook hooks. Autonomy primitives. |
 | `packages/gateway` | `@randal/gateway` | 🏗️ HTTP server (Hono), EventBus, YAML job persistence, orchestration. |
@@ -171,10 +171,7 @@ Builds a clean, scoped environment for agent processes:
 
 ### 🧠 Memory
 
-Self-learning memory with two backends:
-
-- **📄 FileStore**: In-memory array, substring search, appends to markdown files.
-- **🔍 MeilisearchStore**: Full-text search, filterable by type/category/source/file, sorted by timestamp.
+Persistent memory backed by Meilisearch. Full-text search, filterable by type/category/source/file, sorted by timestamp. Auto-installed on first `randal serve`.
 
 ---
 
@@ -224,19 +221,10 @@ User (Discord/iMessage)    Gateway              Runner              Agent
 ### Memory Flow
 
 ```
-Agent writes to MEMORY.md
+Agent saves memory via memory API
         │
         ▼
-chokidar detects change
-        │
-        ▼
-SHA-256 hash check (skip if unchanged)
-        │
-        ▼
-Parse learnings: "- [category] content"
-        │
-        ▼
-Index to MemoryStore (file or Meilisearch)
+Index to Meilisearch (with contentHash dedup)
         │
         ▼
 Next iteration: search memory for relevant context
