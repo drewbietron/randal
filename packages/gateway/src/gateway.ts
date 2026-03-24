@@ -33,9 +33,45 @@ export interface Gateway {
 
 const logger = createLogger({ context: { component: "gateway" } });
 
+/** Wait for Meilisearch to become reachable, retrying with backoff. */
+async function waitForMeilisearch(
+	url: string,
+	apiKey: string | undefined,
+	maxAttempts = 15,
+	intervalMs = 2000,
+): Promise<void> {
+	const client = new MeiliSearch({ host: url, apiKey });
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		try {
+			await client.health();
+			return;
+		} catch {
+			if (attempt === maxAttempts) {
+				throw new Error(
+					`Meilisearch not reachable at ${url} after ${maxAttempts} attempts (${(maxAttempts * intervalMs) / 1000}s)`,
+				);
+			}
+			logger.info("Waiting for Meilisearch...", { attempt, maxAttempts, url });
+			await new Promise((r) => setTimeout(r, intervalMs));
+		}
+	}
+}
+
 export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	const { config, configBasePath } = options;
 	const eventBus = new EventBus();
+
+	// Wait for Meilisearch to be reachable before initializing managers.
+	// This handles the launchd race condition where the gateway starts
+	// before Meilisearch is listening.
+	try {
+		await waitForMeilisearch(config.memory.url, config.memory.apiKey);
+		logger.info("Meilisearch is reachable", { url: config.memory.url });
+	} catch (err) {
+		logger.error("Meilisearch unavailable — message history will not work this session", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
 
 	// Initialize memory manager (Meilisearch-backed)
 	let memoryManager: MemoryManager | undefined;
