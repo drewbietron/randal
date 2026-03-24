@@ -390,6 +390,102 @@ export class DiscordChannel implements ChannelAdapter {
 		return name || "New task";
 	}
 
+	/**
+	 * Pick a category emoji based on keywords in the text.
+	 */
+	private pickThreadEmoji(text: string): string {
+		const lower = text.toLowerCase();
+		const emojiMap: [string, string[]][] = [
+			["🐛", ["fix", "bug", "error", "issue", "broken", "crash", "patch"]],
+			["✨", ["add", "new", "create", "feature", "implement", "build"]],
+			["🔧", ["update", "change", "modify", "adjust", "config", "refactor", "tweak"]],
+			["📝", ["doc", "readme", "comment", "write", "draft", "note"]],
+			["🧪", ["test", "spec", "coverage", "assert", "check"]],
+			["🚀", ["deploy", "release", "ship", "launch", "publish", "push"]],
+			["🔍", ["search", "find", "look", "investigate", "explore", "research", "analyze"]],
+			["🎨", ["style", "css", "design", "ui", "layout", "theme", "color"]],
+			["🗑️", ["delete", "remove", "clean", "drop", "prune"]],
+			["📦", ["install", "package", "dependency", "npm", "pip", "upgrade"]],
+			["🔐", ["auth", "security", "permission", "encrypt", "password", "token"]],
+			["💬", ["chat", "discuss", "question", "help", "explain", "review"]],
+		];
+
+		for (const [emoji, keywords] of emojiMap) {
+			if (keywords.some((kw) => lower.includes(kw))) {
+				return emoji;
+			}
+		}
+		return "🤖";
+	}
+
+	/**
+	 * Format a short timestamp string like "3:45 PM".
+	 */
+	private formatUpdateTime(): string {
+		return new Date().toLocaleTimeString("en-US", {
+			hour: "numeric",
+			minute: "2-digit",
+			hour12: true,
+		});
+	}
+
+	/**
+	 * Generate a smart thread title from conversation context and job output.
+	 * Format: "3:45 PM 🔧 Summary of work"
+	 */
+	private generateSmartThreadTitle(convo: Conversation, summary?: string): string {
+		// Best source: job summary. Fallback: latest user message.
+		let topic = summary?.replace(/\n/g, " ").replace(/\s+/g, " ").trim() || "";
+
+		if (!topic) {
+			const lastUserMsg = [...convo.history].reverse().find((m) => m.role === "user");
+			topic = lastUserMsg?.content.replace(/\n/g, " ").replace(/\s+/g, " ").trim() || "Task";
+		}
+
+		// If topic is very long, take the first sentence
+		const firstSentence = topic.match(/^[^.!?]+[.!?]?\s*/);
+		if (firstSentence && topic.length > 60) {
+			topic = firstSentence[0].trim();
+		}
+
+		const emoji = this.pickThreadEmoji(topic);
+		const time = this.formatUpdateTime();
+		const prefix = `${time} ${emoji} `;
+
+		// Discord thread name max is 100 chars
+		const maxTopicLen = 100 - prefix.length;
+		if (topic.length > maxTopicLen) {
+			topic = `${topic.slice(0, maxTopicLen - 3).replace(/\s+\S*$/, "")}...`;
+		}
+
+		return `${prefix}${topic}`;
+	}
+
+	/**
+	 * Update the thread title to reflect conversation progress.
+	 * Called on job completion to keep thread names meaningful.
+	 */
+	private async updateThreadTitle(jobId: string, event: RunnerEvent): Promise<void> {
+		const channelId = this.jobToChannel.get(jobId);
+		if (!channelId) return;
+
+		const convo = this.conversations.get(channelId);
+		if (!convo?.threadChannel) return; // Only update guild threads, not DMs
+
+		const summary = event.data.summary || event.data.output;
+
+		try {
+			const newTitle = this.generateSmartThreadTitle(convo, summary);
+			await convo.threadChannel.setName(newTitle);
+			this.logger.debug("Updated thread title", { jobId, title: newTitle });
+		} catch (err) {
+			this.logger.debug("Failed to update thread title", {
+				error: err instanceof Error ? err.message : String(err),
+				jobId,
+			});
+		}
+	}
+
 	private onRunnerEvent(event: RunnerEvent): void {
 		const terminal = ["job.complete", "job.failed", "job.stuck"];
 		const intermediate = ["iteration.output", "job.plan_updated", "iteration.start"];
@@ -440,6 +536,13 @@ export class DiscordChannel implements ChannelAdapter {
 
 		// Clean up on terminal events (but keep conversation alive)
 		if (event.type === "job.complete" || event.type === "job.failed") {
+			// Update thread title before cleaning up jobToChannel mapping
+			this.updateThreadTitle(event.jobId, event).catch((err: unknown) => {
+				this.logger.debug("Thread title update failed", {
+					error: err instanceof Error ? err.message : String(err),
+					jobId: event.jobId,
+				});
+			});
 			this.stopTyping(event.jobId);
 			this.jobToChannel.delete(event.jobId);
 			this.finalizeProgressMessage(event);
