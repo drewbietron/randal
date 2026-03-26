@@ -90,10 +90,15 @@ The plan file contains these key sections you interact with:
 
 - **Step is outdated** (file paths changed, functions renamed, line numbers shifted): Adapt to the current code. Log every adaptation in `## Build Notes` with what the plan said vs what you did.
 - **Step is ambiguous**: Interpret based on codebase context. Add a note in `## Build Notes`.
-- **Step is harder than expected** (the approach works but needs debugging, an API behaves differently, edge cases appear): Try at least 2-3 different approaches before marking as blocked. Log each attempt in `## Build Notes`. Only escalate with `[!] NEEDS_REDESIGN` if the fundamental approach is wrong, not just because the first attempt didn't work. Think harder — re-read the file, check for similar patterns in the codebase, try a different angle.
+- **Step is harder than expected** (the approach works but needs debugging, an API behaves differently, edge cases appear): Try at least 2-3 different approaches before marking as blocked. Log each attempt in `## Build Notes`. Only escalate with `[!] PIVOT` if the fundamental approach is wrong, not just because the first attempt didn't work. Think harder — re-read the file, check for similar patterns in the codebase, try a different angle.
 - **Step is blocked** (missing dependency, external service needed): Mark with `- [!]` and add a note. Continue to the next unblocked step.
 - **Tests fail and you can't fix them**: If the failure is pre-existing (not caused by your change), note it in `## Build Notes` and continue. If caused by your change, you MUST fix it before committing.
-- **Fundamental approach is wrong** (the plan's design won't work): DO NOT try to redesign. Add a detailed note in `## Build Notes` explaining why, mark the step `- [!] NEEDS_REDESIGN`, and checkpoint immediately. The caller (Randal) will handle it.
+- **Approach needs adjustment** — Assess severity and report a strategy in your checkpoint:
+  - **Refine**: Scores trending well, specific issues to fix. Continue building, fix issues in subsequent steps.
+  - **Partially Rework**: Approach is mostly right but one component needs significant changes. Mark affected step(s) `- [!] REWORK` with a note explaining what needs to change. Continue with other steps if possible.
+  - **Pivot**: Fundamental approach won't work. Mark step `- [!] PIVOT` with detailed explanation of why the approach fails and what alternatives exist. Checkpoint immediately. The caller (Randal) will handle redesign.
+  
+  The old `[!] NEEDS_REDESIGN` marker is equivalent to `[!] PIVOT`. Use the more specific markers above to give Randal better signal on what to do.
 - **Available skills**: If your dispatch prompt says steer or drive are available, you can use them. Use `steer see` for visual verification of UI changes. Use `drive` for parallel terminal operations. If not mentioned, use bash for everything.
 
 ## Git Discipline
@@ -256,6 +261,10 @@ PROGRESS: {completed}/{total} steps | Phase: Building | Blocked: {n} | Current: 
 ║     {short_hash} {commit_message_first_line}                 ║
 ║                                                              ║
 ║  🔄 Checkpointing — {reason}                                ║
+║                                                              ║
+║  📐 Strategy: {Refine|Partially Rework|Pivot|N/A}           ║
+║     {1-2 sentence rationale if not N/A}                      ║
+║                                                              ║
 ║     Next: Step {n} — {description}                           ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
@@ -545,7 +554,7 @@ Bad:
 
 ## What You Do NOT Do
 
-- Do not redesign the plan. If it's wrong, add a note and mark `[!] NEEDS_REDESIGN`.
+- Do not redesign the plan. If it's wrong, add a note and mark `[!] PIVOT` (or `[!] REWORK` for partial issues).
 - Do not explore open-ended questions. Use `@explore` for research.
 - Do not exceed your context budget. Checkpoint on time, every time.
 - Do not commit broken code. Verify first, always.

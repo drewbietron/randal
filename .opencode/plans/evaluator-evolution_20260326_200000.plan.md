@@ -500,7 +500,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 3 (Functional Review Mode already includes Strategy in its output format)
 - **Verify**: Read `agent/agents/build.md` and confirm: (1) checkpoint format has Strategy field, (2) Handling Problems section has Refine/Rework/Pivot spectrum, (3) NEEDS_REDESIGN equivalence is documented.
 - **Verified**: ✅ Change A insertion point clarified (between Checkpointing line 258 and Next line 259). Change B target confirmed (line 96 exact match for NEEDS_REDESIGN paragraph). Old NEEDS_REDESIGN ↔ PIVOT equivalence documented for backward compatibility. No conflicts with Step 3's evaluator Strategy field — complementary (build-time vs review-time strategy signals).
-- [ ] pending
+- [x] done
 
 ### Step 6: Add Sprint Contract dispatch to Build Pipeline in randal.md [backend]
 - **Action**: modify
