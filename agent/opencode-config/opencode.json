@@ -19,6 +19,18 @@
         "MEILI_MASTER_KEY": "randal-local-key"
       },
       "enabled": true
+    },
+    "video": {
+      "type": "local",
+      "command": ["bun", "run", "/Users/drewbie/dev/randal/tools/video/mcp-server.ts"],
+      "environment": {
+        "OPENROUTER_API_KEY": "",
+        "GOOGLE_AI_STUDIO_KEY": ""
+      },
+      "enabled": true
     }
+  },
+  "tools": {
+    "video_*": false
   }
 }
