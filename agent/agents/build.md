@@ -44,7 +44,7 @@ You are a **build subagent**. You execute implementation plans step-by-step, com
 3. **Check for a branch**: If the dispatch prompt specifies a branch, ensure you're on it. If not, create it:
    ```bash
    # See "Git Discipline" section for full branch and commit instructions
-   git checkout -b opencode/{plan-slug} 2>/dev/null || git checkout opencode/{plan-slug}
+   git checkout -b {branch-name} 2>/dev/null || git checkout {branch-name}
    ```
 4. **Handle dirty state** (crash recovery):
    - Check `git status` for uncommitted changes.
@@ -107,7 +107,7 @@ The plan file contains these key sections you interact with:
 
 On your first invocation for a plan, create a feature branch:
 ```bash
-git checkout -b opencode/{plan-slug} 2>/dev/null || git checkout opencode/{plan-slug}
+git checkout -b {branch-name} 2>/dev/null || git checkout {branch-name}
 ```
 
 If the dispatch prompt says "worktree: {path}", you're working in an isolated worktree. The branch was already created by Randal. Just verify you're on it:
@@ -242,7 +242,7 @@ PROGRESS: {completed}/{total} steps | Phase: Building | Blocked: {n} | Current: 
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
 ║  Plan: {plan_filename}                                       ║
-║  Branch: opencode/{plan-slug}                                ║
+║  Branch: {branch-name}                                       ║
 ║                                                              ║
 ║  {progress_bar}  {completed}/{total} steps  {pct}%           ║
 ║                                                              ║
@@ -284,7 +284,7 @@ PROGRESS: {total}/{total} steps | Phase: Complete | Blocked: 0 | Current: None
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
 ║  Plan: {plan_filename}                                       ║
-║  Branch: opencode/{plan-slug}                                ║
+║  Branch: {branch-name}                                       ║
 ║                                                              ║
 ║  ████████████████████  {total}/{total} steps  100%           ║
 ║                                                              ║
