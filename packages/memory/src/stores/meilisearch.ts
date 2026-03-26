@@ -4,15 +4,30 @@ import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
 import type { MemoryStore } from "./index.js";
 
+export interface EmbedderConfig {
+	type: string;
+	model: string;
+	apiKey: string;
+	url?: string;
+}
+
 export interface MeilisearchStoreOptions {
 	url: string;
 	apiKey: string;
 	index: string;
+	embedder?: EmbedderConfig;
+	semanticRatio?: number;
 }
+
+const EMBEDDER_NAME = "memory-embedder";
+const DEFAULT_SEMANTIC_RATIO = 0.7;
 
 export class MeilisearchStore implements MemoryStore {
 	private client: MeiliSearch;
 	private indexName: string;
+	private semanticAvailable = false;
+	private semanticRatio: number;
+	private embedderConfig?: EmbedderConfig;
 	private logger = createLogger({ context: { component: "meilisearch-store" } });
 
 	constructor(options: MeilisearchStoreOptions) {
@@ -21,6 +36,8 @@ export class MeilisearchStore implements MemoryStore {
 			apiKey: options.apiKey,
 		});
 		this.indexName = options.index;
+		this.embedderConfig = options.embedder;
+		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
 	}
 
 	async init(): Promise<void> {
@@ -48,11 +65,64 @@ export class MeilisearchStore implements MemoryStore {
 			});
 			throw err;
 		}
+
+		// Configure semantic embedder (non-fatal — falls back to keyword search)
+		if (this.embedderConfig?.apiKey) {
+			try {
+				const index = this.client.index(this.indexName);
+				await index.updateEmbedders({
+					[EMBEDDER_NAME]: {
+						source: "rest",
+						url:
+							this.embedderConfig.url ||
+							"https://openrouter.ai/api/v1/embeddings",
+						apiKey: this.embedderConfig.apiKey,
+						request: {
+							model: this.embedderConfig.model,
+							input: ["{{text}}", "{{..}}"],
+						},
+						response: {
+							data: [{ embedding: "{{embedding}}" }, "{{..}}"],
+						},
+						documentTemplate: "A memory entry: {{doc.content}}",
+					},
+				});
+				this.semanticAvailable = true;
+				this.logger.info("Semantic search enabled", {
+					embedder: EMBEDDER_NAME,
+					model: this.embedderConfig.model,
+					semanticRatio: this.semanticRatio,
+				});
+			} catch (err) {
+				this.semanticAvailable = false;
+				this.logger.warn(
+					"Failed to configure semantic embedder — falling back to keyword-only search",
+					{
+						error: err instanceof Error ? err.message : String(err),
+					},
+				);
+			}
+		}
 	}
 
 	async search(query: string, limit: number): Promise<MemoryDoc[]> {
 		try {
 			const index = this.client.index(this.indexName);
+
+			if (this.semanticAvailable) {
+				// Hybrid search: Meilisearch uses its own relevance ranking,
+				// sort is not compatible with hybrid search
+				const results = await index.search(query, {
+					limit,
+					hybrid: {
+						embedder: EMBEDDER_NAME,
+						semanticRatio: this.semanticRatio,
+					},
+				});
+				return results.hits as unknown as MemoryDoc[];
+			}
+
+			// Keyword-only fallback
 			const results = await index.search(query, {
 				limit,
 				sort: ["timestamp:desc"],
