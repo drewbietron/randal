@@ -16,7 +16,7 @@
  *   MEILI_INDEX       — index name (default: memory-randal)
  */
 
-import { randomUUID, createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { MeiliSearch } from "meilisearch";
 
 // ---------------------------------------------------------------------------
@@ -124,8 +124,7 @@ const TOOL_DEFINITIONS = [
 				},
 				source: {
 					type: "string",
-					description:
-						'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
+					description: 'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
 				},
 			},
 			required: ["content", "category"],
@@ -174,12 +173,7 @@ async function initIndex(): Promise<void> {
 		const index = client.index(MEILI_INDEX);
 
 		// Configure searchable, filterable, and sortable attributes
-		await index.updateSearchableAttributes([
-			"content",
-			"category",
-			"type",
-			"source",
-		]);
+		await index.updateSearchableAttributes(["content", "category", "type", "source"]);
 		await index.updateFilterableAttributes([
 			"type",
 			"category",
@@ -208,9 +202,7 @@ async function initIndex(): Promise<void> {
 /**
  * Full-text search with optional category filter, sorted by timestamp desc.
  */
-async function handleMemorySearch(
-	params: Record<string, unknown>,
-): Promise<unknown> {
+async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
 	const query = params.query as string;
 	if (!query) {
 		throw new ToolError("Missing required parameter: query");
@@ -247,10 +239,7 @@ async function handleMemorySearch(
 			})),
 		};
 	} catch (err) {
-		log(
-			"error",
-			`memory_search failed: ${err instanceof Error ? err.message : String(err)}`,
-		);
+		log("error", `memory_search failed: ${err instanceof Error ? err.message : String(err)}`);
 		return { results: [], message: "Search failed" };
 	}
 }
@@ -258,9 +247,7 @@ async function handleMemorySearch(
 /**
  * Store a new memory document. Deduplicates by SHA-256 content hash.
  */
-async function handleMemoryStore(
-	params: Record<string, unknown>,
-): Promise<unknown> {
+async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
 	const content = params.content as string;
 	const category = params.category as MemoryCategory;
 	const source = (params.source as string) || "self";
@@ -318,10 +305,7 @@ async function handleMemoryStore(
 			message: "Memory stored successfully",
 		};
 	} catch (err) {
-		log(
-			"error",
-			`memory_store failed: ${err instanceof Error ? err.message : String(err)}`,
-		);
+		log("error", `memory_store failed: ${err instanceof Error ? err.message : String(err)}`);
 		return { stored: false, message: "Store operation failed" };
 	}
 }
@@ -329,9 +313,7 @@ async function handleMemoryStore(
 /**
  * Retrieve the N most recent memories, sorted by timestamp descending.
  */
-async function handleMemoryRecent(
-	params: Record<string, unknown>,
-): Promise<unknown> {
+async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
 	if (!meiliAvailable) {
@@ -356,19 +338,13 @@ async function handleMemoryRecent(
 			})),
 		};
 	} catch (err) {
-		log(
-			"error",
-			`memory_recent failed: ${err instanceof Error ? err.message : String(err)}`,
-		);
+		log("error", `memory_recent failed: ${err instanceof Error ? err.message : String(err)}`);
 		return { results: [], message: "Recent query failed" };
 	}
 }
 
 /** Map tool names to handlers */
-const TOOL_HANDLERS: Record<
-	string,
-	(params: Record<string, unknown>) => Promise<unknown>
-> = {
+const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
 	memory_store: handleMemoryStore,
 	memory_recent: handleMemoryRecent,
@@ -383,32 +359,6 @@ class ToolError extends Error {
 		super(message);
 		this.name = "ToolError";
 	}
-}
-
-function handleRequest(raw: string): JsonRpcResponse {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return {
-			jsonrpc: "2.0",
-			id: null,
-			error: { code: RPC_PARSE_ERROR, message: "Invalid JSON" },
-		};
-	}
-
-	const req = parsed as Partial<JsonRpcRequest>;
-	if (!req.jsonrpc || req.jsonrpc !== "2.0" || !req.method || req.id == null) {
-		return {
-			jsonrpc: "2.0",
-			id: req.id ?? null,
-			error: { code: RPC_INVALID_REQUEST, message: "Invalid JSON-RPC request" },
-		};
-	}
-
-	// Return a marker so the async dispatch can use the parsed request
-	// We handle this in processLine() instead
-	return undefined as unknown as JsonRpcResponse;
 }
 
 /**
@@ -491,10 +441,7 @@ async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse> {
 					content: [
 						{
 							type: "text",
-							text:
-								typeof result === "string"
-									? result
-									: JSON.stringify(result, null, 2),
+							text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
 						},
 					],
 				},
@@ -641,14 +588,14 @@ async function main(): Promise<void> {
 
 			buffer += decoder.decode(value, { stream: true });
 
-		// Process complete lines
-		let newlineIdx: number = buffer.indexOf("\n");
-		while (newlineIdx !== -1) {
-			const line = buffer.slice(0, newlineIdx);
-			buffer = buffer.slice(newlineIdx + 1);
-			await processLine(line);
-			newlineIdx = buffer.indexOf("\n");
-		}
+			// Process complete lines
+			let newlineIdx: number = buffer.indexOf("\n");
+			while (newlineIdx !== -1) {
+				const line = buffer.slice(0, newlineIdx);
+				buffer = buffer.slice(newlineIdx + 1);
+				await processLine(line);
+				newlineIdx = buffer.indexOf("\n");
+			}
 		}
 
 		// Process any remaining data in the buffer (no trailing newline)

@@ -712,9 +712,17 @@ export class Runner {
 					memoryContext: brainManaged ? [] : memoryContext,
 					injectedContext: injectedContext ?? undefined, // always pass — external input
 					skillContext: brainManaged ? [] : skillContext,
-					currentPlan: brainManaged ? undefined : (job.plan.length > 0 ? job.plan : undefined),
-					progressHistory: brainManaged ? undefined : (job.progressHistory.length > 0 ? job.progressHistory : undefined),
-					delegationResults: brainManaged ? undefined : (job.delegations.length > 0 ? job.delegations : undefined),
+					currentPlan: brainManaged ? undefined : job.plan.length > 0 ? job.plan : undefined,
+					progressHistory: brainManaged
+						? undefined
+						: job.progressHistory.length > 0
+							? job.progressHistory
+							: undefined,
+					delegationResults: brainManaged
+						? undefined
+						: job.delegations.length > 0
+							? job.delegations
+							: undefined,
 					includeProtocol,
 					brainManaged,
 				});
