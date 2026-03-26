@@ -115,7 +115,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_search",
 		description:
-			"Search Randal's long-term memory for relevant context, past learnings, patterns, and preferences. Returns matching memories sorted by relevance.",
+			"Search Randal's long-term memory for relevant context, past learnings, patterns, and preferences. Returns matching memories sorted by relevance. Searches using hybrid semantic + keyword matching when an embedding API key is configured; falls back to keyword-only otherwise. By default, returns project-scoped memories + global memories. Use scope: 'all' to search across all projects.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
@@ -132,7 +132,7 @@ const TOOL_DEFINITIONS = [
 				scope: {
 					type: "string",
 					description:
-						'Search scope. Default: current project + global memories. Use "all" to search across all projects, or "global" for global-only.',
+						'Search scope. Omit for project-scoped + global memories (default). Use "all" to search across all projects, or "global" for global-only.',
 				},
 			},
 			required: ["query"],
@@ -141,7 +141,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_store",
 		description:
-			"Store a new memory in Randal's long-term memory. Automatically deduplicates by content hash. Use this to persist learnings, preferences, patterns, or facts discovered during work.",
+			"Store a new memory in Randal's long-term memory. Automatically deduplicates by content hash. Use this to persist learnings, preferences, patterns, or facts discovered during work. Automatically assigns scope based on category (preference/fact → global, others → project-scoped). Use the scope parameter to override the automatic assignment.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
@@ -159,7 +159,7 @@ const TOOL_DEFINITIONS = [
 				scope: {
 					type: "string",
 					description:
-						'Explicit scope override. Default: auto-assigned based on category (preference/fact → global, others → current project).',
+						'Explicit scope override. Omit to auto-assign based on category (preference/fact → global, others → current project). Use "global" to force global scope.',
 				},
 			},
 			required: ["content", "category"],
@@ -168,7 +168,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_recent",
 		description:
-			"Retrieve the most recent memories from Randal's long-term memory, sorted by timestamp descending.",
+			"Retrieve the most recent memories from Randal's long-term memory, sorted by timestamp descending. Returns recent memories across all scopes.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
