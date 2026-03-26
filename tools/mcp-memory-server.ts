@@ -25,8 +25,8 @@
  *   SUMMARY_MODEL        — LLM model for chat summaries (default: anthropic/claude-haiku-3)
  */
 
-import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { MeilisearchStore, MessageManager } from "@randal/memory";
 import type { EmbedderConfig, SummaryGeneratorOptions } from "@randal/memory";
 
@@ -103,13 +103,12 @@ const messageManagerConfig = {
 	},
 };
 
-const summaryGeneratorConfig: SummaryGeneratorOptions | undefined =
-	OPENROUTER_API_KEY
-		? {
-				apiKey: OPENROUTER_API_KEY,
-				model: SUMMARY_MODEL,
-			}
-		: undefined;
+const summaryGeneratorConfig: SummaryGeneratorOptions | undefined = OPENROUTER_API_KEY
+	? {
+			apiKey: OPENROUTER_API_KEY,
+			model: SUMMARY_MODEL,
+		}
+	: undefined;
 
 const messageManager = new MessageManager({
 	// biome-ignore lint/suspicious/noExplicitAny: Partial RandalConfig — only memory.url, memory.apiKey, name are read
@@ -193,8 +192,7 @@ const TOOL_DEFINITIONS = [
 				},
 				source: {
 					type: "string",
-					description:
-						'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
+					description: 'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
 				},
 				scope: {
 					type: "string",
@@ -258,8 +256,7 @@ const TOOL_DEFINITIONS = [
 				},
 				limit: {
 					type: "number",
-					description:
-						"Maximum number of messages to return (default 50)",
+					description: "Maximum number of messages to return (default 50)",
 				},
 			},
 			required: ["threadId"],
@@ -293,8 +290,7 @@ const TOOL_DEFINITIONS = [
 				},
 				speaker: {
 					type: "string",
-					description:
-						'Who said it: "user", "randal", or "agent:<name>" (default: "randal")',
+					description: 'Who said it: "user", "randal", or "agent:<name>" (default: "randal")',
 				},
 				threadId: {
 					type: "string",
@@ -303,13 +299,11 @@ const TOOL_DEFINITIONS = [
 				},
 				scope: {
 					type: "string",
-					description:
-						"Scope for this message. Omit for auto-detected project scope.",
+					description: "Scope for this message. Omit for auto-detected project scope.",
 				},
 				channel: {
 					type: "string",
-					description:
-						'Channel identifier (default: "opencode")',
+					description: 'Channel identifier (default: "opencode")',
 				},
 			},
 			required: ["content"],
@@ -855,7 +849,10 @@ async function main(): Promise<void> {
 	try {
 		await store.init();
 		storeAvailable = true;
-		log("info", `Store initialized at ${MEILI_URL} (embedder: ${embedder ? "openrouter" : "none"})`);
+		log(
+			"info",
+			`Store initialized at ${MEILI_URL} (embedder: ${embedder ? "openrouter" : "none"})`,
+		);
 	} catch (err) {
 		storeAvailable = false;
 		log(

@@ -52,8 +52,7 @@ export class MessageManager {
 		this.indexName = options.indexName ?? `messages-${options.config.name}`;
 		this.embedderConfig = options.embedder;
 		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
-		this.summaryThreshold =
-			options.summaryThreshold ?? DEFAULT_SUMMARY_THRESHOLD;
+		this.summaryThreshold = options.summaryThreshold ?? DEFAULT_SUMMARY_THRESHOLD;
 		this.summaryGenerator = options.summaryGenerator
 			? new ChatSummaryGenerator(options.summaryGenerator)
 			: null;
@@ -108,9 +107,7 @@ export class MessageManager {
 				await index.updateEmbedders({
 					[EMBEDDER_NAME]: {
 						source: "rest",
-						url:
-							this.embedderConfig.url ||
-							"https://openrouter.ai/api/v1/embeddings",
+						url: this.embedderConfig.url || "https://openrouter.ai/api/v1/embeddings",
 						apiKey: this.embedderConfig.apiKey,
 						request: {
 							model: this.embedderConfig.model,
@@ -167,8 +164,7 @@ export class MessageManager {
 		// Auto-summary: track message count per thread and trigger when threshold is reached.
 		// Only for regular messages (not summaries themselves) and only if a generator is configured.
 		if (this.summaryGenerator && doc.threadId && doc.type !== "summary") {
-			const count =
-				(this.threadMessageCounts.get(doc.threadId) ?? 0) + 1;
+			const count = (this.threadMessageCounts.get(doc.threadId) ?? 0) + 1;
 			this.threadMessageCounts.set(doc.threadId, count);
 
 			if (count >= this.summaryThreshold) {
@@ -178,20 +174,12 @@ export class MessageManager {
 				// Fire-and-forget: fetch recent messages and generate a summary.
 				// Do NOT await — summary failures must not affect message storage.
 				this.thread(doc.threadId, this.summaryThreshold)
-					.then((messages) =>
-						this.generateAndStoreSummary(doc.threadId, messages),
-					)
+					.then((messages) => this.generateAndStoreSummary(doc.threadId, messages))
 					.catch((err) => {
-						this.logger.error(
-							"Auto-summary fire-and-forget failed",
-							{
-								threadId: doc.threadId,
-								error:
-									err instanceof Error
-										? err.message
-										: String(err),
-							},
-						);
+						this.logger.error("Auto-summary fire-and-forget failed", {
+							threadId: doc.threadId,
+							error: err instanceof Error ? err.message : String(err),
+						});
 					});
 			}
 		}
@@ -200,11 +188,7 @@ export class MessageManager {
 	}
 
 	/** Search messages with optional semantic/hybrid mode and scope/type filtering. */
-	async search(
-		query: string,
-		limit = 20,
-		options?: MessageSearchOptions,
-	): Promise<MessageDoc[]> {
+	async search(query: string, limit = 20, options?: MessageSearchOptions): Promise<MessageDoc[]> {
 		try {
 			const index = this.client.index(this.indexName);
 			const filters = this.buildFilters(options);
@@ -242,10 +226,7 @@ export class MessageManager {
 	 * Generate a summary from messages and store it as a summary doc in the index.
 	 * This is called internally by add() (fire-and-forget) and by endSession().
 	 */
-	private async generateAndStoreSummary(
-		threadId: string,
-		messages: MessageDoc[],
-	): Promise<void> {
+	private async generateAndStoreSummary(threadId: string, messages: MessageDoc[]): Promise<void> {
 		if (!this.summaryGenerator || messages.length === 0) return;
 
 		try {
@@ -253,8 +234,7 @@ export class MessageManager {
 			const realMessages = messages.filter((m) => m.type !== "summary");
 			if (realMessages.length === 0) return;
 
-			const { summary, topicKeywords } =
-				await this.summaryGenerator.generate(realMessages);
+			const { summary, topicKeywords } = await this.summaryGenerator.generate(realMessages);
 
 			// Derive scope and channel from the messages being summarized
 			const scope = realMessages[0]?.scope;
@@ -301,10 +281,7 @@ export class MessageManager {
 
 		try {
 			// Fetch recent messages for this thread (up to threshold * 2 to catch stragglers)
-			const messages = await this.thread(
-				threadId,
-				this.summaryThreshold * 2,
-			);
+			const messages = await this.thread(threadId, this.summaryThreshold * 2);
 
 			// Filter to only regular messages (no existing summaries)
 			const realMessages = messages.filter((m) => m.type !== "summary");

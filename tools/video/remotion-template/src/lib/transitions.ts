@@ -6,12 +6,7 @@
  */
 
 import React from "react";
-import {
-  AbsoluteFill,
-  interpolate,
-  useCurrentFrame,
-  Easing,
-} from "remotion";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import type { TransitionType } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -19,10 +14,10 @@ import type { TransitionType } from "./types";
 // ---------------------------------------------------------------------------
 
 interface TransitionProps {
-  /** Number of frames the transition lasts. */
-  durationInFrames: number;
-  /** The content being transitioned *into* (current scene). */
-  children: React.ReactNode;
+	/** Number of frames the transition lasts. */
+	durationInFrames: number;
+	/** The content being transitioned *into* (current scene). */
+	children: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,18 +25,14 @@ interface TransitionProps {
 // ---------------------------------------------------------------------------
 
 function Crossfade({ durationInFrames, children }: TransitionProps): React.ReactElement {
-  const frame = useCurrentFrame();
-  const opacity = interpolate(frame, [0, durationInFrames], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.inOut(Easing.ease),
-  });
+	const frame = useCurrentFrame();
+	const opacity = interpolate(frame, [0, durationInFrames], [0, 1], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+		easing: Easing.inOut(Easing.ease),
+	});
 
-  return React.createElement(
-    AbsoluteFill,
-    { style: { opacity } },
-    children,
-  );
+	return React.createElement(AbsoluteFill, { style: { opacity } }, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -49,18 +40,18 @@ function Crossfade({ durationInFrames, children }: TransitionProps): React.React
 // ---------------------------------------------------------------------------
 
 function SlideLeft({ durationInFrames, children }: TransitionProps): React.ReactElement {
-  const frame = useCurrentFrame();
-  const translateX = interpolate(frame, [0, durationInFrames], [100, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
+	const frame = useCurrentFrame();
+	const translateX = interpolate(frame, [0, durationInFrames], [100, 0], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+		easing: Easing.out(Easing.cubic),
+	});
 
-  return React.createElement(
-    AbsoluteFill,
-    { style: { transform: `translateX(${translateX}%)` } },
-    children,
-  );
+	return React.createElement(
+		AbsoluteFill,
+		{ style: { transform: `translateX(${translateX}%)` } },
+		children,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -68,18 +59,18 @@ function SlideLeft({ durationInFrames, children }: TransitionProps): React.React
 // ---------------------------------------------------------------------------
 
 function SlideRight({ durationInFrames, children }: TransitionProps): React.ReactElement {
-  const frame = useCurrentFrame();
-  const translateX = interpolate(frame, [0, durationInFrames], [-100, 0], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
+	const frame = useCurrentFrame();
+	const translateX = interpolate(frame, [0, durationInFrames], [-100, 0], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+		easing: Easing.out(Easing.cubic),
+	});
 
-  return React.createElement(
-    AbsoluteFill,
-    { style: { transform: `translateX(${translateX}%)` } },
-    children,
-  );
+	return React.createElement(
+		AbsoluteFill,
+		{ style: { transform: `translateX(${translateX}%)` } },
+		children,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,22 +78,22 @@ function SlideRight({ durationInFrames, children }: TransitionProps): React.Reac
 // ---------------------------------------------------------------------------
 
 function ZoomIn({ durationInFrames, children }: TransitionProps): React.ReactElement {
-  const frame = useCurrentFrame();
-  const scale = interpolate(frame, [0, durationInFrames], [0.5, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.out(Easing.cubic),
-  });
-  const opacity = interpolate(frame, [0, durationInFrames], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
+	const frame = useCurrentFrame();
+	const scale = interpolate(frame, [0, durationInFrames], [0.5, 1], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+		easing: Easing.out(Easing.cubic),
+	});
+	const opacity = interpolate(frame, [0, durationInFrames], [0, 1], {
+		extrapolateLeft: "clamp",
+		extrapolateRight: "clamp",
+	});
 
-  return React.createElement(
-    AbsoluteFill,
-    { style: { transform: `scale(${scale})`, opacity } },
-    children,
-  );
+	return React.createElement(
+		AbsoluteFill,
+		{ style: { transform: `scale(${scale})`, opacity } },
+		children,
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -110,32 +101,27 @@ function ZoomIn({ durationInFrames, children }: TransitionProps): React.ReactEle
 // ---------------------------------------------------------------------------
 
 function Cut({ children }: TransitionProps): React.ReactElement {
-  return React.createElement(AbsoluteFill, null, children);
+	return React.createElement(AbsoluteFill, null, children);
 }
 
 // ---------------------------------------------------------------------------
 // Registry / factory
 // ---------------------------------------------------------------------------
 
-const TRANSITION_MAP: Record<
-  TransitionType,
-  React.ComponentType<TransitionProps>
-> = {
-  crossfade: Crossfade,
-  "slide-left": SlideLeft,
-  "slide-right": SlideRight,
-  "zoom-in": ZoomIn,
-  cut: Cut,
+const TRANSITION_MAP: Record<TransitionType, React.ComponentType<TransitionProps>> = {
+	crossfade: Crossfade,
+	"slide-left": SlideLeft,
+	"slide-right": SlideRight,
+	"zoom-in": ZoomIn,
+	cut: Cut,
 };
 
 /**
  * Return the React component for a given transition type.
  * Falls back to `Cut` for unknown types (defensive).
  */
-export function getTransitionComponent(
-  type: TransitionType,
-): React.ComponentType<TransitionProps> {
-  return TRANSITION_MAP[type] ?? Cut;
+export function getTransitionComponent(type: TransitionType): React.ComponentType<TransitionProps> {
+	return TRANSITION_MAP[type] ?? Cut;
 }
 
 export { Crossfade, SlideLeft, SlideRight, ZoomIn, Cut };

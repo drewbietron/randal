@@ -59,14 +59,12 @@ function createMockIndex() {
  * Retrieve a recorded call by method name and index. Throws if not found,
  * so tests get a clear error rather than an undefined access.
  */
-function getCall(
-	calls: Record<string, unknown[][]>,
-	method: string,
-	index = 0,
-): unknown[] {
+function getCall(calls: Record<string, unknown[][]>, method: string, index = 0): unknown[] {
 	const list = calls[method];
 	if (!list || list.length <= index) {
-		throw new Error(`Expected call ${method}[${index}] but only ${list?.length ?? 0} calls recorded`);
+		throw new Error(
+			`Expected call ${method}[${index}] but only ${list?.length ?? 0} calls recorded`,
+		);
 	}
 	return list[index];
 }
@@ -483,9 +481,7 @@ describe("MeilisearchStore.index()", () => {
 		expect(docs[0].id).toBeDefined();
 		expect(typeof docs[0].id).toBe("string");
 		// UUID format: 8-4-4-4-12 hex characters
-		expect(docs[0].id).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-		);
+		expect(docs[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 	});
 });
 

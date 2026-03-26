@@ -1,20 +1,20 @@
 {
-  "name": "@randal/video-tool",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Video generation tool for Randal — image gen (OpenRouter), video gen (Veo), composition (Remotion)",
-  "type": "module",
-  "main": "lib/index.ts",
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "zod": "^3.24.0"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.2.0",
-    "typescript": "^5.7.0"
-  }
+	"name": "@randal/video-tool",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Video generation tool for Randal — image gen (OpenRouter), video gen (Veo), composition (Remotion)",
+	"type": "module",
+	"main": "lib/index.ts",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.12.0",
+		"zod": "^3.24.0"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.2.0",
+		"typescript": "^5.7.0"
+	}
 }

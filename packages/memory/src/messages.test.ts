@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { MessageDoc } from "@randal/core";
 import { parseConfig } from "@randal/core";
 import { MessageManager } from "./messages.js";
-import type { MessageManagerOptions, MessageSearchOptions } from "./messages.js";
+import type { MessageManagerOptions } from "./messages.js";
 
 // ---------------------------------------------------------------------------
 // Mock Meilisearch index
@@ -56,11 +56,7 @@ function createMockIndex() {
 	return mockIndex;
 }
 
-function getCall(
-	calls: Record<string, unknown[][]>,
-	method: string,
-	index = 0,
-): unknown[] {
+function getCall(calls: Record<string, unknown[][]>, method: string, index = 0): unknown[] {
 	const list = calls[method];
 	if (!list || list.length <= index) {
 		throw new Error(
@@ -70,10 +66,7 @@ function getCall(
 	return list[index];
 }
 
-function getLastCall(
-	calls: Record<string, unknown[][]>,
-	method: string,
-): unknown[] {
+function getLastCall(calls: Record<string, unknown[][]>, method: string): unknown[] {
 	const list = calls[method];
 	if (!list || list.length === 0) {
 		throw new Error(`Expected at least one call to ${method}`);
@@ -85,9 +78,7 @@ function getLastCall(
 // Helper: create a MessageManager wired to a mock Meilisearch
 // ---------------------------------------------------------------------------
 
-function createManagerWithMock(
-	overrides: Partial<MessageManagerOptions> = {},
-) {
+function createManagerWithMock(overrides: Partial<MessageManagerOptions> = {}) {
 	const config = parseConfig(`
 name: test
 runner:
@@ -113,9 +104,7 @@ runner:
 }
 
 /** Helper to make a minimal MessageDoc (without id — for add()). */
-function makeMessage(
-	overrides: Partial<Omit<MessageDoc, "id">> = {},
-): Omit<MessageDoc, "id"> {
+function makeMessage(overrides: Partial<Omit<MessageDoc, "id">> = {}): Omit<MessageDoc, "id"> {
 	return {
 		threadId: "thread-1",
 		speaker: "user",
@@ -141,10 +130,7 @@ describe("MessageManager.init()", () => {
 		expect(mockIdx.updateSortableAttributes).toHaveBeenCalledTimes(1);
 
 		// Verify filterable includes scope and type
-		const filterableCall = getCall(
-			mockIdx._calls,
-			"updateFilterableAttributes",
-		);
+		const filterableCall = getCall(mockIdx._calls, "updateFilterableAttributes");
 		const attrs = filterableCall[0] as string[];
 		expect(attrs).toContain("scope");
 		expect(attrs).toContain("type");
@@ -167,10 +153,7 @@ describe("MessageManager.init()", () => {
 
 		const embedderCall = getCall(mockIdx._calls, "updateEmbedders");
 		const embeddersArg = embedderCall[0] as Record<string, unknown>;
-		const chatEmbedder = embeddersArg["chat-embedder"] as Record<
-			string,
-			unknown
-		>;
+		const chatEmbedder = embeddersArg["chat-embedder"] as Record<string, unknown>;
 		expect(chatEmbedder).toBeDefined();
 		expect(chatEmbedder.source).toBe("rest");
 		expect(chatEmbedder.apiKey).toBe("sk-or-test-key");
@@ -303,9 +286,7 @@ describe("MessageManager.search()", () => {
 
 		const lastCall = getLastCall(mockIdx._calls, "search");
 		const searchOpts = lastCall[1] as Record<string, unknown>;
-		expect(searchOpts.filter).toBe(
-			'scope = "project:/Users/drewbie/dev/randal"',
-		);
+		expect(searchOpts.filter).toBe('scope = "project:/Users/drewbie/dev/randal"');
 	});
 
 	test("applies type filter correctly", async () => {
@@ -334,9 +315,7 @@ describe("MessageManager.search()", () => {
 
 		const lastCall = getLastCall(mockIdx._calls, "search");
 		const searchOpts = lastCall[1] as Record<string, unknown>;
-		expect(searchOpts.filter).toBe(
-			'scope = "project:/my/repo" AND type = "message"',
-		);
+		expect(searchOpts.filter).toBe('scope = "project:/my/repo" AND type = "message"');
 	});
 
 	test("no filter when no options provided", async () => {
@@ -371,9 +350,7 @@ describe("MessageManager.search()", () => {
 
 		const results = await manager.search("auth", 10);
 		expect(results).toHaveLength(1);
-		expect((results[0] as unknown as Record<string, unknown>).content).toBe(
-			"Discuss auth flow",
-		);
+		expect((results[0] as unknown as Record<string, unknown>).content).toBe("Discuss auth flow");
 	});
 });
 
@@ -390,9 +367,7 @@ describe("MessageManager.add()", () => {
 
 		expect(id).toBeDefined();
 		expect(typeof id).toBe("string");
-		expect(id).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-		);
+		expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 	});
 
 	test("calls addDocuments on the index", async () => {
@@ -476,16 +451,15 @@ describe("MessageManager.add()", () => {
 		// Summary takes a long time
 		const slowGenerate = mock(
 			async () =>
-				new Promise<{ summary: string; topicKeywords: string[] }>(
-					(resolve) =>
-						setTimeout(
-							() =>
-								resolve({
-									summary: "slow summary",
-									topicKeywords: [],
-								}),
-							500,
-						),
+				new Promise<{ summary: string; topicKeywords: string[] }>((resolve) =>
+					setTimeout(
+						() =>
+							resolve({
+								summary: "slow summary",
+								topicKeywords: [],
+							}),
+						500,
+					),
 				),
 		);
 
@@ -513,9 +487,7 @@ describe("MessageManager.add()", () => {
 		});
 
 		const start = Date.now();
-		await manager.add(
-			makeMessage({ threadId: "thread-1", content: "trigger" }),
-		);
+		await manager.add(makeMessage({ threadId: "thread-1", content: "trigger" }));
 		const elapsed = Date.now() - start;
 
 		// add() should return near-instantly, NOT wait 500ms for summary
@@ -633,10 +605,7 @@ describe("MessageManager.endSession()", () => {
 		await manager.add(makeMessage({ threadId: "thread-1" }));
 
 		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
-		const counters = (manager as any).threadMessageCounts as Map<
-			string,
-			number
-		>;
+		const counters = (manager as any).threadMessageCounts as Map<string, number>;
 		expect(counters.get("thread-1")).toBe(2);
 
 		mockIdx._setSearchResults({ hits: [] }); // Empty thread for endSession

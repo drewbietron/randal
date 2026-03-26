@@ -114,17 +114,13 @@ export class ChatSummaryGenerator {
 
 			const content = data?.choices?.[0]?.message?.content;
 			if (typeof content !== "string" || content.length === 0) {
-				throw new Error(
-					`OpenRouter returned empty or invalid content: ${JSON.stringify(data)}`,
-				);
+				throw new Error(`OpenRouter returned empty or invalid content: ${JSON.stringify(data)}`);
 			}
 
 			return content;
 		} catch (err) {
 			if (err instanceof DOMException && err.name === "AbortError") {
-				throw new Error(
-					`OpenRouter API request timed out after ${this.timeoutMs}ms`,
-				);
+				throw new Error(`OpenRouter API request timed out after ${this.timeoutMs}ms`);
 			}
 			throw err;
 		} finally {
@@ -135,7 +131,10 @@ export class ChatSummaryGenerator {
 	/** Parse the LLM's JSON response into a GeneratedSummary. */
 	private parseResponse(raw: string): GeneratedSummary {
 		// Strip markdown code fences if the model wraps them
-		const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+		const cleaned = raw
+			.replace(/^```(?:json)?\s*/i, "")
+			.replace(/\s*```$/i, "")
+			.trim();
 
 		let parsed: unknown;
 		try {

@@ -7,9 +7,7 @@ import { ChatSummaryGenerator } from "./summaries.js";
 // ---------------------------------------------------------------------------
 
 /** Create a minimal MessageDoc for testing. */
-function makeMsg(
-	overrides: Partial<MessageDoc> = {},
-): MessageDoc {
+function makeMsg(overrides: Partial<MessageDoc> = {}): MessageDoc {
 	return {
 		id: `msg-${Math.random().toString(36).slice(2)}`,
 		threadId: "thread-1",
@@ -87,9 +85,7 @@ function createGenerator(
 
 describe("ChatSummaryGenerator constructor", () => {
 	test("throws when apiKey is missing", () => {
-		expect(() => new ChatSummaryGenerator({ apiKey: "" })).toThrow(
-			"requires an apiKey",
-		);
+		expect(() => new ChatSummaryGenerator({ apiKey: "" })).toThrow("requires an apiKey");
 	});
 
 	test("accepts valid config", () => {
@@ -104,9 +100,7 @@ describe("ChatSummaryGenerator constructor", () => {
 
 describe("ChatSummaryGenerator.generate()", () => {
 	test("calls OpenRouter with correct model and prompt", async () => {
-		const fetchMock = mock(async () =>
-			mockFetchResponse(VALID_RESPONSE),
-		);
+		const fetchMock = mock(async () => mockFetchResponse(VALID_RESPONSE));
 		globalThis.fetch = fetchMock;
 
 		const gen = createGenerator({ model: "anthropic/claude-haiku-3" });
@@ -122,9 +116,7 @@ describe("ChatSummaryGenerator.generate()", () => {
 
 		const callArgs = fetchMock.mock.calls[0];
 		const url = callArgs[0] as string;
-		expect(url).toBe(
-			"https://openrouter.ai/api/v1/chat/completions",
-		);
+		expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
 
 		const opts = callArgs[1] as RequestInit;
 		expect(opts.method).toBe("POST");
@@ -142,56 +134,39 @@ describe("ChatSummaryGenerator.generate()", () => {
 	});
 
 	test("returns parsed summary and keywords", async () => {
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse(VALID_RESPONSE),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse(VALID_RESPONSE));
 
 		const gen = createGenerator();
-		const result = await gen.generate([
-			makeMsg({ content: "Testing summary" }),
-		]);
+		const result = await gen.generate([makeMsg({ content: "Testing summary" })]);
 
-		expect(result.summary).toBe(
-			"Discussed authentication flow and decided to use JWT tokens.",
-		);
-		expect(result.topicKeywords).toEqual([
-			"authentication",
-			"JWT",
-			"tokens",
-			"security",
-		]);
+		expect(result.summary).toBe("Discussed authentication flow and decided to use JWT tokens.");
+		expect(result.topicKeywords).toEqual(["authentication", "JWT", "tokens", "security"]);
 	});
 
 	test("handles empty input gracefully (throws)", async () => {
 		const gen = createGenerator();
 
-		expect(gen.generate([])).rejects.toThrow(
-			"Cannot generate summary from empty message array",
-		);
+		expect(gen.generate([])).rejects.toThrow("Cannot generate summary from empty message array");
 	});
 
 	test("handles API errors gracefully (non-200)", async () => {
-		globalThis.fetch = mock(async () =>
-			mockFetchErrorResponse(429, "Rate limited"),
-		);
+		globalThis.fetch = mock(async () => mockFetchErrorResponse(429, "Rate limited"));
 
 		const gen = createGenerator();
 
-		expect(
-			gen.generate([makeMsg({ content: "test" })]),
-		).rejects.toThrow("OpenRouter API error: 429");
+		expect(gen.generate([makeMsg({ content: "test" })])).rejects.toThrow(
+			"OpenRouter API error: 429",
+		);
 	});
 
 	test("handles malformed JSON response", async () => {
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse("This is not JSON at all"),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse("This is not JSON at all"));
 
 		const gen = createGenerator();
 
-		expect(
-			gen.generate([makeMsg({ content: "test" })]),
-		).rejects.toThrow("Invalid JSON in summary response");
+		expect(gen.generate([makeMsg({ content: "test" })])).rejects.toThrow(
+			"Invalid JSON in summary response",
+		);
 	});
 
 	test("handles response missing required fields", async () => {
@@ -199,15 +174,11 @@ describe("ChatSummaryGenerator.generate()", () => {
 			summary: "Has summary but no keywords",
 		});
 
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse(incompleteResponse),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse(incompleteResponse));
 
 		const gen = createGenerator();
 
-		expect(
-			gen.generate([makeMsg({ content: "test" })]),
-		).rejects.toThrow("missing required fields");
+		expect(gen.generate([makeMsg({ content: "test" })])).rejects.toThrow("missing required fields");
 	});
 
 	test("handles response with empty summary string", async () => {
@@ -216,29 +187,23 @@ describe("ChatSummaryGenerator.generate()", () => {
 			topicKeywords: ["keyword"],
 		});
 
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse(emptyResponse),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse(emptyResponse));
 
 		const gen = createGenerator();
 
-		expect(
-			gen.generate([makeMsg({ content: "test" })]),
-		).rejects.toThrow("empty or non-string 'summary' field");
+		expect(gen.generate([makeMsg({ content: "test" })])).rejects.toThrow(
+			"empty or non-string 'summary' field",
+		);
 	});
 
 	test("strips markdown code fences from response", async () => {
 		const wrappedResponse = `\`\`\`json\n${VALID_RESPONSE}\n\`\`\``;
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse(wrappedResponse),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse(wrappedResponse));
 
 		const gen = createGenerator();
 		const result = await gen.generate([makeMsg({ content: "test" })]);
 
-		expect(result.summary).toBe(
-			"Discussed authentication flow and decided to use JWT tokens.",
-		);
+		expect(result.summary).toBe("Discussed authentication flow and decided to use JWT tokens.");
 	});
 
 	test("respects timeout", async () => {
@@ -266,9 +231,7 @@ describe("ChatSummaryGenerator.generate()", () => {
 	});
 
 	test("uses custom base URL when provided", async () => {
-		const fetchMock = mock(async () =>
-			mockFetchResponse(VALID_RESPONSE),
-		);
+		const fetchMock = mock(async () => mockFetchResponse(VALID_RESPONSE));
 		globalThis.fetch = fetchMock;
 
 		const gen = createGenerator({
@@ -279,15 +242,11 @@ describe("ChatSummaryGenerator.generate()", () => {
 
 		const callArgs = fetchMock.mock.calls[0];
 		const url = callArgs[0] as string;
-		expect(url).toBe(
-			"https://custom-api.example.com/v1/chat/completions",
-		);
+		expect(url).toBe("https://custom-api.example.com/v1/chat/completions");
 	});
 
 	test("uses default model when not specified", async () => {
-		const fetchMock = mock(async () =>
-			mockFetchResponse(VALID_RESPONSE),
-		);
+		const fetchMock = mock(async () => mockFetchResponse(VALID_RESPONSE));
 		globalThis.fetch = fetchMock;
 
 		const gen = createGenerator(); // No model specified
@@ -302,23 +261,24 @@ describe("ChatSummaryGenerator.generate()", () => {
 
 	test("handles empty content from LLM response", async () => {
 		// LLM returns no content
-		globalThis.fetch = mock(async () =>
-			new Response(
-				JSON.stringify({
-					choices: [{ message: { content: "" } }],
-				}),
-				{
-					status: 200,
-					headers: { "Content-Type": "application/json" },
-				},
-			),
+		globalThis.fetch = mock(
+			async () =>
+				new Response(
+					JSON.stringify({
+						choices: [{ message: { content: "" } }],
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
 		);
 
 		const gen = createGenerator();
 
-		expect(
-			gen.generate([makeMsg({ content: "test" })]),
-		).rejects.toThrow("empty or invalid content");
+		expect(gen.generate([makeMsg({ content: "test" })])).rejects.toThrow(
+			"empty or invalid content",
+		);
 	});
 
 	test("filters out non-string topic keywords", async () => {
@@ -327,9 +287,7 @@ describe("ChatSummaryGenerator.generate()", () => {
 			topicKeywords: ["valid", 123, null, "", "also-valid"],
 		});
 
-		globalThis.fetch = mock(async () =>
-			mockFetchResponse(responseWithBadKeywords),
-		);
+		globalThis.fetch = mock(async () => mockFetchResponse(responseWithBadKeywords));
 
 		const gen = createGenerator();
 		const result = await gen.generate([makeMsg({ content: "test" })]);

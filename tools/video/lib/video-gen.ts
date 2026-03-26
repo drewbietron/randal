@@ -9,10 +9,7 @@
  */
 
 import { getProvider } from "./providers/registry";
-import type {
-  GenerateClipOptions,
-  GenerateClipResult,
-} from "./providers/types";
+import type { GenerateClipOptions, GenerateClipResult } from "./providers/types";
 import { VideoProviderError } from "./providers/types";
 
 // ---------------------------------------------------------------------------
@@ -35,25 +32,23 @@ export type VeoDuration = 4 | 6 | 8;
  * @deprecated Use provider-specific model types instead.
  * Kept for backward compatibility.
  */
-export type VeoModel =
-  | "veo-3.0-generate-001"
-  | "veo-3.1-generate-preview";
+export type VeoModel = "veo-3.0-generate-001" | "veo-3.1-generate-preview";
 
 /**
  * @deprecated Use `GenerateClipOptions` from `./providers/types` instead.
  * Kept for backward compatibility — maps to the new provider options.
  */
 export interface VideoGenerationOptions {
-  duration?: VeoDuration;
-  aspectRatio?: VeoAspectRatio;
-  referenceImage?: Buffer;
-  referenceImageMimeType?: string;
-  model?: VeoModel;
-  resolution?: "720p" | "1080p";
-  sampleCount?: number;
-  timeoutMs?: number;
-  pollIntervalMs?: number;
-  apiBaseUrl?: string;
+	duration?: VeoDuration;
+	aspectRatio?: VeoAspectRatio;
+	referenceImage?: Buffer;
+	referenceImageMimeType?: string;
+	model?: VeoModel;
+	resolution?: "720p" | "1080p";
+	sampleCount?: number;
+	timeoutMs?: number;
+	pollIntervalMs?: number;
+	apiBaseUrl?: string;
 }
 
 /**
@@ -61,11 +56,11 @@ export interface VideoGenerationOptions {
  * Kept for backward compatibility.
  */
 export interface VideoGenerationResult {
-  buffer: Buffer;
-  mimeType: string;
-  model: string;
-  prompt: string;
-  operationName: string;
+	buffer: Buffer;
+	mimeType: string;
+	model: string;
+	prompt: string;
+	operationName: string;
 }
 
 /**
@@ -73,28 +68,28 @@ export interface VideoGenerationResult {
  * Kept for backward compatibility — re-exported as an alias.
  */
 export class VideoGenerationError extends Error {
-  constructor(
-    message: string,
-    public readonly code: VideoGenerationErrorCode,
-    public readonly statusCode?: number,
-    public readonly operationName?: string,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = "VideoGenerationError";
-  }
+	constructor(
+		message: string,
+		public readonly code: VideoGenerationErrorCode,
+		public readonly statusCode?: number,
+		public readonly operationName?: string,
+		public readonly cause?: unknown,
+	) {
+		super(message);
+		this.name = "VideoGenerationError";
+	}
 }
 
 export type VideoGenerationErrorCode =
-  | "MISSING_API_KEY"
-  | "RATE_LIMITED"
-  | "CONTENT_POLICY"
-  | "INVALID_RESPONSE"
-  | "NETWORK_ERROR"
-  | "API_ERROR"
-  | "TIMEOUT"
-  | "OPERATION_FAILED"
-  | "NO_VIDEO_IN_RESPONSE";
+	| "MISSING_API_KEY"
+	| "RATE_LIMITED"
+	| "CONTENT_POLICY"
+	| "INVALID_RESPONSE"
+	| "NETWORK_ERROR"
+	| "API_ERROR"
+	| "TIMEOUT"
+	| "OPERATION_FAILED"
+	| "NO_VIDEO_IN_RESPONSE";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -139,50 +134,48 @@ export type VideoGenerationErrorCode =
  * ```
  */
 export async function generateVideoClip(
-  prompt: string,
-  options?: (GenerateClipOptions | VideoGenerationOptions) & { provider?: string },
+	prompt: string,
+	options?: (GenerateClipOptions | VideoGenerationOptions) & { provider?: string },
 ): Promise<GenerateClipResult> {
-  const providerName = options?.provider;
-  const provider = getProvider(providerName);
+	const providerName = options?.provider;
+	const provider = getProvider(providerName);
 
-  // Map old-style VideoGenerationOptions to GenerateClipOptions
-  const clipOptions: GenerateClipOptions = {
-    duration: options?.duration,
-    aspectRatio: options?.aspectRatio,
-    referenceImage: options?.referenceImage,
-    referenceImageMimeType: options?.referenceImageMimeType,
-    resolution: options?.resolution,
-    sampleCount: options?.sampleCount,
-    timeoutMs: options?.timeoutMs,
-    pollIntervalMs: options?.pollIntervalMs,
-  };
+	// Map old-style VideoGenerationOptions to GenerateClipOptions
+	const clipOptions: GenerateClipOptions = {
+		duration: options?.duration,
+		aspectRatio: options?.aspectRatio,
+		referenceImage: options?.referenceImage,
+		referenceImageMimeType: options?.referenceImageMimeType,
+		resolution: options?.resolution,
+		sampleCount: options?.sampleCount,
+		timeoutMs: options?.timeoutMs,
+		pollIntervalMs: options?.pollIntervalMs,
+	};
 
-  // Pass Veo-specific options through providerOptions
-  const legacyOptions = options as VideoGenerationOptions | undefined;
-  if (legacyOptions?.model || legacyOptions?.apiBaseUrl) {
-    clipOptions.providerOptions = {
-      ...(legacyOptions.model ? { model: legacyOptions.model } : {}),
-      ...(legacyOptions.apiBaseUrl
-        ? { apiBaseUrl: legacyOptions.apiBaseUrl }
-        : {}),
-    };
-  }
+	// Pass Veo-specific options through providerOptions
+	const legacyOptions = options as VideoGenerationOptions | undefined;
+	if (legacyOptions?.model || legacyOptions?.apiBaseUrl) {
+		clipOptions.providerOptions = {
+			...(legacyOptions.model ? { model: legacyOptions.model } : {}),
+			...(legacyOptions.apiBaseUrl ? { apiBaseUrl: legacyOptions.apiBaseUrl } : {}),
+		};
+	}
 
-  try {
-    return await provider.generateClip(prompt, clipOptions);
-  } catch (error) {
-    // Wrap VideoProviderError as VideoGenerationError for backward compatibility
-    if (error instanceof VideoProviderError) {
-      throw new VideoGenerationError(
-        error.message,
-        error.code as VideoGenerationErrorCode,
-        error.statusCode,
-        (error as unknown as Record<string, unknown>).operationName as string | undefined,
-        error.cause,
-      );
-    }
-    throw error;
-  }
+	try {
+		return await provider.generateClip(prompt, clipOptions);
+	} catch (error) {
+		// Wrap VideoProviderError as VideoGenerationError for backward compatibility
+		if (error instanceof VideoProviderError) {
+			throw new VideoGenerationError(
+				error.message,
+				error.code as VideoGenerationErrorCode,
+				error.statusCode,
+				(error as unknown as Record<string, unknown>).operationName as string | undefined,
+				error.cause,
+			);
+		}
+		throw error;
+	}
 }
 
 /**
@@ -192,55 +185,53 @@ export async function generateVideoClip(
  * For new code, access the provider directly.
  */
 export async function checkOperationStatus(
-  operationName: string,
-  options: { apiBaseUrl?: string } = {},
+	operationName: string,
+	options: { apiBaseUrl?: string } = {},
 ): Promise<{
-  done: boolean;
-  error?: { code: number; message: string };
-  metadata?: Record<string, unknown>;
+	done: boolean;
+	error?: { code: number; message: string };
+	metadata?: Record<string, unknown>;
 }> {
-  const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
-  if (!apiKey || apiKey.trim() === "") {
-    throw new VideoGenerationError(
-      "GOOGLE_AI_STUDIO_KEY environment variable is not set or empty.",
-      "MISSING_API_KEY",
-    );
-  }
+	const apiKey = process.env.GOOGLE_AI_STUDIO_KEY;
+	if (!apiKey || apiKey.trim() === "") {
+		throw new VideoGenerationError(
+			"GOOGLE_AI_STUDIO_KEY environment variable is not set or empty.",
+			"MISSING_API_KEY",
+		);
+	}
 
-  const apiBase =
-    options.apiBaseUrl ??
-    "https://generativelanguage.googleapis.com/v1beta";
+	const apiBase = options.apiBaseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
 
-  const operationPath = operationName.startsWith("operations/")
-    ? operationName
-    : `operations/${operationName}`;
-  const url = `${apiBase}/${operationPath}`;
+	const operationPath = operationName.startsWith("operations/")
+		? operationName
+		: `operations/${operationName}`;
+	const url = `${apiBase}/${operationPath}`;
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-goog-api-key": apiKey.trim(),
-    },
-  });
+	const response = await fetch(url, {
+		method: "GET",
+		headers: {
+			"x-goog-api-key": apiKey.trim(),
+		},
+	});
 
-  if (!response.ok) {
-    throw new VideoGenerationError(
-      `Failed to check operation status: HTTP ${response.status}`,
-      "API_ERROR",
-      response.status,
-      operationName,
-    );
-  }
+	if (!response.ok) {
+		throw new VideoGenerationError(
+			`Failed to check operation status: HTTP ${response.status}`,
+			"API_ERROR",
+			response.status,
+			operationName,
+		);
+	}
 
-  const body = (await response.json()) as {
-    done?: boolean;
-    error?: { code: number; message: string };
-    metadata?: Record<string, unknown>;
-  };
+	const body = (await response.json()) as {
+		done?: boolean;
+		error?: { code: number; message: string };
+		metadata?: Record<string, unknown>;
+	};
 
-  return {
-    done: body.done ?? false,
-    error: body.error,
-    metadata: body.metadata,
-  };
+	return {
+		done: body.done ?? false,
+		error: body.error,
+		metadata: body.metadata,
+	};
 }

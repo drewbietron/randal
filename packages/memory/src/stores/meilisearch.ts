@@ -77,9 +77,7 @@ export class MeilisearchStore implements MemoryStore {
 				await index.updateEmbedders({
 					[EMBEDDER_NAME]: {
 						source: "rest",
-						url:
-							this.embedderConfig.url ||
-							"https://openrouter.ai/api/v1/embeddings",
+						url: this.embedderConfig.url || "https://openrouter.ai/api/v1/embeddings",
 						apiKey: this.embedderConfig.apiKey,
 						request: {
 							model: this.embedderConfig.model,
@@ -109,11 +107,7 @@ export class MeilisearchStore implements MemoryStore {
 		}
 	}
 
-	async search(
-		query: string,
-		limit: number,
-		options?: MemorySearchOptions,
-	): Promise<MemoryDoc[]> {
+	async search(query: string, limit: number, options?: MemorySearchOptions): Promise<MemoryDoc[]> {
 		try {
 			const index = this.client.index(this.indexName);
 			const scopeFilter = this.buildScopeFilter(options?.scope);
