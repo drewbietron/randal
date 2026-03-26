@@ -203,6 +203,12 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 
 1. **Get the context budget**: Call `model_context`. Extract `budget.build_steps_per_invocation`.
 
+1.1. **Read context strategy**: From the `model_context` response, extract `context_strategy` and `session_length`.
+   - If `context_strategy` is `"compact"` and a `task_id` exists in loop-state: Prefer warm resume via `task_id`. The model can handle compacted context from prior turns.
+   - If `context_strategy` is `"reset"`: Always dispatch fresh sessions. Do NOT pass `task_id` for warm resume. Each @build invocation starts clean with full context budget.
+   - If `session_length` is `"short"`: Reduce `build_steps_per_invocation` by 1 (minimum 2) to avoid context exhaustion mid-step.
+   - If `session_length` is `"long"`: Allow the default or user-specified budget. No adjustment needed.
+
 1.5. **Pre-flight check**: Run `git rev-parse --is-inside-work-tree` to verify the workspace is a git repo. If it fails, ask the user: "This directory isn't a git repo. Should I initialize one (`git init`), or skip git operations for this build?" If skipping git, instruct @build to skip branch creation and commits.
 
 2. **Check if a branch should be created**:
@@ -261,7 +267,9 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 
 6. **Update loop-state.json** with progress, save task_id for resume.
 
-   **Task ID handling**: Extract the `task_id` from the Task tool's response after each @build dispatch. Save it in the build's loop-state entry under `task_id`. When re-invoking @build, if a `task_id` exists in loop-state, pass it to the Task tool for warm resume (continues the same subagent session with previous context). If no `task_id` exists or the session has expired, start a fresh session.
+   **Task ID handling**: Extract the `task_id` from the Task tool's response after each @build dispatch. Save it in the build's loop-state entry under `task_id`. When re-invoking @build:
+   - If `context_strategy` is `"compact"` AND a `task_id` exists in loop-state AND the session hasn't expired: pass `task_id` for warm resume (continues the same subagent session with previous context).
+   - If `context_strategy` is `"reset"` OR no `task_id` exists OR the session expired: start a fresh session. Do not pass `task_id`.
 
 7. **Re-invoke @build** with fresh context.
 
@@ -507,10 +515,17 @@ Don't silently loop. Surface problems early.
 
 ## Capability Discovery
 
-When dispatching subagents, include capability info in the prompt:
-`Available skills: steer (GUI) ✅ · drive (terminal) ❌ · memory ✅`
-This tells @plan whether to include visual verification steps (if steer available)
-and tells @build what tools it can use.
+When dispatching subagents, probe for available capabilities and include in the prompt:
+`Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no} · playwright {yes/no}`
+
+Probing method:
+- **steer**: Check if steer skill is available (already implemented)
+- **drive**: Check if drive skill is available (already implemented)
+- **memory**: Check if memory tools respond (already implemented)
+- **playwright**: Read the project's opencode config (`.opencode/config.json` or `opencode.json`). Check if an MCP server entry contains "playwright" in its name or command. If found, playwright is available for Visual QA and Functional QA evaluator modes. If the config file doesn't exist, playwright = no.
+
+This tells @plan whether to include visual verification steps (if steer or playwright available)
+and tells @build what tools it can use for evaluation.
 
 ## Cognitive Lenses
 
