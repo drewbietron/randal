@@ -5,9 +5,10 @@ AI-powered video production primitives — generate images, create video clips, 
 ## Quick Start
 
 ```bash
-# 1. Set environment variables
-export OPENROUTER_API_KEY="your-openrouter-key"
-export GOOGLE_AI_STUDIO_KEY="your-google-ai-studio-key"
+# 1. Add API keys to the root .env file (if not already present)
+#    OPENROUTER_API_KEY=sk-or-...
+#    GOOGLE_AI_STUDIO_KEY=AI...
+#    (See .env.example for all variables)
 
 # 2. Verify ffmpeg is installed
 ffmpeg -version
@@ -232,14 +233,13 @@ The provider is now available via `generate_clip(prompt, { provider: "seeddance"
 
 ### Environment variables
 
-```bash
-# Required
-export OPENROUTER_API_KEY="sk-or-..."
-export GOOGLE_AI_STUDIO_KEY="AI..."
+API keys are stored in the **root `.env` file** and referenced in `opencode.json` via `{env:VAR}` substitution. When running tools directly (outside OpenCode), ensure the vars are in your environment:
 
-# Optional
-export VIDEO_OUTPUT_DIR="/tmp/video-gen/"  # default output directory
-```
+| Variable | Purpose | Required |
+|----------|---------|----------|
+| `OPENROUTER_API_KEY` | Image generation (Gemini 3.1 Flash via OpenRouter) | Yes |
+| `GOOGLE_AI_STUDIO_KEY` | Video generation (Veo) | Yes |
+| `VIDEO_OUTPUT_DIR` | Default output directory (default: `/tmp/video-gen/`) | No |
 
 ## File Structure
 

@@ -228,7 +228,12 @@ if [ "$MEILI_RUNNING" = true ]; then
           '{
             type: "local",
             command: [$cmd, "run", $script],
-            environment: { "MEILI_URL": $meiliUrl },
+            environment: {
+              "MEILI_URL": $meiliUrl,
+              "MEILI_MASTER_KEY": "{env:MEILI_MASTER_KEY}",
+              "OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}",
+              "SUMMARY_MODEL": "anthropic/claude-haiku-3"
+            },
             enabled: true
           }')
 
@@ -242,7 +247,12 @@ if [ "$MEILI_RUNNING" = true ]; then
         echo "    \"memory\": {"
         echo "      \"type\": \"local\","
         echo "      \"command\": [\"bun\", \"run\", \"$MCP_MEMORY_SERVER\"],"
-        echo "      \"environment\": { \"MEILI_URL\": \"$MEILI_URL\" },"
+        echo "      \"environment\": {"
+        echo "        \"MEILI_URL\": \"$MEILI_URL\","
+        echo "        \"MEILI_MASTER_KEY\": \"{env:MEILI_MASTER_KEY}\","
+        echo "        \"OPENROUTER_API_KEY\": \"{env:OPENROUTER_API_KEY}\","
+        echo "        \"SUMMARY_MODEL\": \"anthropic/claude-haiku-3\""
+        echo "      },"
         echo "      \"enabled\": true"
         echo "    }"
         echo ""

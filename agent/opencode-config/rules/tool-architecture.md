@@ -36,9 +36,11 @@ agent/opencode-config/
 - **Skills**: ALWAYS create one for every MCP capability pack. The skill teaches the agent HOW to use the tools together.
 
 ### Environment variables:
-- Configure in the MCP server's `environment` block in opencode.json
-- Never rely on shell exports for capability-specific API keys
-- Core keys (ANTHROPIC_API_KEY, OPENROUTER_API_KEY) can be in shell profile since multiple things use them
+- **All secrets** (API keys, tokens, passwords) go in the root `.env` file (gitignored)
+- In opencode.json MCP `environment` blocks, reference secrets via `{env:VAR_NAME}` substitution (e.g. `"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}"`)
+- Non-secret config values (URLs, model names, index names) can remain inline in the environment block
+- Never hardcode secret values in opencode.json — it is checked into git
+- See `.env.example` for the authoritative list of all environment variables
 
 ### Per-agent tool access:
 - Disable capability tools globally: add `"{name}_*": false` to `tools` in opencode.json
@@ -64,9 +66,10 @@ agent/opencode-config/
   "type": "local",
   "command": ["bun", "run", "/Users/drewbie/dev/randal/tools/{name}/mcp-server.ts"],
   "environment": {
-    "API_KEY_1": "value",
-    "API_KEY_2": "value"
+    "SOME_API_KEY": "{env:SOME_API_KEY}",
+    "SOME_CONFIG_VALUE": "inline-is-fine-for-non-secrets"
   },
   "enabled": true
 }
 ```
+> **Important**: Add any new secret env vars to `.env.example` when adding a capability.
