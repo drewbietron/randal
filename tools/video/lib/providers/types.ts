@@ -76,3 +76,48 @@ export class VideoProviderError extends Error {
 		this.name = "VideoProviderError";
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Image provider types
+// ---------------------------------------------------------------------------
+
+export interface GenerateImageOptions {
+	/** Desired width in pixels (hint — not all providers honour this). */
+	width?: number;
+	/** Desired height in pixels (hint — not all providers honour this). */
+	height?: number;
+	/** Style modifier appended to the prompt. */
+	style?: string;
+	/** Override the default model. */
+	model?: string;
+	/** Provider-specific options (passed through). */
+	providerOptions?: Record<string, unknown>;
+}
+
+export interface GenerateImageResult {
+	/** The raw image data. */
+	buffer: Buffer;
+	/** MIME type of the generated image (detected from bytes). */
+	mimeType: string;
+	/** The model that was actually used. */
+	model: string;
+	/** The prompt that was sent (including style modifier). */
+	prompt: string;
+	/** Provider-specific metadata. */
+	metadata?: Record<string, unknown>;
+}
+
+export interface ImageProvider {
+	/** Unique provider name (e.g. "openrouter", "replicate", "dalle") */
+	readonly name: string;
+	/** Human-readable description */
+	readonly description: string;
+	/** List of supported models */
+	readonly models: string[];
+
+	/** Generate an image from a text prompt */
+	generateImage(prompt: string, options?: GenerateImageOptions): Promise<GenerateImageResult>;
+
+	/** Check if the provider is configured (has API key, etc.) */
+	isConfigured(): boolean;
+}
