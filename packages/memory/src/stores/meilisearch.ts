@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { MemoryDoc } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
-import type { MemoryStore } from "./index.js";
+import type { MemorySearchOptions, MemoryStore } from "./index.js";
 
 export interface EmbedderConfig {
 	type: string;
@@ -21,6 +21,9 @@ export interface MeilisearchStoreOptions {
 
 const EMBEDDER_NAME = "memory-embedder";
 const DEFAULT_SEMANTIC_RATIO = 0.7;
+
+/** Categories that default to global scope (cross-project). */
+const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
 
 export class MeilisearchStore implements MemoryStore {
 	private client: MeiliSearch;
@@ -53,6 +56,7 @@ export class MeilisearchStore implements MemoryStore {
 				"file",
 				"timestamp",
 				"contentHash",
+				"scope",
 			]);
 			await index.updateSortableAttributes(["timestamp"]);
 
@@ -105,9 +109,14 @@ export class MeilisearchStore implements MemoryStore {
 		}
 	}
 
-	async search(query: string, limit: number): Promise<MemoryDoc[]> {
+	async search(
+		query: string,
+		limit: number,
+		options?: MemorySearchOptions,
+	): Promise<MemoryDoc[]> {
 		try {
 			const index = this.client.index(this.indexName);
+			const scopeFilter = this.buildScopeFilter(options?.scope);
 
 			if (this.semanticAvailable) {
 				// Hybrid search: Meilisearch uses its own relevance ranking,
@@ -118,6 +127,7 @@ export class MeilisearchStore implements MemoryStore {
 						embedder: EMBEDDER_NAME,
 						semanticRatio: this.semanticRatio,
 					},
+					...(scopeFilter ? { filter: scopeFilter } : {}),
 				});
 				return results.hits as unknown as MemoryDoc[];
 			}
@@ -126,6 +136,7 @@ export class MeilisearchStore implements MemoryStore {
 			const results = await index.search(query, {
 				limit,
 				sort: ["timestamp:desc"],
+				...(scopeFilter ? { filter: scopeFilter } : {}),
 			});
 			return results.hits as unknown as MemoryDoc[];
 		} catch (err) {
@@ -134,6 +145,26 @@ export class MeilisearchStore implements MemoryStore {
 			});
 			return [];
 		}
+	}
+
+	/**
+	 * Build a Meilisearch filter string for scope-based filtering.
+	 *
+	 * - If scope starts with "project:", return project + global memories.
+	 * - If scope is "all" or undefined, no scope filter (backward-compatible).
+	 */
+	private buildScopeFilter(scope: string | undefined): string | undefined {
+		if (!scope || scope === "all") {
+			return undefined;
+		}
+
+		if (scope.startsWith("project:")) {
+			// Escape double quotes in the scope value to prevent filter injection
+			const escapedScope = scope.replace(/"/g, '\\"');
+			return `(scope = "global" OR scope = "${escapedScope}")`;
+		}
+
+		return undefined;
 	}
 
 	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
@@ -154,8 +185,12 @@ export class MeilisearchStore implements MemoryStore {
 				}
 			}
 
+			// Assign default scope if not explicitly set
+			const scope = doc.scope ?? this.defaultScopeForCategory(doc.category);
+
 			const fullDoc: MemoryDoc = {
 				...doc,
+				scope,
 				id: randomUUID(),
 			};
 			await idx.addDocuments([fullDoc]);
@@ -164,6 +199,20 @@ export class MeilisearchStore implements MemoryStore {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
+	}
+
+	/**
+	 * Determine default scope for a memory category.
+	 * `preference` and `fact` are global (cross-project).
+	 * All other categories default to "global" unless a project scope is provided at call time.
+	 */
+	private defaultScopeForCategory(category: string): string {
+		if (GLOBAL_SCOPE_CATEGORIES.has(category)) {
+			return "global";
+		}
+		// Without project context at this layer, default to "global".
+		// Callers (MemoryManager, MCP server) should set scope explicitly for project-scoped memories.
+		return "global";
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {
