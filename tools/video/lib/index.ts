@@ -35,3 +35,22 @@ export {
   type RenderOptions,
   type RenderErrorCode,
 } from "./renderer";
+
+// Provider architecture
+export type {
+  AspectRatio,
+  ClipDuration,
+  VideoProviderConfig,
+  GenerateClipOptions,
+  GenerateClipResult,
+  VideoProvider,
+} from "./providers";
+
+export {
+  VideoProviderError,
+  VeoProvider,
+  MockProvider,
+  registerProvider,
+  getProvider,
+  listProviders,
+} from "./providers";
