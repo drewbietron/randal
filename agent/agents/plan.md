@@ -211,9 +211,17 @@ When creating or updating a plan file, use this structure:
 - **Details**: {Precise description with code snippets where helpful}
 - **Depends on**: None | Step N
 - **Verify**: `{command}` or "{manual check description}"
+- **Done Criteria**: {Testable acceptance criteria — what must be true when this step is done}
 - [ ] pending
 
 ### Step 2: ...
+
+## Sprint Contract
+{Written by @build before building a batch. Contains testable done criteria negotiated for each step in the upcoming sprint. Left empty during planning — populated during build pipeline.}
+
+| Step | Done Criteria | Verified |
+|------|--------------|----------|
+| {n} | {specific testable criterion} | [ ] |
 
 ## Files to Modify
 | File | Action | Step | Summary |

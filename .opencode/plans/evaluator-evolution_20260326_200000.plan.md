@@ -261,7 +261,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: None
 - **Verify**: Read `agent/agents/plan.md` and confirm both additions are present in the template.
 - **Verified**: ✅ Line numbers confirmed accurate (step template: 208-214, Verify on 213, checkbox on 214). Sprint Contract section insertion between lines 216 and 218 (after step examples, before Files to Modify) is correct.
-- [ ] pending
+- [x] done
 
 ### Step 3: Add Adaptive Evaluator Protocol (FUNCTIONAL REVIEW MODE) to build.md [backend]
 - **Action**: modify
