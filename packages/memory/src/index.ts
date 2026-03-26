@@ -2,7 +2,10 @@ export { MemoryManager } from "./memory.js";
 export type { MemoryManagerOptions } from "./memory.js";
 
 export { MessageManager } from "./messages.js";
-export type { MessageManagerOptions } from "./messages.js";
+export type { MessageManagerOptions, MessageSearchOptions } from "./messages.js";
+
+export { ChatSummaryGenerator } from "./summaries.js";
+export type { SummaryGeneratorOptions, GeneratedSummary } from "./summaries.js";
 
 export { parseLearnings } from "./learnings.js";
 export type { Learning } from "./learnings.js";

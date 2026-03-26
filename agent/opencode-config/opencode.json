@@ -16,7 +16,9 @@
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory-server.ts"],
 			"environment": {
 				"MEILI_URL": "http://localhost:7701",
-				"MEILI_MASTER_KEY": "randal-local-key"
+				"MEILI_MASTER_KEY": "randal-local-key",
+				"OPENROUTER_API_KEY": "",
+				"SUMMARY_MODEL": "anthropic/claude-haiku-3"
 			},
 			"enabled": true
 		},

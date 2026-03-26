@@ -1,12 +1,16 @@
 #!/usr/bin/env bun
 /**
- * Standalone MCP stdio server for agent memory backed by Meilisearch.
+ * Standalone MCP stdio server for agent memory and chat history backed by Meilisearch.
  *
  * Designed to be used as an OpenCode MCP server (configured in opencode.json).
- * Agents can search and store long-term memory through three tools:
+ * Agents can search and store long-term memory and chat history through tools:
  *   - memory_search  — hybrid semantic + keyword search with scope filtering
  *   - memory_store   — index a new memory document (with dedup and auto-scope)
  *   - memory_recent  — retrieve N most recent memories
+ *   - chat_search    — search past conversations (semantic + keyword)
+ *   - chat_thread    — retrieve a specific conversation thread by ID
+ *   - chat_recent    — list recent conversation threads
+ *   - chat_log       — persist a message to chat history
  *
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
@@ -18,12 +22,13 @@
  *   EMBEDDING_MODEL      — embedding model (default: openai/text-embedding-3-small)
  *   EMBEDDING_URL        — embedding endpoint (default: https://openrouter.ai/api/v1/embeddings)
  *   SEMANTIC_RATIO       — hybrid search ratio 0-1 (default: 0.7, higher = more semantic)
+ *   SUMMARY_MODEL        — LLM model for chat summaries (default: anthropic/claude-haiku-3)
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execSync } from "node:child_process";
-import { MeilisearchStore } from "@randal/memory";
-import type { EmbedderConfig } from "@randal/memory";
+import { MeilisearchStore, MessageManager } from "@randal/memory";
+import type { EmbedderConfig, SummaryGeneratorOptions } from "@randal/memory";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -37,6 +42,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "openai/text-embedding-3-small";
 const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
 const SEMANTIC_RATIO = Number.parseFloat(process.env.SEMANTIC_RATIO || "0.7");
+const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "anthropic/claude-haiku-3";
 
 /** Categories that default to global scope (cross-project). */
 const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
@@ -81,6 +87,40 @@ const store = new MeilisearchStore({
 
 /** Whether the store initialized successfully. */
 let storeAvailable = false;
+
+// ---------------------------------------------------------------------------
+// MessageManager construction (chat history)
+// ---------------------------------------------------------------------------
+
+// MessageManager expects a RandalConfig-shaped object. We only use the fields
+// it actually reads: memory.url, memory.apiKey, and name. Use a type assertion
+// for pragmatism — this is the MCP server, not the full platform.
+const messageManagerConfig = {
+	name: "randal",
+	memory: {
+		url: MEILI_URL,
+		apiKey: MEILI_MASTER_KEY,
+	},
+};
+
+const summaryGeneratorConfig: SummaryGeneratorOptions | undefined =
+	OPENROUTER_API_KEY
+		? {
+				apiKey: OPENROUTER_API_KEY,
+				model: SUMMARY_MODEL,
+			}
+		: undefined;
+
+const messageManager = new MessageManager({
+	// biome-ignore lint/suspicious/noExplicitAny: Partial RandalConfig — only memory.url, memory.apiKey, name are read
+	config: messageManagerConfig as any,
+	embedder,
+	semanticRatio: Number.isFinite(SEMANTIC_RATIO) ? SEMANTIC_RATIO : 0.7,
+	summaryGenerator: summaryGeneratorConfig,
+});
+
+/** Whether the message manager initialized successfully. */
+let messagesAvailable = false;
 
 // ---------------------------------------------------------------------------
 // JSON-RPC types
@@ -178,6 +218,101 @@ const TOOL_DEFINITIONS = [
 				},
 			},
 			required: [],
+		},
+	},
+	// --- Chat history tools ---
+	{
+		name: "chat_search",
+		description:
+			"Search chat history for past conversations using semantic + keyword matching. Returns messages and summaries with thread IDs for resumption. Summaries are prioritized over individual messages for broader queries.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				query: {
+					type: "string",
+					description: "Search query (semantic + keyword)",
+				},
+				limit: {
+					type: "number",
+					description: "Maximum number of results to return (default 10)",
+				},
+				scope: {
+					type: "string",
+					description:
+						'Search scope. Omit for current project (default). Use "all" for cross-project, "global" for global-only.',
+				},
+			},
+			required: ["query"],
+		},
+	},
+	{
+		name: "chat_thread",
+		description:
+			"Retrieve messages from a specific chat thread by ID. Use this to review a past conversation found via chat_search.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				threadId: {
+					type: "string",
+					description: "The thread ID to retrieve messages for",
+				},
+				limit: {
+					type: "number",
+					description:
+						"Maximum number of messages to return (default 50)",
+				},
+			},
+			required: ["threadId"],
+		},
+	},
+	{
+		name: "chat_recent",
+		description:
+			"Retrieve recent chat threads. Shows the most recent conversations with their last message. Useful for 'what were we working on recently?' queries.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				limit: {
+					type: "number",
+					description: "Number of recent messages to return (default 10)",
+				},
+			},
+			required: [],
+		},
+	},
+	{
+		name: "chat_log",
+		description:
+			"Log a message to chat history. Use this to persist conversation content for future search and retrieval. Call this for user messages, key decisions, and session boundaries.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				content: {
+					type: "string",
+					description: "The message content to log",
+				},
+				speaker: {
+					type: "string",
+					description:
+						'Who said it: "user", "randal", or "agent:<name>" (default: "randal")',
+				},
+				threadId: {
+					type: "string",
+					description:
+						"Thread ID to associate this message with. Omit to auto-generate a new thread ID.",
+				},
+				scope: {
+					type: "string",
+					description:
+						"Scope for this message. Omit for auto-detected project scope.",
+				},
+				channel: {
+					type: "string",
+					description:
+						'Channel identifier (default: "opencode")',
+				},
+			},
+			required: ["content"],
 		},
 	},
 ];
@@ -336,11 +471,173 @@ async function handleMemoryRecent(params: Record<string, unknown>): Promise<unkn
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Chat tool handlers — thin wrappers over MessageManager
+// ---------------------------------------------------------------------------
+
+async function handleChatSearch(params: Record<string, unknown>): Promise<unknown> {
+	const query = params.query as string;
+	if (!query) {
+		throw new ToolError("Missing required parameter: query");
+	}
+
+	const limit = typeof params.limit === "number" ? params.limit : 10;
+	const scope = params.scope as string | undefined;
+
+	if (!messagesAvailable) {
+		return { results: [], message: "Chat history is not available" };
+	}
+
+	try {
+		// Search summaries first for high-signal results
+		const summaryResults = await messageManager.search(query, limit, {
+			...(scope ? { scope } : {}),
+			type: "summary",
+		});
+
+		// Then search individual messages
+		const messageResults = await messageManager.search(query, limit, {
+			...(scope ? { scope } : {}),
+			type: "message",
+		});
+
+		// Merge: summaries first, then messages, deduplicated by id, up to limit
+		const seen = new Set<string>();
+		const merged = [];
+
+		for (const doc of [...summaryResults, ...messageResults]) {
+			if (seen.has(doc.id)) continue;
+			seen.add(doc.id);
+			merged.push({
+				id: doc.id,
+				threadId: doc.threadId,
+				speaker: doc.speaker,
+				content: doc.content,
+				timestamp: doc.timestamp,
+				type: doc.type ?? "message",
+				summary: doc.summary,
+				topicKeywords: doc.topicKeywords,
+				scope: doc.scope,
+				resumeHint: `This conversation was in thread ${doc.threadId}. Use chat_thread to retrieve the full conversation.`,
+			});
+			if (merged.length >= limit) break;
+		}
+
+		return { results: merged };
+	} catch (err) {
+		log("error", `chat_search failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { results: [], message: "Chat search failed" };
+	}
+}
+
+async function handleChatThread(params: Record<string, unknown>): Promise<unknown> {
+	const threadId = params.threadId as string;
+	if (!threadId) {
+		throw new ToolError("Missing required parameter: threadId");
+	}
+
+	const limit = typeof params.limit === "number" ? params.limit : 50;
+
+	if (!messagesAvailable) {
+		return { messages: [], message: "Chat history is not available" };
+	}
+
+	try {
+		const messages = await messageManager.thread(threadId, limit);
+
+		return {
+			threadId,
+			messages: messages.map((doc) => ({
+				id: doc.id,
+				speaker: doc.speaker,
+				content: doc.content,
+				timestamp: doc.timestamp,
+				type: doc.type ?? "message",
+				channel: doc.channel,
+			})),
+		};
+	} catch (err) {
+		log("error", `chat_thread failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { messages: [], message: "Thread retrieval failed" };
+	}
+}
+
+async function handleChatRecent(params: Record<string, unknown>): Promise<unknown> {
+	const limit = typeof params.limit === "number" ? params.limit : 10;
+
+	if (!messagesAvailable) {
+		return { results: [], message: "Chat history is not available" };
+	}
+
+	try {
+		const messages = await messageManager.recent(limit);
+
+		return {
+			results: messages.map((doc) => ({
+				id: doc.id,
+				threadId: doc.threadId,
+				speaker: doc.speaker,
+				content: doc.content,
+				timestamp: doc.timestamp,
+				type: doc.type ?? "message",
+				channel: doc.channel,
+				scope: doc.scope,
+			})),
+		};
+	} catch (err) {
+		log("error", `chat_recent failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { results: [], message: "Recent chat query failed" };
+	}
+}
+
+async function handleChatLog(params: Record<string, unknown>): Promise<unknown> {
+	const content = params.content as string;
+	if (!content) {
+		throw new ToolError("Missing required parameter: content");
+	}
+
+	const speaker = (params.speaker as string) || "randal";
+	const threadId = (params.threadId as string) || randomUUID();
+	const scope = (params.scope as string) || defaultScope;
+	const channel = (params.channel as string) || "opencode";
+
+	if (!messagesAvailable) {
+		return { logged: false, message: "Chat history is not available" };
+	}
+
+	try {
+		const id = await messageManager.add({
+			content,
+			speaker: speaker as "user" | "randal" | `agent:${string}`,
+			threadId,
+			channel,
+			timestamp: new Date().toISOString(),
+			type: "message",
+			scope,
+		});
+
+		return {
+			logged: true,
+			id,
+			threadId,
+			scope,
+			message: "Message logged to chat history",
+		};
+	} catch (err) {
+		log("error", `chat_log failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { logged: false, message: "Chat log operation failed" };
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
 	memory_store: handleMemoryStore,
 	memory_recent: handleMemoryRecent,
+	chat_search: handleChatSearch,
+	chat_thread: handleChatThread,
+	chat_recent: handleChatRecent,
+	chat_log: handleChatLog,
 };
 
 // ---------------------------------------------------------------------------
@@ -360,7 +657,7 @@ async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse> {
 			id,
 			result: {
 				protocolVersion: "2024-11-05",
-				serverInfo: { name: "randal-memory", version: "0.2.0" },
+				serverInfo: { name: "randal-memory", version: "0.3.0" },
 				capabilities: {
 					tools: { listChanged: false },
 				},
@@ -564,6 +861,22 @@ async function main(): Promise<void> {
 		log(
 			"warn",
 			`Store initialization failed at ${MEILI_URL}: ${err instanceof Error ? err.message : String(err)}. Tools will return empty results.`,
+		);
+	}
+
+	// Initialize MessageManager for chat history (non-fatal if unavailable)
+	try {
+		await messageManager.init();
+		messagesAvailable = true;
+		log(
+			"info",
+			`MessageManager initialized (summary: ${summaryGeneratorConfig ? "enabled" : "disabled"})`,
+		);
+	} catch (err) {
+		messagesAvailable = false;
+		log(
+			"warn",
+			`MessageManager initialization failed: ${err instanceof Error ? err.message : String(err)}. Chat tools will return empty results.`,
 		);
 	}
 

@@ -34,6 +34,8 @@ export type {
 	MemorySource,
 	MemoryDoc,
 	Message,
+	MessageSpeaker,
+	MessageDoc,
 	SkillMeta,
 	SkillDoc,
 	SkillDeployment,
