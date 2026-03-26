@@ -344,9 +344,11 @@ Always emit BOTH the pretty UX box AND the tags. The TUI user sees the boxes, th
      Completed: {n}/{total} steps
      Last attempted: Step {n} — {description}
      
-     The remaining steps may be too complex or fundamentally blocked.
-     Options: provide guidance, simplify the plan, or abort.
-  ```
+      The remaining steps may be too complex or fundamentally blocked.
+      Options: provide guidance, simplify the plan, or abort.
+   ```
+
+- If @build's checkpoint includes `[!] PIVOT` or `[!] REWORK` markers: See **Pivot-or-Refine Handling** under Cognitive Lenses > Adaptive Evaluation for the full protocol. These markers replace the legacy `[!] NEEDS_REDESIGN`.
 
 ### Git Worktree Strategy
 
@@ -650,6 +652,45 @@ After each build turn completes, Randal dispatches an **evaluation pass** that g
 - Simplest version that could work
 - No unnecessary blockers introduced
 - Could ship sooner with smaller scope?
+
+### Pivot-or-Refine Handling
+
+After each evaluation pass, parse the `Strategy:` field from the `FUNCTIONAL_REVIEW:` or `PROGRESS:` output:
+
+- **Strategy: Refine** — Scores trending well. Add fix-steps for Critical/High findings. Continue the build loop normally. No user intervention needed.
+
+- **Strategy: Partially Rework** — Approach mostly right but one component needs significant changes.
+  1. Report to user:
+     ```
+     ⚠️ Evaluator recommends partial rework: {rationale}
+        Affected: Step {n} — {description}
+        
+        Options:
+        - "continue" — proceed with fixes, see if rework resolves naturally
+        - "rework" — re-plan the affected steps, then rebuild
+        - "abort" — stop the build
+     ```
+  2. Wait for user input. If "rework": invoke @plan to re-draft affected steps, then continue build.
+  3. Update loop-state: `eval_strategy: "partially_rework"`.
+
+- **Strategy: Pivot** — Fundamental approach isn't working.
+  1. Pause the build immediately. Set `status: "paused"` in loop-state.
+  2. Report to user:
+     ```
+     🔄 Evaluator recommends pivot: {rationale}
+        The current approach at Step {n} has fundamental issues.
+        
+        Branch opencode/{slug} preserved with partial work.
+        
+        Options:
+        - "re-plan" — go back to planning with the evaluator's feedback
+        - "override" — ignore the recommendation and continue building
+        - "abort" — stop the build entirely
+     ```
+  3. If "re-plan": Dispatch @plan with the evaluator's rationale as context. Create new plan steps. Resume build.
+  4. Update loop-state: `eval_strategy: "pivot"`.
+
+- **Strategy: N/A or missing** — No strategic concern. Continue normally.
 
 **For Q&A / Exploration (Randal answers directly):**
 - Randal does NOT use lenses for direct Q&A — those answers come from Randal's own identity and judgment.
