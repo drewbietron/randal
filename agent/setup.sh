@@ -2,6 +2,15 @@
 # Randal Brain Setup (TUI-only)
 # One-command setup for personal machines running OpenCode — no harness needed.
 # Usage: bash agent/setup.sh [--non-interactive]
+#
+# What this does:
+#   1. Symlinks ~/.config/opencode -> agent/opencode-config/ (one source of truth)
+#   2. Installs plugin dependencies (bun install)
+#   3. Checks/starts Meilisearch for persistent memory
+#   4. Configures memory MCP server in opencode.json (through the symlink)
+#   5. Detects optional tools (steer, drive)
+#
+# Idempotent: safe to run multiple times.
 
 set -euo pipefail
 
@@ -9,6 +18,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT_DIR="$REPO_DIR/agent"
 OC_CONFIG="$HOME/.config/opencode"
+OC_SOURCE="$AGENT_DIR/opencode-config"
 NON_INTERACTIVE=false
 
 for arg in "$@"; do
@@ -21,10 +31,11 @@ echo ""
 echo "=== Randal Brain Setup (TUI-only) ==="
 echo ""
 echo "  Repo:   $REPO_DIR"
-echo "  Config: $OC_CONFIG"
+echo "  Source: $OC_SOURCE"
+echo "  Target: $OC_CONFIG"
 echo ""
 
-# --- Helper: symlink with backup ---
+# --- Helper: symlink with backup (kept for potential future use) ---
 link_file() {
   local src="$1"
   local dest="$2"
@@ -32,12 +43,10 @@ link_file() {
   name="$(basename "$dest")"
 
   if [ -L "$dest" ]; then
-    # Already a symlink — remove and re-link (might point to old location)
     rm "$dest"
     ln -s "$src" "$dest"
     echo "  ✅ $name linked (refreshed)"
   elif [ -f "$dest" ]; then
-    # Regular file — back up, then link
     mv "$dest" "${dest}.bak"
     ln -s "$src" "$dest"
     echo "  ✅ $name linked (old file backed up to ${name}.bak)"
@@ -47,85 +56,72 @@ link_file() {
   fi
 }
 
-# --- 1. Create directories ---
-echo "Creating config directories..."
-mkdir -p "$OC_CONFIG/agents"
-mkdir -p "$OC_CONFIG/tools"
+# --- 1. Prerequisites ---
+echo "Checking prerequisites..."
+if ! command -v bun &> /dev/null; then
+  echo "  ❌ bun not found. Install: https://bun.sh"
+  exit 1
+fi
+echo "  ✅ bun $(bun --version)"
+
+if [ ! -d "$OC_SOURCE" ]; then
+  echo "  ❌ OpenCode config source not found at $OC_SOURCE"
+  echo "     Make sure you're running this from the Randal repo root."
+  exit 1
+fi
+echo "  ✅ Config source exists"
 echo ""
 
-# --- 2. Symlink agent files ---
-echo "Linking agent files..."
-for file in randal.md plan.md build.md; do
-  if [ -f "$AGENT_DIR/agents/$file" ]; then
-    link_file "$AGENT_DIR/agents/$file" "$OC_CONFIG/agents/$file"
-  else
-    echo "  ⚠️  $file not found in $AGENT_DIR/agents/ — skipping"
-  fi
-done
-echo ""
+# --- 2. Symlink entire OpenCode config ---
+echo "Linking OpenCode config..."
 
-# --- 2b. Copy lens files ---
-echo "Copying lens files..."
-mkdir -p "$OC_CONFIG/lenses"
-for file in "$AGENT_DIR/lenses/"*.md; do
-  if [ -f "$file" ]; then
-    name="$(basename "$file")"
-    cp "$file" "$OC_CONFIG/lenses/$name"
-    echo "  ✅ $name copied"
-  fi
-done
-echo ""
-
-# --- 3. Symlink custom tool files ---
-echo "Linking custom tools..."
-for file in model-context.ts loop-state.ts; do
-  if [ -f "$AGENT_DIR/tools/$file" ]; then
-    link_file "$AGENT_DIR/tools/$file" "$OC_CONFIG/tools/$file"
-  else
-    echo "  ⚠️  $file not found in $AGENT_DIR/tools/ — skipping"
-  fi
-done
-echo ""
-
-# --- 4. Remove old agent files ---
-echo "Cleaning up old agents..."
-for old_file in prd-writer.md prd-gen-template.md; do
-  if [ -f "$OC_CONFIG/agents/$old_file" ] || [ -L "$OC_CONFIG/agents/$old_file" ]; then
-    rm "$OC_CONFIG/agents/$old_file"
-    echo "  🗑️  Removed $old_file"
-  fi
-done
-echo ""
-
-# --- 5. Check/update opencode.json ---
-echo "Checking opencode.json..."
-OC_JSON="$OC_CONFIG/opencode.json"
-
-if [ ! -f "$OC_JSON" ]; then
-  # Create minimal config
-  cat > "$OC_JSON" << 'JSONEOF'
-{
-  "$schema": "https://opencode.ai/config.json",
-  "agent": {
-    "build": { "disable": true },
-    "plan": { "disable": true }
-  }
-}
-JSONEOF
-  echo "  ✅ Created opencode.json with built-in agents disabled"
+if [ -L "$OC_CONFIG" ]; then
+  # Already a symlink — just refresh it
+  rm "$OC_CONFIG"
+  ln -sfn "$OC_SOURCE" "$OC_CONFIG"
+  echo "  ✅ OpenCode config symlink refreshed"
+elif [ -d "$OC_CONFIG" ]; then
+  # Real directory — back up and replace
+  BACKUP="$OC_CONFIG.bak.$(date +%s)"
+  echo "  Backing up existing config to $BACKUP"
+  mv "$OC_CONFIG" "$BACKUP"
+  ln -sfn "$OC_SOURCE" "$OC_CONFIG"
+  echo "  ✅ OpenCode config linked (old config backed up)"
 else
-  # Check if disable config is present
-  if grep -q '"disable"' "$OC_JSON" 2>/dev/null; then
-    echo "  ✅ opencode.json already has agent disable config"
-  else
-    echo "  ⚠️  opencode.json exists but may not have built-in agents disabled."
-    echo "     Add this to your opencode.json:"
-    echo '     "agent": { "build": { "disable": true }, "plan": { "disable": true } }'
-  fi
+  ln -sfn "$OC_SOURCE" "$OC_CONFIG"
+  echo "  ✅ OpenCode config linked"
+fi
+
+# Install plugin dependencies
+if [ -f "$OC_CONFIG/package.json" ]; then
+  echo "  Installing plugin dependencies..."
+  (cd "$OC_CONFIG" && bun install --frozen-lockfile 2>/dev/null || bun install) && \
+    echo "  ✅ Dependencies installed" || \
+    echo "  ⚠️  bun install failed — run manually: cd $OC_CONFIG && bun install"
 fi
 echo ""
 
-# --- 6. Install/check Meilisearch ---
+# --- 3. Verify symlink ---
+echo "Verifying config..."
+OC_JSON="$OC_CONFIG/opencode.json"
+
+if [ ! -f "$OC_JSON" ]; then
+  echo "  ❌ opencode.json not found through symlink — something went wrong"
+  exit 1
+fi
+
+if [ ! -d "$OC_CONFIG/agents" ]; then
+  echo "  ❌ agents/ not found through symlink — something went wrong"
+  exit 1
+fi
+
+echo "  ✅ opencode.json accessible"
+echo "  ✅ agents/ accessible ($(ls "$OC_CONFIG/agents/" | wc -l | tr -d ' ') agents)"
+echo "  ✅ tools/ accessible ($(ls "$OC_CONFIG/tools/" | wc -l | tr -d ' ') tools)"
+echo "  ✅ lenses/ accessible ($(ls "$OC_CONFIG/lenses/" | wc -l | tr -d ' ') lenses)"
+echo ""
+
+# --- 4. Install/check Meilisearch ---
 echo "Checking Meilisearch..."
 MEILI_RUNNING=false
 MEILI_URL=""
@@ -192,7 +188,9 @@ else
 fi
 echo ""
 
-# --- 7. Configure memory MCP if Meilisearch is running ---
+# --- 5. Configure memory MCP if Meilisearch is running ---
+# NOTE: This modifies the repo's opencode.json directly through the symlink.
+# The change will show up in `git diff` and should be committed if desired.
 if [ "$MEILI_RUNNING" = true ]; then
   if [ -z "$MEILI_URL" ]; then
     MEILI_URL="http://localhost:7700"
@@ -216,10 +214,9 @@ if [ "$MEILI_RUNNING" = true ]; then
           --arg script "$MCP_MEMORY_SERVER" \
           --arg meiliUrl "$MEILI_URL" \
           '{
-            type: "stdio",
-            command: $cmd,
-            args: ["run", $script],
-            env: { "MEILI_URL": $meiliUrl },
+            type: "local",
+            command: [$cmd, "run", $script],
+            environment: { "MEILI_URL": $meiliUrl },
             enabled: true
           }')
 
@@ -231,10 +228,9 @@ if [ "$MEILI_RUNNING" = true ]; then
         echo "  ⚠️  jq not installed — add this to the \"mcp\" section of opencode.json manually:"
         echo ""
         echo "    \"memory\": {"
-        echo "      \"type\": \"stdio\","
-        echo "      \"command\": \"bun\","
-        echo "      \"args\": [\"run\", \"$MCP_MEMORY_SERVER\"],"
-        echo "      \"env\": { \"MEILI_URL\": \"$MEILI_URL\" },"
+        echo "      \"type\": \"local\","
+        echo "      \"command\": [\"bun\", \"run\", \"$MCP_MEMORY_SERVER\"],"
+        echo "      \"environment\": { \"MEILI_URL\": \"$MEILI_URL\" },"
         echo "      \"enabled\": true"
         echo "    }"
         echo ""
@@ -244,7 +240,7 @@ if [ "$MEILI_RUNNING" = true ]; then
   echo ""
 fi
 
-# --- 8. Detect optional tools ---
+# --- 6. Detect optional tools ---
 echo "Detecting optional tools..."
 
 # Steer
@@ -266,13 +262,23 @@ else
 fi
 echo ""
 
-# --- 9. Summary ---
+# --- 7. Summary ---
 echo "=== Setup complete ==="
+echo ""
+echo "  Config: $OC_CONFIG -> $OC_SOURCE"
 echo ""
 echo "Next steps:"
 echo "  1. Restart OpenCode"
 echo "  2. Press Tab — you should see only Randal"
 echo "  3. Try: \"What do you remember?\" (tests memory)"
 echo ""
-echo "To update: cd ~/dev/randal && git pull (symlinks auto-update)"
+echo "Config is symlinked — git pull updates everything automatically."
+echo ""
+echo "To break the symlink for local experiments:"
+echo "  rm ~/.config/opencode"
+echo "  cp -r $OC_SOURCE ~/.config/opencode"
+echo ""
+echo "To re-link after experimenting:"
+echo "  rm -rf ~/.config/opencode"
+echo "  ln -sfn $OC_SOURCE ~/.config/opencode"
 echo ""
