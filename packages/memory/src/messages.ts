@@ -2,16 +2,34 @@ import { randomUUID } from "node:crypto";
 import type { MessageDoc, RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
+import type { EmbedderConfig } from "./stores/meilisearch.js";
 
 export interface MessageManagerOptions {
 	config: RandalConfig;
 	/** Override the Meilisearch index name. Defaults to `messages-{config.name}`. */
 	indexName?: string;
+	/** Embedder config for semantic search. If omitted, keyword-only search is used. */
+	embedder?: EmbedderConfig;
+	/** Semantic ratio for hybrid search (0 = keyword only, 1 = semantic only). Default: 0.7 */
+	semanticRatio?: number;
 }
+
+export interface MessageSearchOptions {
+	/** Filter by scope: "global", "project:/path", or undefined (no filter). */
+	scope?: string;
+	/** Filter by document type: "message" or "summary". */
+	type?: "message" | "summary";
+}
+
+const EMBEDDER_NAME = "chat-embedder";
+const DEFAULT_SEMANTIC_RATIO = 0.7;
 
 export class MessageManager {
 	private client: MeiliSearch;
 	private indexName: string;
+	private embedderConfig?: EmbedderConfig;
+	private semanticRatio: number;
+	private semanticAvailable = false;
 	private logger = createLogger({ context: { component: "messages" } });
 
 	constructor(options: MessageManagerOptions) {
@@ -20,6 +38,8 @@ export class MessageManager {
 			apiKey: options.config.memory.apiKey,
 		});
 		this.indexName = options.indexName ?? `messages-${options.config.name}`;
+		this.embedderConfig = options.embedder;
+		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
 	}
 
 	async init(): Promise<void> {
@@ -34,7 +54,14 @@ export class MessageManager {
 			// Ensure the primary key is set on existing indexes too
 			await index.update({ primaryKey: "id" });
 
-			await index.updateSearchableAttributes(["content", "speaker", "channel", "threadId"]);
+			await index.updateSearchableAttributes([
+				"content",
+				"summary",
+				"topicKeywords",
+				"speaker",
+				"channel",
+				"threadId",
+			]);
 			await index.updateFilterableAttributes([
 				"threadId",
 				"speaker",
@@ -42,6 +69,8 @@ export class MessageManager {
 				"jobId",
 				"pendingAction",
 				"timestamp",
+				"scope",
+				"type",
 			]);
 			await index.updateSortableAttributes(["timestamp"]);
 
@@ -53,6 +82,44 @@ export class MessageManager {
 				error: err instanceof Error ? err.message : String(err),
 			});
 			throw err;
+		}
+
+		// Configure semantic embedder (non-fatal — falls back to keyword search)
+		if (this.embedderConfig?.apiKey) {
+			try {
+				const index = this.client.index(this.indexName);
+				await index.updateEmbedders({
+					[EMBEDDER_NAME]: {
+						source: "rest",
+						url:
+							this.embedderConfig.url ||
+							"https://openrouter.ai/api/v1/embeddings",
+						apiKey: this.embedderConfig.apiKey,
+						request: {
+							model: this.embedderConfig.model,
+							input: ["{{text}}", "{{..}}"],
+						},
+						response: {
+							data: [{ embedding: "{{embedding}}" }, "{{..}}"],
+						},
+						documentTemplate: "A chat message: {{doc.content}}",
+					},
+				});
+				this.semanticAvailable = true;
+				this.logger.info("Chat semantic search enabled", {
+					embedder: EMBEDDER_NAME,
+					model: this.embedderConfig.model,
+					semanticRatio: this.semanticRatio,
+				});
+			} catch (err) {
+				this.semanticAvailable = false;
+				this.logger.warn(
+					"Failed to configure chat embedder — falling back to keyword-only search",
+					{
+						error: err instanceof Error ? err.message : String(err),
+					},
+				);
+			}
 		}
 	}
 
@@ -81,13 +148,35 @@ export class MessageManager {
 		return id;
 	}
 
-	/** Full-text search across all messages. */
-	async search(query: string, limit = 20): Promise<MessageDoc[]> {
+	/** Search messages with optional semantic/hybrid mode and scope/type filtering. */
+	async search(
+		query: string,
+		limit = 20,
+		options?: MessageSearchOptions,
+	): Promise<MessageDoc[]> {
 		try {
 			const index = this.client.index(this.indexName);
+			const filters = this.buildFilters(options);
+
+			if (this.semanticAvailable) {
+				// Hybrid search: Meilisearch uses its own relevance ranking,
+				// sort is not compatible with hybrid search
+				const results = await index.search(query, {
+					limit,
+					hybrid: {
+						embedder: EMBEDDER_NAME,
+						semanticRatio: this.semanticRatio,
+					},
+					...(filters ? { filter: filters } : {}),
+				});
+				return results.hits as unknown as MessageDoc[];
+			}
+
+			// Keyword-only fallback with timestamp sort
 			const results = await index.search(query, {
 				limit,
 				sort: ["timestamp:desc"],
+				...(filters ? { filter: filters } : {}),
 			});
 			return results.hits as unknown as MessageDoc[];
 		} catch (err) {
@@ -96,6 +185,22 @@ export class MessageManager {
 			});
 			return [];
 		}
+	}
+
+	/** Build Meilisearch filter string from search options. */
+	private buildFilters(options?: MessageSearchOptions): string | undefined {
+		if (!options) return undefined;
+
+		const parts: string[] = [];
+
+		if (options.scope) {
+			parts.push(`scope = "${options.scope}"`);
+		}
+		if (options.type) {
+			parts.push(`type = "${options.type}"`);
+		}
+
+		return parts.length > 0 ? parts.join(" AND ") : undefined;
 	}
 
 	/** Get messages for a specific thread, ordered chronologically. */
