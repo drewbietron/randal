@@ -14,6 +14,7 @@ tools:
   todowrite: true
   question: true
   skill: true
+  video_*: true
 permission:
   write:
     "*": allow
