@@ -276,6 +276,7 @@ export interface MemoryDoc {
 	timestamp: string;
 	jobId?: string;
 	iteration?: number;
+	scope?: string;
 }
 
 // ---- Messages ----
