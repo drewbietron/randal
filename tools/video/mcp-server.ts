@@ -19,6 +19,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { generateImage } from "./lib/image-gen";
+import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
 import { listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
@@ -94,13 +95,19 @@ server.tool(
 				style: style_prefix,
 			});
 
-			const outPath = join(dir, filename);
+			// Detect actual MIME type from the image bytes and correct the filename extension
+			const detected = detectMimeType(result.buffer);
+			const correctedFilename = ensureCorrectExtension(filename, detected.mimeType);
+			const outPath = join(dir, correctedFilename);
 			await Bun.write(outPath, result.buffer);
 
 			const stat = Bun.file(outPath);
 			return ok({
 				path: outPath,
+				mimeType: detected.mimeType,
 				sizeBytes: stat.size,
+				requestedFilename: filename,
+				actualFilename: correctedFilename,
 			});
 		} catch (error) {
 			return err(error instanceof Error ? error.message : String(error));
