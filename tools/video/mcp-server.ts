@@ -166,7 +166,8 @@ server.tool(
 				}
 				const arrayBuf = await file.arrayBuffer();
 				referenceImage = Buffer.from(arrayBuf);
-				referenceImageMimeType = file.type || "image/png";
+				const detected = detectMimeType(referenceImage);
+				referenceImageMimeType = detected.mimeType;
 			}
 
 			const result = await generateVideoClip(prompt, {
