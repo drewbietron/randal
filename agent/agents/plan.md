@@ -102,6 +102,7 @@ Per turn (up to your step budget):
 - Add each step to the Implementation Steps section.
 - Update the Files to Modify table.
 - Order steps by dependency (no forward references).
+- Tag each step with a domain in brackets at the end of the step title: `[backend]`, `[frontend]`, `[security]`, `[database]`, `[ui]`, `[design]`, `[docs]`, `[config]`, `[ci]`, `[testing]`, `[devops]`, `[content]`. These tags help the orchestrator (Randal) select the appropriate cognitive lens when dispatching @build. Steps can have multiple tags: `### Step 3: Add auth middleware with rate limiting [backend, security]`
 - Update Status to Drafting.
 - If all steps are drafted, advance to Verifying.
 
