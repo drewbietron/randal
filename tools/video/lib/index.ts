@@ -21,3 +21,17 @@ export {
   type VeoDuration,
   type VeoModel,
 } from "./video-gen";
+
+export {
+  stitchClips,
+  StitchError,
+  type StitchOptions,
+  type StitchErrorCode,
+} from "./stitch";
+
+export {
+  renderVideo,
+  RenderError,
+  type RenderOptions,
+  type RenderErrorCode,
+} from "./renderer";
