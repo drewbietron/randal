@@ -25,6 +25,12 @@ import {
 	attachAudioToVideo,
 	AudioGenError,
 } from "./lib/audio-gen";
+import {
+	extractFrames,
+	analyzeVideoWithVision,
+	prepareVideoReference,
+	VideoRefError,
+} from "./lib/video-ref";
 import { listAudioProviders } from "./lib/providers/audio-registry";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
@@ -538,6 +544,133 @@ server.tool(
 				configured: p.isConfigured(),
 			}));
 			return ok(result);
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: extract_frames
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"extract_frames",
+	"Extract key frames from a video file using ffmpeg",
+	{
+		video_path: z.string().describe("Path to the input video file"),
+		count: z
+			.number()
+			.optional()
+			.describe("Number of frames to extract (default: 5). Ignored if interval_seconds is set"),
+		interval_seconds: z
+			.number()
+			.optional()
+			.describe("Extract a frame every N seconds (overrides count)"),
+		format: z
+			.enum(["png", "jpg"])
+			.optional()
+			.describe("Output image format (default: png)"),
+		output_dir: z
+			.string()
+			.optional()
+			.describe("Directory for extracted frames (default: /tmp/video-gen/frames)"),
+	},
+	async ({ video_path, count, interval_seconds, format, output_dir }) => {
+		try {
+			const frames = await extractFrames(video_path, {
+				count,
+				intervalSeconds: interval_seconds,
+				format: format as "png" | "jpg" | undefined,
+				outputDir: output_dir,
+			});
+
+			return ok({
+				frames: frames.map((f) => ({
+					path: f.path,
+					timestamp: f.timestamp,
+					mimeType: f.mimeType,
+				})),
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: analyze_video
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"analyze_video",
+	"Analyze a video with a vision model to get a structured description of its content",
+	{
+		video_path: z.string().describe("Path to the input video file"),
+		prompt: z
+			.string()
+			.describe("Describe what you want to understand about the video"),
+		frame_count: z
+			.number()
+			.optional()
+			.describe("Number of frames to extract for analysis (default: 4)"),
+		model: z
+			.string()
+			.optional()
+			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash-preview)"),
+	},
+	async ({ video_path, prompt, frame_count, model }) => {
+		try {
+			const analysis = await analyzeVideoWithVision(video_path, prompt, {
+				frameCount: frame_count,
+				model,
+			});
+
+			return ok({ analysis });
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: prepare_reference
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"prepare_reference",
+	"Prepare a video clip as generation input: extract frames, analyze with vision, and build an enriched prompt",
+	{
+		video_path: z.string().describe("Path to the source video file"),
+		changes: z
+			.string()
+			.describe("Describe what to change about the video (e.g. 'make the sky purple and add rain')"),
+		extraction_count: z
+			.number()
+			.optional()
+			.describe("Number of frames to extract (default: 4)"),
+		analysis_model: z
+			.string()
+			.optional()
+			.describe("Vision model for analysis (default: google/gemini-2.5-flash-preview)"),
+		target_provider: z
+			.string()
+			.optional()
+			.describe("Target video generation provider (for capability checking)"),
+	},
+	async ({ video_path, changes, extraction_count, analysis_model, target_provider }) => {
+		try {
+			const result = await prepareVideoReference(video_path, changes, {
+				extractionCount: extraction_count,
+				analysisModel: analysis_model,
+				targetProvider: target_provider,
+			});
+
+			return ok({
+				referenceImages: result.referenceImages,
+				enrichedPrompt: result.enrichedPrompt,
+				originalAnalysis: result.originalAnalysis,
+			});
 		} catch (error) {
 			return err(error instanceof Error ? error.message : String(error));
 		}
