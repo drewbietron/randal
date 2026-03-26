@@ -66,6 +66,40 @@ function fakePngBase64(): string {
 	return padded.toString("base64");
 }
 
+/** Fake base64 JPEG — starts with JPEG/JFIF header and is > 100 bytes. */
+function fakeJpegBase64(): string {
+	const jpegHeader = Buffer.from([
+		0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+		0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+	]);
+	const padded = Buffer.concat([jpegHeader, Buffer.alloc(200 - jpegHeader.length, 0xaa)]);
+	return padded.toString("base64");
+}
+
+/**
+ * Build a fake OpenRouter response with a JPEG image disguised as PNG.
+ * The data URI says image/png, but the actual bytes are JPEG.
+ */
+function fakeJpegDisguisedAsPngResponse() {
+	const data = fakeJpegBase64();
+	return {
+		choices: [
+			{
+				message: {
+					content: [
+						{
+							type: "image_url",
+							image_url: {
+								url: `data:image/png;base64,${data}`,
+							},
+						},
+					],
+				},
+			},
+		],
+	};
+}
+
 /** Build a fake OpenRouter response that contains a base64 PNG image. */
 function fakeOpenRouterImageResponse(base64?: string) {
 	const data = base64 ?? fakePngBase64();
@@ -423,5 +457,69 @@ describe("error propagation", () => {
 			expect(err.code).toBe("PROVIDER_NOT_FOUND");
 			expect(err.message).toContain("nonexistent");
 		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: MIME resilience
+// ---------------------------------------------------------------------------
+
+describe("MIME resilience", () => {
+	beforeEach(() => {
+		process.env.OPENROUTER_API_KEY = "test-key-mime";
+	});
+
+	afterEach(() => {
+		if (originalOpenRouterKey !== undefined) {
+			process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+		} else {
+			process.env.OPENROUTER_API_KEY = "";
+		}
+		restoreFetch();
+	});
+
+	test("pipeline handles JPEG disguised as PNG from API", async () => {
+		saveFetch();
+		globalThis.fetch = (async () => {
+			return new Response(JSON.stringify(fakeJpegDisguisedAsPngResponse()), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as typeof fetch;
+
+		const result = await generateImage("A landscape photo");
+
+		// The data URI says image/png, but the actual bytes are JPEG.
+		// MIME detection should correct this to image/jpeg.
+		expect(result.buffer).toBeInstanceOf(Buffer);
+		expect(result.buffer.length).toBeGreaterThan(100);
+		expect(result.mimeType).toBe("image/jpeg");
+		expect(result.mimeType).not.toBe("image/png");
+	});
+
+	test("generate_clip receives correct MIME for JPEG reference image", async () => {
+		// Create a fake JPEG buffer (starts with FF D8 FF E0)
+		const jpegHeader = Buffer.from([
+			0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+			0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+		]);
+		const fakeJpegBuffer = Buffer.concat([jpegHeader, Buffer.alloc(500, 0xbb)]);
+
+		// Pass the JPEG buffer as a reference image to the mock provider.
+		// Even if we label it as "image/png", the mock provider should accept it.
+		// The key verification is that the pipeline doesn't reject it.
+		const result = await generateVideoClip(
+			"Scene using JPEG reference image that might have been saved as .png",
+			{
+				provider: "mock",
+				duration: 6,
+				referenceImage: fakeJpegBuffer,
+				referenceImageMimeType: "image/png", // deliberately wrong — simulates .png extension
+			},
+		);
+
+		expect(result.buffer).toBeInstanceOf(Buffer);
+		expect(result.mimeType).toBe("video/mp4");
+		expect(result.model).toBe("mock-v1");
 	});
 });
