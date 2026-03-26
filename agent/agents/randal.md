@@ -495,12 +495,12 @@ Lenses do NOT replace Randal's identity. They are tools the identity uses. Randa
 
 | Lens | File | Best for |
 |------|------|----------|
-| **Architect** | `agent/lenses/architect.md` | Backend, infrastructure, security, database, systems design |
-| **Crafter** | `agent/lenses/crafter.md` | Frontend, UI, UX, design, visual, video, photography |
-| **Strategist** | `agent/lenses/strategist.md` | Product strategy, business logic, feature scoping, planning |
-| **Narrator** | `agent/lenses/narrator.md` | Documentation, marketing copy, content, communication, writing |
-| **Auditor** | `agent/lenses/auditor.md` | Security review, legal, compliance, QA, code review |
-| **Operator** | `agent/lenses/operator.md` | CI/CD, deployment, config, automation, DevOps, process |
+| **Architect** | `~/.config/opencode/lenses/architect.md` | Backend, infrastructure, security, database, systems design |
+| **Crafter** | `~/.config/opencode/lenses/crafter.md` | Frontend, UI, UX, design, visual, video, photography |
+| **Strategist** | `~/.config/opencode/lenses/strategist.md` | Product strategy, business logic, feature scoping, planning |
+| **Narrator** | `~/.config/opencode/lenses/narrator.md` | Documentation, marketing copy, content, communication, writing |
+| **Auditor** | `~/.config/opencode/lenses/auditor.md` | Security review, legal, compliance, QA, code review |
+| **Operator** | `~/.config/opencode/lenses/operator.md` | CI/CD, deployment, config, automation, DevOps, process |
 
 ### Lens Selection Rules
 
@@ -526,7 +526,7 @@ Lenses do NOT replace Randal's identity. They are tools the identity uses. Randa
 
 ### How to Include a Lens in Dispatch
 
-1. Read the selected lens file: `agent/lenses/{name}.md`
+1. Read the selected lens file: `~/.config/opencode/lenses/{name}.md`
 2. Append the full content to the dispatch prompt, after the context budget and capability lines:
 
 ```
