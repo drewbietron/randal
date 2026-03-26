@@ -2,7 +2,7 @@
 
 **Created**: 2026-03-26T20:00:00Z
 **File**: .opencode/plans/evaluator-evolution_20260326_200000.plan.md
-**Status**: Ready
+**Status**: Complete
 **Planning Turn**: 5 of 5
 **Model**: anthropic/claude-opus-4-6
 
@@ -616,7 +616,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 3 (build.md has Functional Review Mode)
 - **Verify**: Read `agent/agents/randal.md` and confirm: (1) "Adaptive Evaluation" section exists, (2) dispatch prompt says "FUNCTIONAL REVIEW MODE" with mode and domain tags, (3) lens checklists preserved as fallback, (4) max iteration cap documented.
 - **Verified**: ✅ Replacement target confirmed (lines 530-583: dispatch logic 530-541 + lens checklists 543-583). The plan correctly preserves lens checklists as "Code Review Only fallback" content. No orphaned references — the "Primary Lens (implementation)" section (lines 519-528) is unaffected (it governs build dispatch, not review dispatch). The replacement introduces a 10-step protocol with proper dispatch prompt. Edge case note: The tie-breaking rule (use mode for LAST step when domains tied) differs from the lens tie-breaker (FIRST step) — this is intentional since review looks at what was just built (recency matters) while implementation lens looks at what's about to be built (setting the tone). Max iteration cap (3) and escalation on exhaustion correctly documented. No conflicts with Step 6 (different section of randal.md).
-- [ ] pending
+- [x] done
 
 ### Step 8: Add Pivot-or-Refine handling to Build Pipeline in randal.md [backend]
 - **Action**: modify
@@ -673,7 +673,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 5 (build.md has pivot-or-refine protocol), Step 7 (randal.md has evaluator dispatch that returns Strategy)
 - **Verify**: Read `agent/agents/randal.md` and confirm: (1) Pivot-or-Refine Handling subsection exists with all 3 strategies, (2) user-facing messages for Partially Rework and Pivot are documented, (3) Error Handling section references [!] PIVOT and [!] REWORK.
 - **Verified**: ✅ Change A: Insertion after Step 7's evaluator section is correct — new subsection follows the evaluation protocol. Change B: Error Handling section (lines 303-331) ends before `### Git Worktree Strategy` (line 333). Cross-reference bullet should be added after line 331 (end of the "build stalled" block). All three strategies (Refine/Partially Rework/Pivot) have distinct user-facing messages and loop-state updates. Dependencies correct: requires Step 5 (build.md pivot markers) and Step 7 (evaluator dispatch that returns Strategy). The "Strategy: N/A or missing" fallback handles backward compatibility. Edge case note: The existing `NEEDS_REDESIGN` handling is in build.md only (not randal.md Error Handling), so the cross-reference here is additive, not replacing anything.
-- [ ] pending
+- [x] done
 
 ### Step 9: Add model-adaptive context dispatch and Playwright MCP discovery to randal.md [config]
 - **Action**: modify
@@ -770,7 +770,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: None (independent of brain changes)
 - **Verify**: Confirm files deleted (`ls packages/runner/src/agents/` shows only `adapter.ts`, `index.ts`, `mock.ts`, `opencode.test.ts`, `opencode.ts`). Run `npx tsc --noEmit` or equivalent type check to confirm no broken imports.
 - **Verified**: ✅ index.ts line numbers confirmed accurate: imports (lines 2-3), dict entries (lines 11-12), exports (lines 38-39). All four files to delete confirmed to exist. ⚠️ **ADDITIONAL REFERENCES FOUND**: `packages/runner/src/mcp-server.test.ts` line 24 uses `agent: "claude-code"` in a test fixture. `packages/runner/src/plan-parser.test.ts` lines 179, 185 use `"claude-code"` as test data. These are string literals in tests (not import references) so they won't break the build, but should be updated to `"opencode"` for consistency. @build should update these two test files as part of this step.
-- [ ] pending
+- [x] done
 
 ### Step 11: Update README.md to position OpenCode as sole agent [docs]
 - **Action**: modify
@@ -825,7 +825,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 10 (adapters deleted first)
 - **Verify**: `grep -i "claude.code\|codex" README.md` returns no results. Also verify no references remain in `docs/` directory.
 - **Verified**: ✅ All 5 README.md changes have correct line numbers (18, 64, 272, 328, 408) — each verified against actual file content. ⚠️ **ADDITIONAL REFERENCES FOUND in docs/**: `docs/deployment-guide.md` lines 12, 195 reference claude-code/codex. `docs/config-reference.md` lines 158, 601, 660 reference claude-code. `docs/architecture.md` lines 110-111 have adapter table entries for claude-code and codex. `docs/cli-reference.md` lines 82, 120, 395 reference claude-code. Requirement 6 says "Remove references to Claude Code and Codex throughout docs" — these 4 docs files need updating too. @build should handle these as part of this step or add a follow-up step. `.Claude/prds/` reference is a historical PRD and can be left as-is.
-- [ ] pending
+- [x] done
 
 ## Sprint Contract
 

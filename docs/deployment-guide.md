@@ -9,7 +9,7 @@ Randal runs anywhere Bun runs. This guide covers three deployment patterns: a lo
 All deployments require:
 
 - **Bun** >= 1.1
-- **At least one agent CLI** installed and on PATH (`opencode`, `claude`, or `codex`)
+- ****OpenCode** agent CLI installed and on PATH (`opencode`)
 - **API keys** for your chosen model provider (e.g., `ANTHROPIC_API_KEY`)
 - **Meilisearch** (optional but recommended for production memory/search)
 
@@ -144,7 +144,7 @@ open http://localhost:7600/
 
 ## 🚂 Railway (Cloud)
 
-Railway provides a simple container hosting platform. The official Randal Docker image bundles everything — Bun, Meilisearch, Claude Code, and Randal — so you only need a single service.
+Railway provides a simple container hosting platform. The official Randal Docker image bundles everything — Bun, Meilisearch, OpenCode, and Randal — so you only need a single service.
 
 ### 1. Project Structure
 
@@ -192,7 +192,7 @@ In the Railway dashboard:
 ```yaml
 name: my-cloud-agent
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: /app/workspace
 credentials:
@@ -230,7 +230,7 @@ You can add a Randal agent to an existing project by extending the official Dock
 
 ### How It Works
 
-1. Your Dockerfile extends `ghcr.io/drewbietron/randal:latest` (includes Bun, Meilisearch, Claude Code, Randal)
+1. Your Dockerfile extends `ghcr.io/drewbietron/randal:latest` (includes Bun, Meilisearch, OpenCode, Randal)
 2. You copy your `randal.config.yaml` into the image
 3. You ship whatever files your agent needs (codebase, knowledge, data)
 4. The official entrypoint handles Meilisearch startup and `randal serve`

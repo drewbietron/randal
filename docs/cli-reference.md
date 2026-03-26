@@ -79,7 +79,7 @@ Run an agent locally in one-shot mode. If the argument is a path to an existing 
 ```bash
 randal run "refactor the auth module"
 randal run spec.md
-randal run "fix tests" --agent claude-code --max-iterations 10
+randal run "fix tests" --max-iterations 10
 ```
 
 | Flag | Type | Default | Description |
@@ -117,7 +117,7 @@ Submit a job to a running Randal instance via HTTP. If the argument is a path to
 
 ```bash
 randal send "build the new API endpoint"
-randal send spec.md --agent claude-code
+randal send spec.md --agent opencode
 randal send "fix bug" --url http://remote:7600
 ```
 
@@ -392,7 +392,7 @@ Interactive onboarding with environment auto-detection. Presents a choice betwee
 
 Auto-detects:
 - 🖥️ Platform (macOS / Linux)
-- 🔌 Installed agent CLIs (opencode, claude-code, codex)
+- 🔌 Installed agent CLI (opencode)
 - 🔍 Running Meilisearch instance
 
 ### `randal init --wizard`

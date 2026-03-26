@@ -15,7 +15,7 @@
 
 <br clear="right"/>
 
-Randal wraps agent CLIs — [OpenCode](https://github.com/nickthecook/opencode), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) — in a persistent execution loop and gives them superpowers:
+Randal wraps [OpenCode](https://github.com/nickthecook/opencode) in a persistent execution loop and gives it superpowers:
 
 - 🧠 **Memory** — Agents learn, remember, and share context across runs
 - ⏰ **Scheduling** — Heartbeats, cron jobs, and webhook triggers keep your agents alive
@@ -61,7 +61,7 @@ Fire and forget. Run a single job locally, get the output, exit. No server, no p
 
 ```bash
 randal run "refactor the auth module"
-randal run spec.md --agent claude-code --model claude-sonnet-4
+randal run spec.md --model claude-sonnet-4
 ```
 
 ### 🏗️ Daemon — `randal serve`
@@ -269,7 +269,7 @@ FROM ghcr.io/drewbietron/randal:latest
 COPY randal.config.yaml /app/randal.config.yaml
 ```
 
-The official Docker image includes Bun, Meilisearch, Claude Code, and Randal. Just provide your config. See [`examples/cloud-railway/`](examples/cloud-railway/) for the full setup with `railway.toml`.
+The official Docker image includes Bun, Meilisearch, OpenCode, and Randal. Just provide your config. See [`examples/cloud-railway/`](examples/cloud-railway/) for the full setup with `railway.toml`.
 
 </details>
 
@@ -325,7 +325,7 @@ COPY randal.config.yaml /app/randal.config.yaml
 COPY knowledge/ /app/knowledge/
 ```
 
-The image includes Bun, Meilisearch, Claude Code, and Randal — ready to run. Your Dockerfile controls what ships alongside it: codebase, knowledge files, data. For custom pre-start logic (e.g., database sync), add a `pre-start.sh` that the entrypoint will source automatically.
+The image includes Bun, Meilisearch, OpenCode, and Randal — ready to run. Your Dockerfile controls what ships alongside it: codebase, knowledge files, data. For custom pre-start logic (e.g., database sync), add a `pre-start.sh` that the entrypoint will source automatically.
 
 See [`examples/imported-service/`](examples/imported-service/) for the full pattern and [SECURITY.md](SECURITY.md) for deployment mode guidance.
 
@@ -405,7 +405,7 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | Requirement | Notes |
 |-------------|-------|
 | **Bun** >= 1.1 | Runtime. [Install](https://bun.sh) |
-| **Agent CLI** (at least one) | [OpenCode](https://github.com/nickthecook/opencode) · [Claude Code](https://docs.anthropic.com/en/docs/claude-code) · [Codex](https://github.com/openai/codex) |
+| **Agent CLI** | [OpenCode](https://github.com/nickthecook/opencode) |
 | **Meilisearch** *(optional)* | Full-text memory search + cross-agent sharing. [Install](https://www.meilisearch.com/docs/learn/getting_started/installation) |
 
 ---
