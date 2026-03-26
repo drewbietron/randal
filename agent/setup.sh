@@ -116,40 +116,39 @@ echo ""
 # --- 6. Install/check Meilisearch ---
 echo "Checking Meilisearch..."
 MEILI_RUNNING=false
+MEILI_URL=""
 
-if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
-  echo "  ✅ Meilisearch already running on :7700"
+if curl -sf http://localhost:7701/health > /dev/null 2>&1; then
+  echo "  ✅ Meilisearch already running on :7701 (Docker Compose)"
   MEILI_RUNNING=true
+  MEILI_URL="http://localhost:7701"
+elif curl -sf http://localhost:7700/health > /dev/null 2>&1; then
+  echo "  ✅ Meilisearch already running on :7700 (Homebrew)"
+  MEILI_RUNNING=true
+  MEILI_URL="http://localhost:7700"
 else
   echo "  Meilisearch not running. Attempting to install and start..."
 
   MEILI_STARTED=false
 
-  # Try Homebrew first
-  if command -v brew &> /dev/null; then
+  # Try Docker Compose first
+  if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    echo "  Trying Docker Compose..."
+    if bash "$REPO_DIR/scripts/meili-start.sh"; then
+      MEILI_STARTED=true
+      MEILI_URL="http://localhost:7701"
+    fi
+  fi
+
+  # Try Homebrew if Docker Compose didn't work
+  if [ "$MEILI_STARTED" = false ] && command -v brew &> /dev/null; then
     echo "  Trying Homebrew..."
     if brew install meilisearch 2>/dev/null; then
       if brew services start meilisearch 2>/dev/null; then
         echo "  ✅ Meilisearch installed and started via Homebrew"
         MEILI_STARTED=true
+        MEILI_URL="http://localhost:7700"
       fi
-    fi
-  fi
-
-  # Try Docker if Homebrew didn't work
-  if [ "$MEILI_STARTED" = false ] && command -v docker &> /dev/null; then
-    echo "  Trying Docker..."
-    # Stop existing container if present
-    docker rm -f randal-meilisearch 2>/dev/null || true
-    mkdir -p ~/.randal/meili-data
-    if docker run -d \
-      --name randal-meilisearch \
-      --restart unless-stopped \
-      -p 7700:7700 \
-      -v ~/.randal/meili-data:/meili_data \
-      getmeili/meilisearch:v1.12 2>/dev/null; then
-      echo "  ✅ Meilisearch started via Docker (data: ~/.randal/meili-data)"
-      MEILI_STARTED=true
     fi
   fi
 
@@ -157,18 +156,16 @@ else
   if [ "$MEILI_STARTED" = false ]; then
     echo "  ⚠️  Could not auto-install Meilisearch."
     echo "     Install manually:"
-    echo "       macOS:  brew install meilisearch && brew services start meilisearch"
-    echo "       Docker: docker run -d --name randal-meilisearch --restart unless-stopped \\"
-    echo "                 -p 7700:7700 -v ~/.randal/meili-data:/meili_data \\"
-    echo "                 getmeili/meilisearch:v1.12"
-    echo "       Other:  https://www.meilisearch.com/docs/learn/getting_started/installation"
+    echo "       Docker Compose: bash scripts/meili-start.sh"
+    echo "       Homebrew:       brew install meilisearch && brew services start meilisearch"
+    echo "       Other:          https://www.meilisearch.com/docs/learn/getting_started/installation"
   fi
 
   # Wait for health check after starting
   if [ "$MEILI_STARTED" = true ]; then
     echo "  Waiting for Meilisearch to be ready..."
     for i in $(seq 1 10); do
-      if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
+      if curl -sf "${MEILI_URL}/health" > /dev/null 2>&1; then
         echo "  ✅ Meilisearch is healthy"
         MEILI_RUNNING=true
         break
@@ -177,7 +174,7 @@ else
     done
     if [ "$MEILI_RUNNING" = false ]; then
       echo "  ⚠️  Meilisearch started but health check timed out after 10s"
-      echo "     Check manually: curl http://localhost:7700/health"
+      echo "     Check manually: curl ${MEILI_URL}/health"
     fi
   fi
 fi
@@ -185,6 +182,9 @@ echo ""
 
 # --- 7. Configure memory MCP if Meilisearch is running ---
 if [ "$MEILI_RUNNING" = true ]; then
+  if [ -z "$MEILI_URL" ]; then
+    MEILI_URL="http://localhost:7700"
+  fi
   echo "Configuring memory MCP server..."
   MCP_MEMORY_SERVER="$REPO_DIR/tools/mcp-memory-server.ts"
 
@@ -202,11 +202,12 @@ if [ "$MEILI_RUNNING" = true ]; then
         MCP_CONFIG=$(jq -n \
           --arg cmd "bun" \
           --arg script "$MCP_MEMORY_SERVER" \
+          --arg meiliUrl "$MEILI_URL" \
           '{
             type: "stdio",
             command: $cmd,
             args: ["run", $script],
-            env: { "MEILI_URL": "http://localhost:7700" },
+            env: { "MEILI_URL": $meiliUrl },
             enabled: true
           }')
 
@@ -221,7 +222,7 @@ if [ "$MEILI_RUNNING" = true ]; then
         echo "      \"type\": \"stdio\","
         echo "      \"command\": \"bun\","
         echo "      \"args\": [\"run\", \"$MCP_MEMORY_SERVER\"],"
-        echo "      \"env\": { \"MEILI_URL\": \"http://localhost:7700\" },"
+        echo "      \"env\": { \"MEILI_URL\": \"$MEILI_URL\" },"
         echo "      \"enabled\": true"
         echo "    }"
         echo ""

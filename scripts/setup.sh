@@ -125,13 +125,12 @@ fi
 echo ""
 echo "Setting up Meilisearch..."
 
-if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
+if curl -sf http://localhost:7701/health > /dev/null 2>&1; then
+  echo "  + Meilisearch already running on :7701"
+elif curl -sf http://localhost:7700/health > /dev/null 2>&1; then
   echo "  + Meilisearch already running on :7700"
-elif command -v brew &> /dev/null && brew list meilisearch &> /dev/null; then
-  echo "  Meilisearch installed via Homebrew but not running. Starting..."
-  brew services start meilisearch 2>/dev/null && echo "  + Meilisearch started via Homebrew" || echo "  ! Failed to start Meilisearch via Homebrew"
-elif command -v docker &> /dev/null; then
-  echo "  Starting Meilisearch via Docker..."
+elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+  echo "  Starting Meilisearch via Docker Compose..."
 
   # Generate a master key if not in .env
   if [ -f .env ] && ! grep -q "^MEILI_MASTER_KEY=" .env 2>/dev/null; then
@@ -139,30 +138,24 @@ elif command -v docker &> /dev/null; then
     echo "" >> .env
     echo "MEILI_MASTER_KEY=${MEILI_KEY}" >> .env
     echo "  + Generated MEILI_MASTER_KEY in .env"
-  elif [ -f .env ]; then
-    MEILI_KEY=$(grep "^MEILI_MASTER_KEY=" .env | cut -d'=' -f2)
-  else
-    MEILI_KEY=$(openssl rand -hex 16)
   fi
 
-  # Stop existing container if present
-  docker rm -f randal-meilisearch 2>/dev/null || true
-
-  # Start with persistent storage
-  mkdir -p ~/.randal/meili-data
-  docker run -d \
-    --name randal-meilisearch \
-    --restart unless-stopped \
-    -p 7700:7700 \
-    -v ~/.randal/meili-data:/meili_data \
-    -e MEILI_MASTER_KEY="${MEILI_KEY}" \
-    getmeili/meilisearch:v1.12
-
-  echo "  + Meilisearch started on :7700 (data: ~/.randal/meili-data)"
+  if bash "$REPO_DIR/scripts/meili-start.sh"; then
+    echo "  + Meilisearch started on :7701 (data: ./meili-data)"
+  else
+    echo "  ! Failed to start Meilisearch via Docker Compose"
+  fi
+elif command -v brew &> /dev/null; then
+  if ! brew list meilisearch &> /dev/null; then
+    echo "  Installing Meilisearch via Homebrew..."
+    brew install meilisearch 2>/dev/null || true
+  fi
+  echo "  Starting Meilisearch via Homebrew..."
+  brew services start meilisearch 2>/dev/null && echo "  + Meilisearch started via Homebrew" || echo "  ! Failed to start Meilisearch via Homebrew"
 else
   echo "  ! Could not start Meilisearch. Install manually:"
-  echo "    brew install meilisearch && brew services start meilisearch"
-  echo "    # or: docker run -d -p 7700:7700 getmeili/meilisearch:v1.12"
+  echo "    bash scripts/meili-start.sh"
+  echo "    # or: brew install meilisearch && brew services start meilisearch"
 fi
 
 echo ""

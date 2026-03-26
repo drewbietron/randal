@@ -33,32 +33,72 @@ The setup script also:
 
 Meilisearch provides persistent memory across sessions. Randal can remember past conversations, decisions, and context.
 
+### Local Meilisearch (Docker Compose Recommended)
+
+```bash
+bash scripts/meili-start.sh
+```
+
+- Meilisearch runs on `http://localhost:7701`
+- Data lives in `./meili-data` in the repo
+- Stop: `bash scripts/meili-stop.sh`
+- Status: `bash scripts/meili-status.sh`
+- Update your `opencode.json` MCP `MEILI_URL` to `http://localhost:7701`
+
+Homebrew is still supported, but Docker Compose is preferred to avoid global services.
+
+### MCP config examples
+
+Docker Compose (recommended, port 7701):
+
+```json
+"memory": {
+  "type": "stdio",
+  "command": "bun",
+  "args": ["run", "~/dev/randal/tools/mcp-memory-server.ts"],
+  "env": { "MEILI_URL": "http://localhost:7701" },
+  "enabled": true
+}
+```
+
+Homebrew (port 7700):
+
+```json
+"memory": {
+  "type": "stdio",
+  "command": "bun",
+  "args": ["run", "~/dev/randal/tools/mcp-memory-server.ts"],
+  "env": { "MEILI_URL": "http://localhost:7700" },
+  "enabled": true
+}
+```
+
 ### Automatic (via setup script)
 
 The setup script handles installation and startup. It tries, in order:
 
-1. **Homebrew**: `brew install meilisearch && brew services start meilisearch`
-2. **Docker**: persistent container on port 7700
+1. **Docker Compose**: `bash scripts/meili-start.sh`
+2. **Homebrew**: `brew install meilisearch && brew services start meilisearch`
 3. **Manual fallback** with instructions
 
 ### Manual Setup
 
 ```bash
-# Install
+# Docker Compose (recommended)
+bash scripts/meili-start.sh
+curl http://localhost:7701/health
+
+# Homebrew
 brew install meilisearch
-
-# Start as background service
 brew services start meilisearch
-
-# Verify
 curl http://localhost:7700/health
 # → {"status":"available"}
 ```
 
 ### Data Location
 
+- **Docker Compose**: `./meili-data/`
 - **Homebrew**: managed by `brew services` (typically `~/Library/Application Support/meilisearch/`)
-- **Docker**: `~/.randal/meili-data/`
 - **Backups**: just copy the data directory
 
 ### Optional: Authentication
@@ -66,17 +106,17 @@ curl http://localhost:7700/health
 For local-only use, no auth is needed. To add a master key:
 
 ```bash
-# Stop the service
-brew services stop meilisearch
-
-# Set a master key (save this somewhere)
+# Docker Compose
 export MEILI_MASTER_KEY="your-secret-key"
+bash scripts/meili-stop.sh
+bash scripts/meili-start.sh
 
-# Start with the key
+# Homebrew
+brew services stop meilisearch
 MEILI_MASTER_KEY="your-secret-key" brew services start meilisearch
 
 # Update your opencode.json MCP config to include the key:
-# "env": { "MEILI_URL": "http://localhost:7700", "MEILI_MASTER_KEY": "your-secret-key" }
+# "env": { "MEILI_URL": "http://localhost:7701", "MEILI_MASTER_KEY": "your-secret-key" }
 ```
 
 ### Optional: Cross-Machine Sharing
@@ -94,10 +134,10 @@ This lets your TUI sessions on the laptop search memories stored by the harness 
 
 - **Agent still works** — all core features are independent of memory
 - Memory tools return empty results gracefully (no errors, no crashes)
-- Restart: `brew services restart meilisearch`
-- Check logs: `brew services info meilisearch`
-- Docker: `docker restart randal-meilisearch`
-- Docker logs: `docker logs randal-meilisearch`
+- Restart (Docker Compose): `bash scripts/meili-stop.sh && bash scripts/meili-start.sh`
+- Status (Docker Compose): `bash scripts/meili-status.sh`
+- Restart (Homebrew): `brew services restart meilisearch`
+- Check logs (Homebrew): `brew services info meilisearch`
 
 ## Updating
 
@@ -149,12 +189,13 @@ Check that `opencode.json` has built-in agents disabled:
 
 ```bash
 # Check if Meilisearch is running
+curl http://localhost:7701/health
 curl http://localhost:7700/health
 
 # Restart
-brew services restart meilisearch
+bash scripts/meili-stop.sh && bash scripts/meili-start.sh
 # or
-docker restart randal-meilisearch
+brew services restart meilisearch
 ```
 
 ### Agent not loading
