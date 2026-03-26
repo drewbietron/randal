@@ -256,6 +256,8 @@ export const configSchema = z.object({
 		iterationTimeout: z.number().positive().default(600),
 		maxDelegationDepth: z.number().default(2),
 		maxDelegationsPerIteration: z.number().default(3),
+		agentName: z.string().optional(),
+		brainManaged: z.boolean().default(false),
 		struggle: z
 			.object({
 				noChangeThreshold: z.number().default(3),

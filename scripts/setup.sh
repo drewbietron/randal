@@ -2,6 +2,7 @@
 
 # cd to repo root regardless of where the script is invoked from
 cd "$(dirname "$0")/.."
+REPO_DIR="$(pwd)"
 
 echo "=== Randal Setup ==="
 
@@ -91,6 +92,16 @@ for tool in steer drive; do
   fi
 done
 
+# Set up the Randal brain (OpenCode agent config)
+echo ""
+echo "Setting up Randal brain..."
+if command -v opencode &> /dev/null; then
+  bash "$REPO_DIR/agent/setup.sh" --non-interactive
+else
+  echo "  - opencode not found, skipping brain setup"
+  echo "    Install OpenCode: https://opencode.ai"
+fi
+
 # Run init
 echo ""
 echo "Initializing Randal..."
@@ -110,45 +121,48 @@ if [ -f .env ]; then
   fi
 fi
 
-# Start Meilisearch if selected in config
-if [ -f randal.config.yaml ] && grep -q "store: meilisearch" randal.config.yaml; then
-  echo ""
-  echo "Meilisearch memory selected. Checking status..."
+# Always set up Meilisearch (used by both harness memory and brain MCP)
+echo ""
+echo "Setting up Meilisearch..."
 
-  if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
-    echo "  + Meilisearch already running on :7700"
-  elif command -v docker &> /dev/null; then
-    echo "  Starting Meilisearch via Docker..."
+if curl -sf http://localhost:7700/health > /dev/null 2>&1; then
+  echo "  + Meilisearch already running on :7700"
+elif command -v brew &> /dev/null && brew list meilisearch &> /dev/null; then
+  echo "  Meilisearch installed via Homebrew but not running. Starting..."
+  brew services start meilisearch 2>/dev/null && echo "  + Meilisearch started via Homebrew" || echo "  ! Failed to start Meilisearch via Homebrew"
+elif command -v docker &> /dev/null; then
+  echo "  Starting Meilisearch via Docker..."
 
-    # Generate a master key if not in .env
-    if ! grep -q "^MEILI_MASTER_KEY=" .env 2>/dev/null; then
-      MEILI_KEY=$(openssl rand -hex 16)
-      echo "" >> .env
-      echo "MEILI_MASTER_KEY=${MEILI_KEY}" >> .env
-      echo "  + Generated MEILI_MASTER_KEY in .env"
-    else
-      MEILI_KEY=$(grep "^MEILI_MASTER_KEY=" .env | cut -d'=' -f2)
-    fi
-
-    # Stop existing container if present
-    docker rm -f randal-meilisearch 2>/dev/null || true
-
-    # Start with persistent storage
-    mkdir -p ~/.randal/meili-data
-    docker run -d \
-      --name randal-meilisearch \
-      --restart unless-stopped \
-      -p 7700:7700 \
-      -v ~/.randal/meili-data:/meili_data \
-      -e MEILI_MASTER_KEY="${MEILI_KEY}" \
-      getmeili/meilisearch:v1.12
-
-    echo "  + Meilisearch started on :7700 (data: ~/.randal/meili-data)"
+  # Generate a master key if not in .env
+  if [ -f .env ] && ! grep -q "^MEILI_MASTER_KEY=" .env 2>/dev/null; then
+    MEILI_KEY=$(openssl rand -hex 16)
+    echo "" >> .env
+    echo "MEILI_MASTER_KEY=${MEILI_KEY}" >> .env
+    echo "  + Generated MEILI_MASTER_KEY in .env"
+  elif [ -f .env ]; then
+    MEILI_KEY=$(grep "^MEILI_MASTER_KEY=" .env | cut -d'=' -f2)
   else
-    echo "  ! Docker not found. Install Meilisearch manually:"
-    echo "    brew install meilisearch"
-    echo "    # or: docker run -d -p 7700:7700 getmeili/meilisearch:v1.12"
+    MEILI_KEY=$(openssl rand -hex 16)
   fi
+
+  # Stop existing container if present
+  docker rm -f randal-meilisearch 2>/dev/null || true
+
+  # Start with persistent storage
+  mkdir -p ~/.randal/meili-data
+  docker run -d \
+    --name randal-meilisearch \
+    --restart unless-stopped \
+    -p 7700:7700 \
+    -v ~/.randal/meili-data:/meili_data \
+    -e MEILI_MASTER_KEY="${MEILI_KEY}" \
+    getmeili/meilisearch:v1.12
+
+  echo "  + Meilisearch started on :7700 (data: ~/.randal/meili-data)"
+else
+  echo "  ! Could not start Meilisearch. Install manually:"
+  echo "    brew install meilisearch && brew services start meilisearch"
+  echo "    # or: docker run -d -p 7700:7700 getmeili/meilisearch:v1.12"
 fi
 
 echo ""

@@ -10,6 +10,7 @@ export const opencode: AgentAdapter = {
 
 	buildCommand(opts) {
 		const args = ["run"];
+		if (opts.agentName) args.push("--agent", opts.agentName);
 		if (opts.model) args.push("--model", opts.model);
 		args.push(opts.prompt);
 		return args;
