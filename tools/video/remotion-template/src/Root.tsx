@@ -8,14 +8,26 @@
 import React from "react";
 import { Composition } from "remotion";
 import { ScriptedVideo } from "./compositions/ScriptedVideo";
+import { Slideshow, computeSlideshowFrames } from "./compositions/Slideshow";
+import { TitleCard } from "./compositions/TitleCard";
+import { SocialPost } from "./compositions/SocialPost";
+import { Explainer, computeExplainerFrames } from "./compositions/Explainer";
+import type { SlideshowProps } from "./compositions/Slideshow";
+import type { TitleCardProps } from "./compositions/TitleCard";
+import type { SocialPostProps } from "./compositions/SocialPost";
+import type { ExplainerProps } from "./compositions/Explainer";
 import type { VideoScript } from "./lib/types";
 import { VIDEO_DEFAULTS } from "./lib/types";
+
+// ---------------------------------------------------------------------------
+// Duration helpers
+// ---------------------------------------------------------------------------
 
 /**
  * Compute the total duration in frames for a VideoScript.
  * Accounts for transition overlaps between scenes.
  */
-function computeTotalFrames(script: VideoScript): number {
+function computeScriptedVideoFrames(script: VideoScript): number {
   const fps = script.fps ?? VIDEO_DEFAULTS.fps;
   let totalFrames = 0;
 
@@ -32,7 +44,10 @@ function computeTotalFrames(script: VideoScript): number {
   return Math.max(1, totalFrames);
 }
 
-/** Default script used for Remotion Studio preview. */
+// ---------------------------------------------------------------------------
+// Default props for Remotion Studio previews
+// ---------------------------------------------------------------------------
+
 const defaultScript: VideoScript = {
   title: "Preview",
   fps: VIDEO_DEFAULTS.fps,
@@ -74,31 +89,120 @@ const defaultScript: VideoScript = {
   ],
 };
 
+const defaultSlideshowProps: SlideshowProps = {
+  images: [],
+  durationPerSlide: 3,
+  transition: "crossfade",
+};
+
+const defaultTitleCardProps: TitleCardProps = {
+  title: "Title Card Preview",
+  subtitle: "Optional subtitle goes here",
+  background: "#1a1a2e",
+  duration: 5,
+};
+
+const defaultSocialPostProps: SocialPostProps = {
+  backgroundClip: "",
+  caption: "This is a caption for a social post",
+  hashtags: ["video", "ai", "creative"],
+  duration: 8,
+};
+
+const defaultExplainerProps: ExplainerProps = {
+  sections: [
+    { title: "Introduction", content: "Welcome to this explainer video." },
+    { title: "Key Point", content: "Here is the main takeaway from this presentation." },
+    { title: "Conclusion", content: "Thanks for watching!" },
+  ],
+  duration: 15,
+};
+
+// ---------------------------------------------------------------------------
+// Root component
+// ---------------------------------------------------------------------------
+
 export function Root(): React.ReactElement {
   return React.createElement(
     React.Fragment,
     null,
+
+    // --- ScriptedVideo ---
     React.createElement(Composition, {
       id: "ScriptedVideo",
       component: ScriptedVideo,
-      durationInFrames: computeTotalFrames(defaultScript),
+      durationInFrames: computeScriptedVideoFrames(defaultScript),
       fps: defaultScript.fps ?? VIDEO_DEFAULTS.fps,
       width: defaultScript.width ?? VIDEO_DEFAULTS.width,
       height: defaultScript.height ?? VIDEO_DEFAULTS.height,
       defaultProps: { script: defaultScript },
-      /**
-       * calculateMetadata dynamically recomputes dimensions and duration
-       * when input props change (e.g., during SSR rendering with custom scripts).
-       */
       calculateMetadata: async ({ props }) => {
         const s = props.script;
         return {
-          durationInFrames: computeTotalFrames(s),
+          durationInFrames: computeScriptedVideoFrames(s),
           fps: s.fps ?? VIDEO_DEFAULTS.fps,
           width: s.width ?? VIDEO_DEFAULTS.width,
           height: s.height ?? VIDEO_DEFAULTS.height,
         };
       },
+    }),
+
+    // --- Slideshow ---
+    React.createElement(Composition, {
+      id: "Slideshow",
+      component: Slideshow,
+      durationInFrames: Math.max(1, computeSlideshowFrames(defaultSlideshowProps, VIDEO_DEFAULTS.fps)),
+      fps: VIDEO_DEFAULTS.fps,
+      width: VIDEO_DEFAULTS.width,
+      height: VIDEO_DEFAULTS.height,
+      defaultProps: defaultSlideshowProps,
+      calculateMetadata: async ({ props }) => ({
+        durationInFrames: computeSlideshowFrames(props, VIDEO_DEFAULTS.fps),
+      }),
+    }),
+
+    // --- TitleCard ---
+    React.createElement(Composition, {
+      id: "TitleCard",
+      component: TitleCard,
+      durationInFrames: Math.round(defaultTitleCardProps.duration * VIDEO_DEFAULTS.fps),
+      fps: VIDEO_DEFAULTS.fps,
+      width: VIDEO_DEFAULTS.width,
+      height: VIDEO_DEFAULTS.height,
+      defaultProps: defaultTitleCardProps,
+      calculateMetadata: async ({ props }) => ({
+        durationInFrames: Math.max(1, Math.round(props.duration * VIDEO_DEFAULTS.fps)),
+      }),
+    }),
+
+    // --- SocialPost (9:16 portrait) ---
+    React.createElement(Composition, {
+      id: "SocialPost",
+      component: SocialPost,
+      durationInFrames: Math.round(defaultSocialPostProps.duration * VIDEO_DEFAULTS.fps),
+      fps: VIDEO_DEFAULTS.fps,
+      width: 1080,
+      height: 1920,
+      defaultProps: defaultSocialPostProps,
+      calculateMetadata: async ({ props }) => ({
+        durationInFrames: Math.max(1, Math.round(props.duration * VIDEO_DEFAULTS.fps)),
+        width: 1080,
+        height: 1920,
+      }),
+    }),
+
+    // --- Explainer ---
+    React.createElement(Composition, {
+      id: "Explainer",
+      component: Explainer,
+      durationInFrames: computeExplainerFrames(defaultExplainerProps, VIDEO_DEFAULTS.fps),
+      fps: VIDEO_DEFAULTS.fps,
+      width: VIDEO_DEFAULTS.width,
+      height: VIDEO_DEFAULTS.height,
+      defaultProps: defaultExplainerProps,
+      calculateMetadata: async ({ props }) => ({
+        durationInFrames: computeExplainerFrames(props, VIDEO_DEFAULTS.fps),
+      }),
     }),
   );
 }
