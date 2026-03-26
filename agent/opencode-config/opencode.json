@@ -27,12 +27,14 @@
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/video/mcp-server.ts"],
 			"environment": {
 				"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}",
-				"GOOGLE_AI_STUDIO_KEY": "{env:GOOGLE_AI_STUDIO_KEY}"
+				"GOOGLE_AI_STUDIO_KEY": "{env:GOOGLE_AI_STUDIO_KEY}",
+				"VERTEX_AI_API_KEY": "{env:GOOGLE_VERTEX_API_KEY}",
+				"GOOGLE_CLOUD_PROJECT": "{env:GOOGLE_CLOUD_PROJECT}"
 			},
 			"enabled": true
 		}
 	},
 	"tools": {
-		"video_*": false
+		"video_*": true
 	}
 }
