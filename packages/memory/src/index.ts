@@ -8,7 +8,8 @@ export { parseLearnings } from "./learnings.js";
 export type { Learning } from "./learnings.js";
 
 export { MeilisearchStore } from "./stores/meilisearch.js";
-export type { MemoryStore } from "./stores/index.js";
+export type { EmbedderConfig, MeilisearchStoreOptions } from "./stores/meilisearch.js";
+export type { MemoryStore, MemorySearchOptions } from "./stores/index.js";
 
 export {
 	searchCrossAgent,

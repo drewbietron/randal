@@ -4,59 +4,83 @@
  *
  * Designed to be used as an OpenCode MCP server (configured in opencode.json).
  * Agents can search and store long-term memory through three tools:
- *   - memory_search  — full-text search with optional category filter
- *   - memory_store   — index a new memory document (with dedup)
+ *   - memory_search  — hybrid semantic + keyword search with scope filtering
+ *   - memory_store   — index a new memory document (with dedup and auto-scope)
  *   - memory_recent  — retrieve N most recent memories
  *
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
  * Environment variables:
- *   MEILI_URL         — Meilisearch URL (default: http://localhost:7700)
- *   MEILI_MASTER_KEY  — optional Meilisearch API key
- *   MEILI_INDEX       — index name (default: memory-randal)
+ *   MEILI_URL            — Meilisearch URL (default: http://localhost:7700)
+ *   MEILI_MASTER_KEY     — optional Meilisearch API key
+ *   MEILI_INDEX          — index name (default: memory-randal)
+ *   OPENROUTER_API_KEY   — OpenRouter API key for semantic embeddings (optional)
+ *   EMBEDDING_MODEL      — embedding model (default: openai/text-embedding-3-small)
+ *   EMBEDDING_URL        — embedding endpoint (default: https://openrouter.ai/api/v1/embeddings)
+ *   SEMANTIC_RATIO       — hybrid search ratio 0-1 (default: 0.7, higher = more semantic)
  */
 
-import { createHash, randomUUID } from "node:crypto";
-import { MeiliSearch } from "meilisearch";
+import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
+import { MeilisearchStore } from "@randal/memory";
+import type { EmbedderConfig } from "@randal/memory";
 
 // ---------------------------------------------------------------------------
-// Types — replicated from @randal/core so this script has zero internal deps
+// Configuration from environment
 // ---------------------------------------------------------------------------
 
-type MemoryDocType = "snapshot" | "learning" | "context" | "session";
+const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
+const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
+const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
 
-type MemoryCategory =
-	| "preference"
-	| "pattern"
-	| "fact"
-	| "lesson"
-	| "escalation"
-	| "skill-outcome"
-	| "session-start"
-	| "session-progress"
-	| "session-complete"
-	| "session-error"
-	| "session-paused";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "openai/text-embedding-3-small";
+const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
+const SEMANTIC_RATIO = Number.parseFloat(process.env.SEMANTIC_RATIO || "0.7");
 
-type MemorySource = "self" | `agent:${string}` | "human" | string;
+/** Categories that default to global scope (cross-project). */
+const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
 
-interface MemoryDoc {
-	id: string;
-	type: MemoryDocType;
-	file: string;
-	content: string;
-	contentHash: string;
-	category: MemoryCategory;
-	source: MemorySource;
-	timestamp: string;
-	jobId?: string;
-	iteration?: number;
-	sessionId?: string;
-	status?: string;
-	planFile?: string;
-	branch?: string;
-	progress?: string;
+// ---------------------------------------------------------------------------
+// Project scope auto-detection
+// ---------------------------------------------------------------------------
+
+let defaultScope = "global";
+try {
+	const gitRoot = execSync("git rev-parse --show-toplevel", {
+		encoding: "utf-8",
+		stdio: ["pipe", "pipe", "pipe"],
+	}).trim();
+	if (gitRoot) {
+		defaultScope = `project:${gitRoot}`;
+	}
+} catch {
+	// Not in a git repo — default to global
 }
+
+// ---------------------------------------------------------------------------
+// Store construction
+// ---------------------------------------------------------------------------
+
+const embedder: EmbedderConfig | undefined = OPENROUTER_API_KEY
+	? {
+			type: "openrouter",
+			apiKey: OPENROUTER_API_KEY,
+			model: EMBEDDING_MODEL,
+			url: EMBEDDING_URL,
+		}
+	: undefined;
+
+const store = new MeilisearchStore({
+	url: MEILI_URL,
+	apiKey: MEILI_MASTER_KEY,
+	index: MEILI_INDEX,
+	embedder,
+	semanticRatio: Number.isFinite(SEMANTIC_RATIO) ? SEMANTIC_RATIO : 0.7,
+});
+
+/** Whether the store initialized successfully. */
+let storeAvailable = false;
 
 // ---------------------------------------------------------------------------
 // JSON-RPC types
@@ -91,7 +115,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_search",
 		description:
-			"Search Randal's long-term memory for relevant context, past learnings, patterns, and preferences. Returns matching memories sorted by relevance.",
+			"Search Randal's long-term memory for relevant context, past learnings, patterns, and preferences. Returns matching memories sorted by relevance. Searches using hybrid semantic + keyword matching when an embedding API key is configured; falls back to keyword-only otherwise. By default, returns project-scoped memories + global memories. Use scope: 'all' to search across all projects.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
@@ -105,6 +129,11 @@ const TOOL_DEFINITIONS = [
 					description:
 						"Optional category filter: preference, pattern, fact, lesson, escalation, skill-outcome, session-start, session-progress, session-complete, session-error, session-paused",
 				},
+				scope: {
+					type: "string",
+					description:
+						'Search scope. Omit for project-scoped + global memories (default). Use "all" to search across all projects, or "global" for global-only.',
+				},
 			},
 			required: ["query"],
 		},
@@ -112,7 +141,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_store",
 		description:
-			"Store a new memory in Randal's long-term memory. Automatically deduplicates by content hash. Use this to persist learnings, preferences, patterns, or facts discovered during work.",
+			"Store a new memory in Randal's long-term memory. Automatically deduplicates by content hash. Use this to persist learnings, preferences, patterns, or facts discovered during work. Automatically assigns scope based on category (preference/fact → global, others → project-scoped). Use the scope parameter to override the automatic assignment.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
@@ -124,7 +153,13 @@ const TOOL_DEFINITIONS = [
 				},
 				source: {
 					type: "string",
-					description: 'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
+					description:
+						'Source of the memory: "self", "agent:<name>", or "human" (default: "self")',
+				},
+				scope: {
+					type: "string",
+					description:
+						'Explicit scope override. Omit to auto-assign based on category (preference/fact → global, others → current project). Use "global" to force global scope.',
 				},
 			},
 			required: ["content", "category"],
@@ -133,7 +168,7 @@ const TOOL_DEFINITIONS = [
 	{
 		name: "memory_recent",
 		description:
-			"Retrieve the most recent memories from Randal's long-term memory, sorted by timestamp descending.",
+			"Retrieve the most recent memories from Randal's long-term memory, sorted by timestamp descending. Returns recent memories across all scopes.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {
@@ -148,60 +183,49 @@ const TOOL_DEFINITIONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// Meilisearch client setup
+// Tool handlers — thin wrappers over MeilisearchStore
 // ---------------------------------------------------------------------------
 
-const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
-const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
-const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
-
-const client = new MeiliSearch({
-	host: MEILI_URL,
-	apiKey: MEILI_MASTER_KEY || undefined,
-});
-
-/** Whether Meilisearch is available. Set during init. */
-let meiliAvailable = false;
-
-/**
- * Initialize the Meilisearch index with the correct schema configuration.
- * If Meilisearch is unreachable, logs a warning and continues — tools will
- * return graceful empty results.
- */
-async function initIndex(): Promise<void> {
-	try {
-		const index = client.index(MEILI_INDEX);
-
-		// Configure searchable, filterable, and sortable attributes
-		await index.updateSearchableAttributes(["content", "category", "type", "source"]);
-		await index.updateFilterableAttributes([
-			"type",
-			"category",
-			"source",
-			"file",
-			"timestamp",
-			"contentHash",
-		]);
-		await index.updateSortableAttributes(["timestamp"]);
-
-		meiliAvailable = true;
-		log("info", `Meilisearch index "${MEILI_INDEX}" initialized at ${MEILI_URL}`);
-	} catch (err) {
-		meiliAvailable = false;
-		log(
-			"warn",
-			`Meilisearch unavailable at ${MEILI_URL}: ${err instanceof Error ? err.message : String(err)}. Tools will return empty results.`,
-		);
+class ToolError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ToolError";
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Tool handlers
-// ---------------------------------------------------------------------------
+/**
+ * Resolve the scope for a search request.
+ * - If explicit scope is provided, use it.
+ * - Otherwise, use the auto-detected project scope (includes global + project).
+ */
+function resolveSearchScope(explicitScope: string | undefined): string | undefined {
+	if (explicitScope) {
+		return explicitScope;
+	}
+	// defaultScope is "global" if not in a git repo, or "project:/path" if in one.
+	// When defaultScope is "global", pass undefined to skip scope filtering (backward-compatible).
+	if (defaultScope === "global") {
+		return undefined;
+	}
+	return defaultScope;
+}
 
 /**
- * Full-text search with optional category filter, sorted by timestamp desc.
+ * Resolve the scope for a store operation.
+ * - If explicit scope is provided, use it.
+ * - If category is preference/fact, use "global".
+ * - Otherwise, use the auto-detected project scope.
  */
+function resolveStoreScope(category: string, explicitScope: string | undefined): string {
+	if (explicitScope) {
+		return explicitScope;
+	}
+	if (GLOBAL_SCOPE_CATEGORIES.has(category)) {
+		return "global";
+	}
+	return defaultScope;
+}
+
 async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
 	const query = params.query as string;
 	if (!query) {
@@ -209,32 +233,23 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 	}
 
 	const limit = typeof params.limit === "number" ? params.limit : 10;
-	const category = params.category as string | undefined;
+	const scope = resolveSearchScope(params.scope as string | undefined);
 
-	if (!meiliAvailable) {
+	if (!storeAvailable) {
 		return { results: [], message: "Meilisearch is not available" };
 	}
 
 	try {
-		const index = client.index(MEILI_INDEX);
-		const searchOpts: Record<string, unknown> = {
-			limit,
-			sort: ["timestamp:desc"],
-		};
-
-		if (category) {
-			searchOpts.filter = `category = "${category}"`;
-		}
-
-		const results = await index.search(query, searchOpts);
+		const docs = await store.search(query, limit, scope ? { scope } : undefined);
 
 		return {
-			results: (results.hits as unknown as MemoryDoc[]).map((doc) => ({
+			results: docs.map((doc) => ({
 				id: doc.id,
 				type: doc.type,
 				category: doc.category,
 				content: doc.content,
 				source: doc.source,
+				scope: doc.scope,
 				timestamp: doc.timestamp,
 			})),
 		};
@@ -244,13 +259,11 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 	}
 }
 
-/**
- * Store a new memory document. Deduplicates by SHA-256 content hash.
- */
 async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
 	const content = params.content as string;
-	const category = params.category as MemoryCategory;
+	const category = params.category as string;
 	const source = (params.source as string) || "self";
+	const explicitScope = params.scope as string | undefined;
 
 	if (!content) {
 		throw new ToolError("Missing required parameter: content");
@@ -259,49 +272,35 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 		throw new ToolError("Missing required parameter: category");
 	}
 
-	if (!meiliAvailable) {
+	if (!storeAvailable) {
 		return { stored: false, message: "Meilisearch is not available" };
 	}
 
 	try {
-		const index = client.index(MEILI_INDEX);
-
-		// Compute SHA-256 content hash for dedup
 		const contentHash = createHash("sha256").update(content).digest("hex");
+		const scope = resolveStoreScope(category, explicitScope);
 
-		// Check for existing document with the same content hash
-		const existing = await index.search("", {
-			filter: `contentHash = "${contentHash}"`,
-			limit: 1,
-		});
-
-		if (existing.hits.length > 0) {
-			return {
-				stored: false,
-				duplicate: true,
-				existingId: (existing.hits[0] as unknown as MemoryDoc).id,
-				message: "Memory with identical content already exists",
-			};
-		}
-
-		// Build and index the new document
-		const doc: MemoryDoc = {
-			id: randomUUID(),
+		await store.index({
 			type: "learning",
 			file: "",
 			content,
 			contentHash,
-			category,
-			source,
+			category: category as
+				| "preference"
+				| "pattern"
+				| "fact"
+				| "lesson"
+				| "escalation"
+				| "skill-outcome",
+			source: source as "self" | `agent:${string}` | "human",
 			timestamp: new Date().toISOString(),
-		};
-
-		await index.addDocuments([doc]);
+			scope,
+		});
 
 		return {
 			stored: true,
-			id: doc.id,
 			contentHash,
+			scope,
 			message: "Memory stored successfully",
 		};
 	} catch (err) {
@@ -310,30 +309,24 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 	}
 }
 
-/**
- * Retrieve the N most recent memories, sorted by timestamp descending.
- */
 async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
-	if (!meiliAvailable) {
+	if (!storeAvailable) {
 		return { results: [], message: "Meilisearch is not available" };
 	}
 
 	try {
-		const index = client.index(MEILI_INDEX);
-		const results = await index.search("", {
-			limit,
-			sort: ["timestamp:desc"],
-		});
+		const docs = await store.recent(limit);
 
 		return {
-			results: (results.hits as unknown as MemoryDoc[]).map((doc) => ({
+			results: docs.map((doc) => ({
 				id: doc.id,
 				type: doc.type,
 				category: doc.category,
 				content: doc.content,
 				source: doc.source,
+				scope: doc.scope,
 				timestamp: doc.timestamp,
 			})),
 		};
@@ -354,13 +347,6 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 // JSON-RPC dispatch
 // ---------------------------------------------------------------------------
 
-class ToolError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "ToolError";
-	}
-}
-
 /**
  * Dispatch a validated JSON-RPC request to the correct handler.
  */
@@ -374,7 +360,7 @@ async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse> {
 			id,
 			result: {
 				protocolVersion: "2024-11-05",
-				serverInfo: { name: "randal-memory", version: "0.1.0" },
+				serverInfo: { name: "randal-memory", version: "0.2.0" },
 				capabilities: {
 					tools: { listChanged: false },
 				},
@@ -490,7 +476,6 @@ async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse> {
 
 /**
  * Write a JSON-RPC response to stdout.
- * Uses Bun.write for reliable, non-blocking output.
  */
 function send(response: JsonRpcResponse): void {
 	const line = `${JSON.stringify(response)}\n`;
@@ -567,10 +552,20 @@ async function processLine(line: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-	log("info", `randal-memory MCP server starting (index: ${MEILI_INDEX})`);
+	log("info", `randal-memory MCP server starting (index: ${MEILI_INDEX}, scope: ${defaultScope})`);
 
-	// Initialize Meilisearch (non-fatal if unavailable)
-	await initIndex();
+	// Initialize MeilisearchStore (non-fatal if unavailable)
+	try {
+		await store.init();
+		storeAvailable = true;
+		log("info", `Store initialized at ${MEILI_URL} (embedder: ${embedder ? "openrouter" : "none"})`);
+	} catch (err) {
+		storeAvailable = false;
+		log(
+			"warn",
+			`Store initialization failed at ${MEILI_URL}: ${err instanceof Error ? err.message : String(err)}. Tools will return empty results.`,
+		);
+	}
 
 	log("info", "Listening on stdin for JSON-RPC requests...");
 
