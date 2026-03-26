@@ -115,6 +115,24 @@ function extractImageFromResponse(responseBody: unknown): {
 		throw new ImageGenerationError("API response choice has no message.", "INVALID_RESPONSE");
 	}
 
+	// Case 0: message.images array (OpenRouter Gemini image generation response)
+	// The API may return images in a top-level `images` field on the message,
+	// with content set to null.
+	const images = message.images as Array<Record<string, unknown>> | undefined;
+	if (Array.isArray(images) && images.length > 0) {
+		for (const img of images) {
+			if (img.type === "image_url") {
+				const imageUrl = img.image_url as Record<string, unknown> | string | undefined;
+				if (typeof imageUrl === "string") {
+					return parseDataUri(imageUrl);
+				}
+				if (imageUrl && typeof (imageUrl as Record<string, unknown>).url === "string") {
+					return parseDataUri((imageUrl as Record<string, unknown>).url as string);
+				}
+			}
+		}
+	}
+
 	const content = message.content;
 
 	// Case 1: content is an array of parts (multimodal response)

@@ -1,14 +1,24 @@
 /**
- * Veo video provider — generates video clips via Google AI Studio Veo API.
+ * Veo video provider — generates video clips via Google Veo API.
  *
- * Uses Google Veo (3.0 / 3.1) through the Gemini API. The API follows an
- * async submit-then-poll pattern:
+ * Supports two backends:
+ *   1. **Vertex AI** (preferred) — requires VERTEX_AI_API_KEY + GOOGLE_CLOUD_PROJECT
+ *   2. **AI Studio** (fallback)  — requires GOOGLE_AI_STUDIO_KEY
  *
- * 1. POST to `predictLongRunning` -> returns an operation name
- * 2. GET the operation periodically until `done: true`
- * 3. Extract the generated video data (base64 or download URL)
+ * The backend is auto-detected based on which environment variables are set.
+ * When both are configured, Vertex AI is preferred.
  *
- * Environment: GOOGLE_AI_STUDIO_KEY
+ * Both backends use an async submit-then-poll pattern:
+ *
+ *   1. POST to `predictLongRunning` → returns an operation name
+ *   2. Poll the operation until `done: true`
+ *   3. Extract the generated video data (base64)
+ *
+ * Key differences between backends:
+ *   - Vertex AI polls via POST to `fetchPredictOperation` with operation name in body
+ *   - AI Studio polls via GET to `operations/{id}`
+ *   - Vertex AI returns `response.videos[]` instead of `response.generatedSamples[]`
+ *   - Vertex AI requires `generateAudio: true` for Veo 3+ models
  */
 
 import type { GenerateClipOptions, GenerateClipResult, VideoProvider } from "./types";
@@ -18,10 +28,18 @@ import { VideoProviderError } from "./types";
 // Veo-specific types
 // ---------------------------------------------------------------------------
 
-export type VeoModel = "veo-3.0-generate-001" | "veo-3.1-generate-preview";
+export type VeoBackend = "vertex" | "ai-studio";
+
+export type VeoModel =
+	| "veo-3.0-generate-001"
+	| "veo-3.0-fast-generate-001"
+	| "veo-3.1-generate-001"
+	| "veo-3.1-fast-generate-001"
+	| "veo-3.1-generate-preview"
+	| "veo-3.1-fast-generate-preview";
 
 interface VeoSubmitResponse {
-	/** The operation resource name, e.g. "operations/xyz". */
+	/** The operation resource name, e.g. "operations/xyz" or a full Vertex AI path. */
 	name: string;
 }
 
@@ -35,16 +53,19 @@ interface VeoOperationResponse {
 	};
 	metadata?: Record<string, unknown>;
 	response?: {
-		/** Array of generated video objects. */
+		/** AI Studio: array of generated video objects. */
 		generatedSamples?: Array<{
 			video?: {
-				/** Base64-encoded video data. */
 				bytesBase64Encoded?: string;
-				/** GCS URI for the video (some endpoints). */
 				uri?: string;
-				/** MIME type. */
 				mimeType?: string;
 			};
+		}>;
+		/** Vertex AI: array of generated video objects. */
+		videos?: Array<{
+			bytesBase64Encoded?: string;
+			gcsUri?: string;
+			mimeType?: string;
 		}>;
 		[key: string]: unknown;
 	};
@@ -55,15 +76,36 @@ interface VeoOperationResponse {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_MODEL: VeoModel = "veo-3.0-generate-001";
-const DEFAULT_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_TIMEOUT_MS = 180_000; // 3 minutes
-const DEFAULT_POLL_INTERVAL_MS = 5_000; // 5 seconds
+
+const AI_STUDIO_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const VERTEX_AI_LOCATION = "us-central1";
+
+const AI_STUDIO_TIMEOUT_MS = 180_000; // 3 minutes
+const VERTEX_AI_TIMEOUT_MS = 300_000; // 5 minutes
+
+const AI_STUDIO_POLL_INTERVAL_MS = 5_000; // 5 seconds
+const VERTEX_AI_POLL_INTERVAL_MS = 15_000; // 15 seconds
+
 const DEFAULT_DURATION = 8;
 const DEFAULT_ASPECT_RATIO = "16:9";
 const DEFAULT_RESOLUTION = "720p";
 const DEFAULT_SAMPLE_COUNT = 1;
 const SUBMIT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 1_000;
+
+const AI_STUDIO_MODELS: VeoModel[] = [
+	"veo-3.0-generate-001",
+	"veo-3.1-generate-preview",
+];
+
+const VERTEX_AI_MODELS: VeoModel[] = [
+	"veo-3.0-generate-001",
+	"veo-3.0-fast-generate-001",
+	"veo-3.1-generate-001",
+	"veo-3.1-fast-generate-001",
+	"veo-3.1-generate-preview",
+	"veo-3.1-fast-generate-preview",
+];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -79,21 +121,71 @@ function sleep(ms: number): Promise<void> {
 
 export class VeoProvider implements VideoProvider {
 	readonly name = "veo";
-	readonly description = "Google Veo — generate video clips via AI Studio (Veo 3.0 / 3.1)";
-	readonly models: string[] = ["veo-3.0-generate-001", "veo-3.1-generate-preview"];
+	readonly description = "Google Veo — generate video clips (Vertex AI or AI Studio)";
 
-	private apiBaseUrl?: string;
+	/** Exposed model list is determined at construction based on detected backend. */
+	readonly models: string[];
 
-	constructor(options?: { apiBaseUrl?: string }) {
-		this.apiBaseUrl = options?.apiBaseUrl;
+	private backend: VeoBackend;
+
+	constructor() {
+		this.backend = this.detectBackend();
+		this.models = this.backend === "vertex" ? [...VERTEX_AI_MODELS] : [...AI_STUDIO_MODELS];
 	}
 
+	/**
+	 * Returns true if at least one backend is configured.
+	 */
 	isConfigured(): boolean {
-		const key = process.env.GOOGLE_AI_STUDIO_KEY;
-		return typeof key === "string" && key.trim() !== "";
+		// Vertex AI
+		const vertexKey = process.env.VERTEX_AI_API_KEY;
+		const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+		if (vertexKey && vertexKey.trim() && projectId && projectId.trim()) {
+			return true;
+		}
+		// AI Studio
+		const aiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
+		if (aiStudioKey && aiStudioKey.trim()) {
+			return true;
+		}
+		return false;
 	}
 
+	/**
+	 * Detect which backend to use. Prefers Vertex AI when both are configured.
+	 */
+	private detectBackend(): VeoBackend {
+		const vertexKey = process.env.VERTEX_AI_API_KEY;
+		const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+		if (vertexKey && vertexKey.trim() && projectId && projectId.trim()) {
+			return "vertex";
+		}
+		const aiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
+		if (aiStudioKey && aiStudioKey.trim()) {
+			return "ai-studio";
+		}
+		throw new VideoProviderError(
+			"No Veo API key configured. Set VERTEX_AI_API_KEY + GOOGLE_CLOUD_PROJECT for Vertex AI, or GOOGLE_AI_STUDIO_KEY for AI Studio.",
+			"MISSING_API_KEY",
+			"veo",
+		);
+	}
+
+	/**
+	 * Returns the API key for the active backend.
+	 */
 	private getApiKey(): string {
+		if (this.backend === "vertex") {
+			const key = process.env.VERTEX_AI_API_KEY;
+			if (!key || key.trim() === "") {
+				throw new VideoProviderError(
+					"VERTEX_AI_API_KEY environment variable is not set or empty.",
+					"MISSING_API_KEY",
+					this.name,
+				);
+			}
+			return key.trim();
+		}
 		const key = process.env.GOOGLE_AI_STUDIO_KEY;
 		if (!key || key.trim() === "") {
 			throw new VideoProviderError(
@@ -105,6 +197,20 @@ export class VeoProvider implements VideoProvider {
 		return key.trim();
 	}
 
+	/**
+	 * Returns the default timeout for the active backend.
+	 */
+	private getDefaultTimeout(): number {
+		return this.backend === "vertex" ? VERTEX_AI_TIMEOUT_MS : AI_STUDIO_TIMEOUT_MS;
+	}
+
+	/**
+	 * Returns the default poll interval for the active backend.
+	 */
+	private getDefaultPollInterval(): number {
+		return this.backend === "vertex" ? VERTEX_AI_POLL_INTERVAL_MS : AI_STUDIO_POLL_INTERVAL_MS;
+	}
+
 	// -------------------------------------------------------------------------
 	// Public
 	// -------------------------------------------------------------------------
@@ -113,7 +219,6 @@ export class VeoProvider implements VideoProvider {
 		prompt: string,
 		options: GenerateClipOptions = {},
 	): Promise<GenerateClipResult> {
-		// Validate inputs
 		if (!prompt || prompt.trim() === "") {
 			throw new VideoProviderError("Prompt must be a non-empty string.", "API_ERROR", this.name);
 		}
@@ -141,7 +246,7 @@ export class VeoProvider implements VideoProvider {
 		const operationName = await this.submitGeneration(prompt, apiKey, model, options);
 
 		// Step 2: Poll until done
-		const operation = await this.pollOperation(operationName, apiKey, options);
+		const operation = await this.pollOperation(operationName, apiKey, model, options);
 
 		// Step 3: Extract the video data
 		const { buffer, mimeType } = this.extractVideoFromOperation(operation);
@@ -162,6 +267,7 @@ export class VeoProvider implements VideoProvider {
 			prompt: prompt.trim(),
 			metadata: {
 				provider: this.name,
+				backend: this.backend,
 				operationName,
 			},
 		};
@@ -171,14 +277,21 @@ export class VeoProvider implements VideoProvider {
 	// Submit
 	// -------------------------------------------------------------------------
 
+	private buildSubmitUrl(model: VeoModel): string {
+		if (this.backend === "vertex") {
+			const projectId = process.env.GOOGLE_CLOUD_PROJECT!.trim();
+			return `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:predictLongRunning`;
+		}
+		return `${AI_STUDIO_API_BASE}/models/${model}:predictLongRunning`;
+	}
+
 	private async submitGeneration(
 		prompt: string,
 		apiKey: string,
 		model: VeoModel,
 		options: GenerateClipOptions,
 	): Promise<string> {
-		const apiBase = this.apiBaseUrl ?? DEFAULT_API_BASE;
-		const url = `${apiBase}/models/${model}:predictLongRunning`;
+		const url = this.buildSubmitUrl(model);
 
 		// Build the request body
 		const instance: Record<string, unknown> = { prompt };
@@ -197,6 +310,11 @@ export class VeoProvider implements VideoProvider {
 			resolution: options.resolution ?? DEFAULT_RESOLUTION,
 			sampleCount: options.sampleCount ?? DEFAULT_SAMPLE_COUNT,
 		};
+
+		// Vertex AI requires generateAudio for Veo 3+ models
+		if (this.backend === "vertex") {
+			parameters.generateAudio = true;
+		}
 
 		const requestBody = {
 			instances: [instance],
@@ -257,7 +375,7 @@ export class VeoProvider implements VideoProvider {
 					}
 
 					throw new VideoProviderError(
-						`Veo API error on submit: ${errorMessage}`,
+						`Veo API error on submit (${this.backend}): ${errorMessage}`,
 						"API_ERROR",
 						this.name,
 						status,
@@ -287,7 +405,7 @@ export class VeoProvider implements VideoProvider {
 				}
 
 				throw new VideoProviderError(
-					`Network error submitting to Veo after ${SUBMIT_MAX_RETRIES + 1} attempts: ${
+					`Network error submitting to Veo (${this.backend}) after ${SUBMIT_MAX_RETRIES + 1} attempts: ${
 						error instanceof Error ? error.message : String(error)
 					}`,
 					"NETWORK_ERROR",
@@ -312,21 +430,58 @@ export class VeoProvider implements VideoProvider {
 	// Poll
 	// -------------------------------------------------------------------------
 
-	private async pollOperation(
+	/**
+	 * Build the poll URL and request options based on the active backend.
+	 *
+	 * - AI Studio:  GET  `{base}/operations/{id}`
+	 * - Vertex AI:  POST `{base}/.../models/{model}:fetchPredictOperation`
+	 *               with `{ "operationName": "..." }` in body
+	 */
+	private buildPollRequest(
 		operationName: string,
 		apiKey: string,
-		options: GenerateClipOptions,
-	): Promise<VeoOperationResponse> {
-		const apiBase = this.apiBaseUrl ?? DEFAULT_API_BASE;
-		const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-		const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+		model: VeoModel,
+	): { url: string; init: RequestInit } {
+		if (this.backend === "vertex") {
+			const projectId = process.env.GOOGLE_CLOUD_PROJECT!.trim();
+			const url = `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:fetchPredictOperation`;
+			return {
+				url,
+				init: {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"x-goog-api-key": apiKey,
+					},
+					body: JSON.stringify({ operationName }),
+				},
+			};
+		}
 
-		// Construct the poll URL. The operationName may or may not include the
-		// "operations/" prefix — handle both.
+		// AI Studio: GET with the operation path
 		const operationPath = operationName.startsWith("operations/")
 			? operationName
 			: `operations/${operationName}`;
-		const url = `${apiBase}/${operationPath}`;
+		const url = `${AI_STUDIO_API_BASE}/${operationPath}`;
+		return {
+			url,
+			init: {
+				method: "GET",
+				headers: {
+					"x-goog-api-key": apiKey,
+				},
+			},
+		};
+	}
+
+	private async pollOperation(
+		operationName: string,
+		apiKey: string,
+		model: VeoModel,
+		options: GenerateClipOptions,
+	): Promise<VeoOperationResponse> {
+		const timeoutMs = options.timeoutMs ?? this.getDefaultTimeout();
+		const pollIntervalMs = options.pollIntervalMs ?? this.getDefaultPollInterval();
 
 		const startTime = Date.now();
 		let consecutiveErrors = 0;
@@ -336,25 +491,21 @@ export class VeoProvider implements VideoProvider {
 			const elapsed = Date.now() - startTime;
 			if (elapsed >= timeoutMs) {
 				throw new VideoProviderError(
-					`Video generation timed out after ${Math.round(elapsed / 1000)}s. Operation: ${operationName}`,
+					`Video generation timed out after ${Math.round(elapsed / 1000)}s (${this.backend}). Operation: ${operationName}`,
 					"TIMEOUT",
 					this.name,
 				);
 			}
 
 			try {
-				const response = await fetch(url, {
-					method: "GET",
-					headers: {
-						"x-goog-api-key": apiKey,
-					},
-				});
+				const { url, init } = this.buildPollRequest(operationName, apiKey, model);
+				const response = await fetch(url, init);
 
 				if (!response.ok) {
 					consecutiveErrors++;
 					if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 						throw new VideoProviderError(
-							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times. Last status: ${response.status}`,
+							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times (${this.backend}). Last status: ${response.status}`,
 							"API_ERROR",
 							this.name,
 							response.status,
@@ -370,7 +521,7 @@ export class VeoProvider implements VideoProvider {
 				// Check for operation-level errors
 				if (body.error) {
 					throw new VideoProviderError(
-						`Veo operation failed: [${body.error.code}] ${body.error.message}`,
+						`Veo operation failed (${this.backend}): [${body.error.code}] ${body.error.message}`,
 						"OPERATION_FAILED",
 						this.name,
 						body.error.code,
@@ -393,7 +544,7 @@ export class VeoProvider implements VideoProvider {
 				consecutiveErrors++;
 				if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 					throw new VideoProviderError(
-						`Polling failed due to ${MAX_CONSECUTIVE_ERRORS} consecutive network errors: ${
+						`Polling failed due to ${MAX_CONSECUTIVE_ERRORS} consecutive network errors (${this.backend}): ${
 							error instanceof Error ? error.message : String(error)
 						}`,
 						"NETWORK_ERROR",
@@ -425,10 +576,71 @@ export class VeoProvider implements VideoProvider {
 			);
 		}
 
+		// Vertex AI format: response.videos[]
+		if (this.backend === "vertex") {
+			return this.extractVertexVideo(response);
+		}
+
+		// AI Studio format: response.generatedSamples[]
+		return this.extractAiStudioVideo(response);
+	}
+
+	/**
+	 * Extract video data from a Vertex AI response.
+	 * Vertex AI returns `response.videos[]` with `bytesBase64Encoded` or `gcsUri`.
+	 */
+	private extractVertexVideo(response: NonNullable<VeoOperationResponse["response"]>): {
+		buffer: Buffer;
+		mimeType: string;
+	} {
+		const videos = response.videos as
+			| Array<{ bytesBase64Encoded?: string; gcsUri?: string; mimeType?: string }>
+			| undefined;
+
+		if (!videos || videos.length === 0) {
+			throw new VideoProviderError(
+				"Completed Vertex AI operation has no videos in response.",
+				"NO_VIDEO_IN_RESPONSE",
+				this.name,
+			);
+		}
+
+		const firstVideo = videos[0];
+
+		if (firstVideo.bytesBase64Encoded) {
+			return {
+				buffer: Buffer.from(firstVideo.bytesBase64Encoded, "base64"),
+				mimeType: firstVideo.mimeType ?? "video/mp4",
+			};
+		}
+
+		if (firstVideo.gcsUri) {
+			throw new VideoProviderError(
+				`Video data is at a GCS URI (${firstVideo.gcsUri}) instead of inline base64. GCS URI downloads are not yet supported.`,
+				"INVALID_RESPONSE",
+				this.name,
+			);
+		}
+
+		throw new VideoProviderError(
+			"First Vertex AI video has no usable data (no base64 or GCS URI).",
+			"NO_VIDEO_IN_RESPONSE",
+			this.name,
+		);
+	}
+
+	/**
+	 * Extract video data from an AI Studio response.
+	 * AI Studio returns `response.generatedSamples[].video.bytesBase64Encoded`.
+	 */
+	private extractAiStudioVideo(response: NonNullable<VeoOperationResponse["response"]>): {
+		buffer: Buffer;
+		mimeType: string;
+	} {
 		const samples = response.generatedSamples;
 		if (!samples || samples.length === 0) {
 			throw new VideoProviderError(
-				"Completed operation has no generated samples.",
+				"Completed AI Studio operation has no generated samples.",
 				"NO_VIDEO_IN_RESPONSE",
 				this.name,
 			);
@@ -444,7 +656,6 @@ export class VeoProvider implements VideoProvider {
 			);
 		}
 
-		// Try base64-encoded bytes first
 		if (video.bytesBase64Encoded) {
 			return {
 				buffer: Buffer.from(video.bytesBase64Encoded, "base64"),
@@ -452,7 +663,6 @@ export class VeoProvider implements VideoProvider {
 			};
 		}
 
-		// If there's a URI, we need to fetch it
 		if (video.uri) {
 			throw new VideoProviderError(
 				`Video data is at a URI (${video.uri}) instead of inline base64. URI-based downloads are not yet supported.`,
