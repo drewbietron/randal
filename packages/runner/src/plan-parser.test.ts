@@ -176,13 +176,13 @@ describe("parseDelegationRequests", () => {
 <delegate>{"task": "Valid task"}</delegate>
 <delegate>not json</delegate>
 <delegate>{"task": ""}</delegate>
-<delegate>{"task": "Also valid", "agent": "claude-code"}</delegate>`;
+<delegate>{"task": "Also valid", "agent": "opencode"}</delegate>`;
 
 		const result = parseDelegationRequests(output);
 		expect(result).toHaveLength(2);
 		expect(result[0].task).toBe("Valid task");
 		expect(result[1].task).toBe("Also valid");
-		expect(result[1].agent).toBe("claude-code");
+		expect(result[1].agent).toBe("opencode");
 	});
 
 	test("handles optional fields correctly", () => {

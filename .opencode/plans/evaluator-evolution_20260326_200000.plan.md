@@ -716,7 +716,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 1 (model-context.ts returns context_strategy and session_length)
 - **Verify**: Read `agent/agents/randal.md` and confirm: (1) Capability Discovery mentions playwright with probing method, (2) Build Pipeline step 1.1 reads context_strategy, (3) Task ID handling is conditional on context_strategy, (4) session_length "short" reduces budget.
 - **Verified**: ✅ Change A: Capability Discovery (lines 481-487) replacement confirmed. Playwright MCP probing via opencode config is consistent with existing steer/drive probing (both check for availability of external tools). Edge case note: Should specify that if opencode config file doesn't exist, playwright = no (add fallback). Change B: Step 1 at line 204, step 1.1 inserts after it — correct. Task ID handling at line 246 — replacement text makes warm resume conditional on context_strategy "compact". Dependency on Step 1 (model-context.ts returns context_strategy/session_length) is correct. No conflicts with Steps 6-8 (different sections of randal.md). The `session_length: "short"` budget reduction (by 1, minimum 2) is conservative and safe.
-- [ ] pending
+- [x] done
 
 ### Step 10: Delete Claude Code and Codex adapters and update index.ts [backend]
 - **Action**: delete + modify
