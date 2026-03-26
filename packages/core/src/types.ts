@@ -276,6 +276,7 @@ export interface MemoryDoc {
 	timestamp: string;
 	jobId?: string;
 	iteration?: number;
+	scope?: string;
 }
 
 // ---- Messages ----
@@ -299,4 +300,14 @@ export interface MessageDoc {
 	timestamp: string;
 	jobId?: string;
 	pendingAction?: string;
+	/** Scope: "global" or "project:/path" — same pattern as MemoryDoc */
+	scope?: string;
+	/** Discriminator: regular message vs. session summary */
+	type?: "message" | "summary";
+	/** Populated only for type: "summary" — the condensed summary text */
+	summary?: string;
+	/** For summaries: how many messages this summary covers */
+	messageCount?: number;
+	/** Extracted topic keywords for better search matching */
+	topicKeywords?: string[];
 }

@@ -21,7 +21,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 		id: "job-1",
 		status: "running",
 		prompt: "Fix the bug",
-		agent: "claude-code",
+		agent: "opencode",
 		model: "claude-sonnet-4-20250514",
 		maxIterations: 10,
 		workdir: "/tmp/test",

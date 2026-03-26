@@ -5,6 +5,7 @@ export interface RunOpts {
 	model?: string;
 	systemPrompt?: string;
 	workdir: string;
+	agentName?: string;
 }
 
 export interface AgentAdapter {

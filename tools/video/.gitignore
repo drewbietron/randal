@@ -1,0 +1,9 @@
+node_modules/
+dist/
+out/
+*.mp4
+*.webm
+*.mov
+remotion-template/node_modules/
+remotion-template/dist/
+remotion-template/out/

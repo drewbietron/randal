@@ -102,13 +102,11 @@ The core execution engine. For each job:
 
 ### 🔌 Agent Adapters
 
-Adapters normalize different agent CLIs behind a common interface:
+Adapters normalize the agent CLI behind a common interface:
 
 | Adapter | Binary | Notes |
 |---------|--------|-------|
 | `opencode` | `opencode` | `opencode run [--model] <prompt>` |
-| `claude-code` | `claude` | `claude --print --dangerously-skip-permissions [--model] <prompt>` |
-| `codex` | `codex` | `codex --full-auto [--model] <prompt>` |
 | `mock` | `bash` | For testing. Reads from script files. |
 
 Each adapter implements: `buildCommand()`, `parseUsage()`, `envOverrides()`.

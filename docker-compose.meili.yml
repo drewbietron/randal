@@ -1,0 +1,10 @@
+services:
+  meili:
+    image: getmeili/meilisearch:v1.12
+    container_name: randal-meili
+    ports:
+      - "7701:7700"
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-randal-local-key}
+    volumes:
+      - ./meili-data:/meili_data

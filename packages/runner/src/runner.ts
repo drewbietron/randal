@@ -224,6 +224,7 @@ async function executeIteration(
 	completionPromiseTag: string,
 	activeJobEntry?: { job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> },
 	onStreamEvent?: StreamEventCallback,
+	agentName?: string,
 ): Promise<JobIteration> {
 	const iterStart = Date.now();
 	const iterNum = job.iterations.current + 1;
@@ -235,6 +236,7 @@ async function executeIteration(
 		model: job.model,
 		systemPrompt: undefined, // already merged into prompt
 		workdir: job.workdir,
+		agentName,
 	});
 
 	// Add adapter-specific env overrides
@@ -705,14 +707,24 @@ export class Runner {
 
 				// Build system prompt
 				const includeProtocol = adapter.supportsProtocol !== false;
+				const brainManaged = this.config.runner.brainManaged === true;
 				const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
-					memoryContext,
-					injectedContext: injectedContext ?? undefined,
-					skillContext,
-					currentPlan: job.plan.length > 0 ? job.plan : undefined,
-					progressHistory: job.progressHistory.length > 0 ? job.progressHistory : undefined,
-					delegationResults: job.delegations.length > 0 ? job.delegations : undefined,
+					memoryContext: brainManaged ? [] : memoryContext,
+					injectedContext: injectedContext ?? undefined, // always pass — external input
+					skillContext: brainManaged ? [] : skillContext,
+					currentPlan: brainManaged ? undefined : job.plan.length > 0 ? job.plan : undefined,
+					progressHistory: brainManaged
+						? undefined
+						: job.progressHistory.length > 0
+							? job.progressHistory
+							: undefined,
+					delegationResults: brainManaged
+						? undefined
+						: job.delegations.length > 0
+							? job.delegations
+							: undefined,
 					includeProtocol,
+					brainManaged,
 				});
 
 				this.emit("iteration.start", job, {
@@ -753,6 +765,7 @@ export class Runner {
 					this.config.runner.completionPromise,
 					entry,
 					onStreamEvent,
+					this.config.runner.agentName,
 				);
 
 				// Update job state

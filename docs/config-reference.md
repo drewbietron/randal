@@ -155,7 +155,7 @@ Agent execution configuration. The `runner` section is required.
 
 | Field | Type | Default | Required | Description |
 |-------|------|---------|----------|-------------|
-| `runner.defaultAgent` | `"opencode"` \| `"claude-code"` \| `"codex"` \| `"mock"` | `"opencode"` | No | Default agent adapter. |
+| `runner.defaultAgent` | `"opencode"` \| `"mock"` | `"opencode"` | No | Default agent adapter. |
 | `runner.defaultModel` | string | `"anthropic/claude-sonnet-4"` | No | Default model identifier passed to the agent CLI. |
 | `runner.defaultMaxIterations` | number | `20` | No | Maximum iterations per job before marking as failed. |
 | `runner.workdir` | string | — | Yes | Working directory for agent processes. |
@@ -598,7 +598,7 @@ identity:
     - "Never expose PII"
     - "Always escalate payment issues"
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: /home/node/workspace
 credentials:
@@ -657,7 +657,7 @@ name: assistant
 identity:
   persona: "Personal dev assistant reachable via any channel."
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: ~/dev
 credentials:

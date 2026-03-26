@@ -252,6 +252,7 @@ export async function buildSystemPrompt(
 		progressHistory?: string[];
 		delegationResults?: DelegationResult[];
 		includeProtocol?: boolean;
+		brainManaged?: boolean;
 	} = {},
 ): Promise<string> {
 	// Construct PromptContext with auto-populated vars
@@ -312,8 +313,8 @@ export async function buildSystemPrompt(
 
 	const knowledge = [...globKnowledge, ...resolvedKnowledgeEntries];
 
-	// Load skill docs through the resolver
-	const skills = await loadSkillDocs(config.tools, basePath, ctx);
+	// Load skill docs through the resolver (skip when brain handles its own skills)
+	const skills = options.brainManaged ? [] : await loadSkillDocs(config.tools, basePath, ctx);
 
 	return assemblePrompt({
 		persona: resolvedPersona,
@@ -321,12 +322,12 @@ export async function buildSystemPrompt(
 		rules: resolvedRules,
 		knowledge,
 		skills,
-		discoveredSkills: options.skillContext ?? [],
-		memory: options.memoryContext ?? [],
-		injectedContext: options.injectedContext,
-		currentPlan: options.currentPlan,
-		progressHistory: options.progressHistory,
-		delegationResults: options.delegationResults,
+		discoveredSkills: options.brainManaged ? [] : (options.skillContext ?? []),
+		memory: options.brainManaged ? [] : (options.memoryContext ?? []),
+		injectedContext: options.injectedContext, // always pass — external input from channels
+		currentPlan: options.brainManaged ? undefined : options.currentPlan,
+		progressHistory: options.brainManaged ? undefined : options.progressHistory,
+		delegationResults: options.brainManaged ? undefined : options.delegationResults,
 		includeProtocol: options.includeProtocol,
 	});
 }
