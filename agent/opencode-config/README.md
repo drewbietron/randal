@@ -81,15 +81,19 @@ See `rules/tool-architecture.md` for the full pattern. Quick version:
 
 ## API Keys
 
-API keys for capability MCP servers go in `opencode.json` under each server's `environment` block:
+**All secrets go in the root `.env` file** (gitignored). The `opencode.json` config references them via `{env:VAR_NAME}` substitution:
 
 ```json
 "video": {
   "type": "local",
   "command": ["bun", "run", ".../tools/video/mcp-server.ts"],
   "environment": {
-    "OPENROUTER_API_KEY": "sk-or-...",
-    "GOOGLE_AI_STUDIO_KEY": "AI..."
+    "OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}",
+    "GOOGLE_AI_STUDIO_KEY": "{env:GOOGLE_AI_STUDIO_KEY}"
   }
 }
 ```
+
+> **Never hardcode API keys in opencode.json** — this file is checked into git.
+> Non-secret config values (URLs, model names) can stay inline.
+> See `.env.example` for the full list of environment variables.
