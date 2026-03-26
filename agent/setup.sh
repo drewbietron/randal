@@ -3,6 +3,18 @@
 # One-command setup for personal machines running OpenCode — no harness needed.
 # Usage: bash agent/setup.sh [--non-interactive]
 #
+# Architecture: Symlink-based config consolidation
+#   All OpenCode config lives in this repo at agent/opencode-config/.
+#   This script symlinks ~/.config/opencode -> agent/opencode-config/
+#   so there is exactly ONE source of truth. Changes to agents, tools,
+#   skills, lenses, and opencode.json are version-controlled in the repo
+#   and take effect immediately through the symlink.
+#
+#   To experiment without affecting the repo:
+#     rm ~/.config/opencode
+#     cp -r agent/opencode-config ~/.config/opencode
+#   To re-link: see agent/opencode-config/README.md
+#
 # What this does:
 #   1. Symlinks ~/.config/opencode -> agent/opencode-config/ (one source of truth)
 #   2. Installs plugin dependencies (bun install)
