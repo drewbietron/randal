@@ -8,6 +8,8 @@
  * Environment: OPENROUTER_API_KEY
  */
 
+import { detectMimeType } from "./mime-detect";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -124,10 +126,14 @@ function extractImageFromResponse(responseBody: unknown): {
 			if (img.type === "image_url") {
 				const imageUrl = img.image_url as Record<string, unknown> | string | undefined;
 				if (typeof imageUrl === "string") {
-					return parseDataUri(imageUrl);
+					const parsed = parseDataUri(imageUrl);
+					const detected = detectMimeType(parsed.buffer, parsed.mimeType);
+					return { buffer: parsed.buffer, mimeType: detected.mimeType };
 				}
 				if (imageUrl && typeof (imageUrl as Record<string, unknown>).url === "string") {
-					return parseDataUri((imageUrl as Record<string, unknown>).url as string);
+					const parsed = parseDataUri((imageUrl as Record<string, unknown>).url as string);
+					const detected = detectMimeType(parsed.buffer, parsed.mimeType);
+					return { buffer: parsed.buffer, mimeType: detected.mimeType };
 				}
 			}
 		}
@@ -144,7 +150,9 @@ function extractImageFromResponse(responseBody: unknown): {
 			if (p.type === "image_url") {
 				const imageUrl = p.image_url as Record<string, unknown> | undefined;
 				if (imageUrl?.url && typeof imageUrl?.url === "string") {
-					return parseDataUri(imageUrl.url);
+					const parsed = parseDataUri(imageUrl.url);
+					const detected = detectMimeType(parsed.buffer, parsed.mimeType);
+					return { buffer: parsed.buffer, mimeType: detected.mimeType };
 				}
 			}
 
@@ -152,12 +160,11 @@ function extractImageFromResponse(responseBody: unknown): {
 			if (p.type === "inline_data" || p.inline_data) {
 				const inlineData = (p.inline_data ?? p) as Record<string, unknown>;
 				if (inlineData.data && typeof inlineData.data === "string") {
-					const mime =
+					const buffer = Buffer.from(inlineData.data, "base64");
+					const fallback =
 						typeof inlineData.mime_type === "string" ? inlineData.mime_type : "image/png";
-					return {
-						buffer: Buffer.from(inlineData.data, "base64"),
-						mimeType: mime,
-					};
+					const detected = detectMimeType(buffer, fallback);
+					return { buffer, mimeType: detected.mimeType };
 				}
 			}
 		}
@@ -168,19 +175,17 @@ function extractImageFromResponse(responseBody: unknown): {
 		// Try data URI first
 		const dataUriMatch = content.match(/data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=]+)/);
 		if (dataUriMatch) {
-			return {
-				buffer: Buffer.from(dataUriMatch[2], "base64"),
-				mimeType: dataUriMatch[1],
-			};
+			const buffer = Buffer.from(dataUriMatch[2], "base64");
+			const detected = detectMimeType(buffer, dataUriMatch[1]);
+			return { buffer, mimeType: detected.mimeType };
 		}
 
 		// Try raw base64 block (very long base64 string)
 		const base64Match = content.match(/([A-Za-z0-9+/=]{100,})/);
 		if (base64Match) {
-			return {
-				buffer: Buffer.from(base64Match[1], "base64"),
-				mimeType: "image/png",
-			};
+			const buffer = Buffer.from(base64Match[1], "base64");
+			const detected = detectMimeType(buffer);
+			return { buffer, mimeType: detected.mimeType };
 		}
 	}
 
