@@ -395,7 +395,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: None (domain tags already exist in plan.md)
 - **Verify**: Read `agent/agents/build.md` and confirm the Functional Review Mode section exists between Full-Spectrum Review Mode and "What You Do NOT Do", contains all 6 evaluator modes, and includes the adversarial stance language.
 - **Verified**: ✅ Insertion point confirmed (after line 363, before line 364 "## What You Do NOT Do"). All 6 modes present in mapping table. Adversarial stance language included. Graceful degradation chains complete. Recursive feedback loop has proper termination (max 3 iterations OR all Critical/High resolved). Edge case added: app startup failure in Visual QA falls back to code review.
-- [ ] pending
+- [x] done
 
 ### Step 4: Add Sprint Contract Negotiation mode to build.md [backend]
 - **Action**: modify
