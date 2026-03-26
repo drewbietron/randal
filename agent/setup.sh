@@ -64,6 +64,18 @@ for file in randal.md plan.md build.md; do
 done
 echo ""
 
+# --- 2b. Copy lens files ---
+echo "Copying lens files..."
+mkdir -p "$OC_CONFIG/lenses"
+for file in "$AGENT_DIR/lenses/"*.md; do
+  if [ -f "$file" ]; then
+    name="$(basename "$file")"
+    cp "$file" "$OC_CONFIG/lenses/$name"
+    echo "  ✅ $name copied"
+  fi
+done
+echo ""
+
 # --- 3. Symlink custom tool files ---
 echo "Linking custom tools..."
 for file in model-context.ts loop-state.ts; do
