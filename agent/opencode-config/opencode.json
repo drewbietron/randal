@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-claude-auth"],
+  "agent": {
+    "build": { "disable": true },
+    "plan": { "disable": true }
+  },
+  "mcp": {
+    "tavily": {
+      "type": "remote",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=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",
+      "enabled": true
+    },
+    "memory": {
+      "type": "local",
+      "command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory-server.ts"],
+      "environment": {
+        "MEILI_URL": "http://localhost:7701",
+        "MEILI_MASTER_KEY": "randal-local-key"
+      },
+      "enabled": true
+    }
+  }
+}
