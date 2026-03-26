@@ -210,6 +210,24 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
    - If no branch exists for this plan: tell @build to create `opencode/{plan-slug}`.
    - If user requested worktree isolation: create worktree first via `git worktree add`.
 
+2.5. **Dispatch @build in CONTRACT MODE** to negotiate sprint contracts for the upcoming batch:
+   ```
+   Write sprint contracts for the next batch of steps in the plan at .opencode/plans/{filename}.
+   Read the plan file, identify the next {N} unchecked steps (your context budget), and write testable done criteria for each.
+   
+   CONTRACT MODE — do NOT build anything. Write done criteria only.
+   
+   CONTEXT BUDGET: Contract for at most {N} steps.
+   
+   Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
+   ```
+   Parse the `CONTRACT:` header from @build's response. If the contract looks reasonable (criteria are specific and testable), proceed to dispatch @build for implementation. If @build flags risks or unclear requirements, report them to the user before proceeding.
+   
+   **Skip conditions**: Sprint contracts are skipped when:
+   - The user said "quick mode" or "skip contracts"
+   - Only 1-2 steps remain (overhead not worth it)
+   - Resuming a build where contracts were already written for this batch
+
 3. **Dispatch @build** with:
    ```
    Execute the implementation plan at .opencode/plans/{filename}.
@@ -372,6 +390,13 @@ When writing to loop-state.json, always follow this schema:
       "completed_steps": 8,
       "current_step": 9,
       "task_id": "session_abc123",
+      "sprint_contract": {
+        "steps": [6, 7, 8],
+        "negotiated_at": "2026-03-25T20:16:00Z",
+        "skipped": false
+      },
+      "eval_iterations": 0,
+      "eval_strategy": null,
       "started_at": "2026-03-25T20:15:00Z",
       "last_activity_at": "2026-03-25T20:22:00Z",
       "error": null | "Description of what went wrong",

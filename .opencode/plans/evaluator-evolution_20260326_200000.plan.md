@@ -542,7 +542,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 4 (build.md has Contract Negotiation Mode)
 - **Verify**: Read `agent/agents/randal.md` and confirm: (1) Build Pipeline has a contract dispatch step between branch check and build dispatch, (2) loop-state schema has new fields.
 - **Verified**: ✅ Insertion point confirmed (between step 2 at line 208 and step 3 at line 213). loop-state.json schema `task_id` field at line 374 confirmed. Sprint contract dispatch happens at correct point in pipeline — after branch check but before build dispatch. Skip conditions are well-defined. No conflicts with steps 1-5 (different files). Dependencies on Step 4 (build.md Contract Negotiation Mode) are correct.
-- [ ] pending
+- [x] done
 
 ### Step 7: Replace Full-Spectrum Review dispatch with Adaptive Evaluator dispatch in randal.md [backend]
 - **Action**: modify
