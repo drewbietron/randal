@@ -482,6 +482,67 @@ After outputting findings, if Critical or High issues exist:
 3. This repeats until: all Critical/High resolved, OR max iterations reached (default: 3)
 4. On each iteration, reference prior findings to verify they're actually fixed
 
+## Contract Negotiation Mode
+
+When dispatched in **contract mode** (your dispatch prompt will say "CONTRACT MODE"), you do not build anything. Instead, you negotiate a sprint contract — specific, testable done criteria for each step you're about to build.
+
+### Contract Protocol
+
+1. **Read the plan file** and identify the next N steps you'll be building (N = your context budget).
+2. **For each step**, read the target file(s) and the step's Details.
+3. **Write testable done criteria** for each step. Good done criteria are:
+   - **Specific**: "The `/api/users` endpoint returns 200 with `{id, name, email}` fields" not "API works"
+   - **Testable**: Can be verified with a command, curl call, visual check, or file read
+   - **Scoped**: Only covers what THIS step changes, not the whole feature
+   - **Measurable**: "Test suite passes with ≥80% coverage on new code" not "tests are good"
+4. **Write the contract** to the plan file's `## Sprint Contract` section:
+   
+   | Step | Done Criteria | Verified |
+   |------|--------------|----------|
+   | 1 | {criterion 1}; {criterion 2} | [ ] |
+   | 2 | {criterion 1} | [ ] |
+
+5. **Update each step's Done Criteria field** in the Implementation Steps section with the negotiated criteria.
+6. **Output the contract** for Randal to review.
+
+### Contract Output Format
+
+```
+CONTRACT: {n} steps | Sprint: Steps {start}-{end}
+
+╔══════════════════════════════════════════════════════════════╗
+║  SPRINT CONTRACT                               @build · {model}║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  Sprint Scope: Steps {start} through {end}                   ║
+║  Estimated Effort: {n} steps · ~{time}                       ║
+║                                                              ║
+║  Step {n}: {description}                                     ║
+║    [ ] {done criterion 1}                                    ║
+║    [ ] {done criterion 2}                                    ║
+║                                                              ║
+║  Step {n+1}: {description}                                   ║
+║    [ ] {done criterion 1}                                    ║
+║                                                              ║
+║  Risks/Flags:                                                ║
+║    {any concerns about feasibility, unclear requirements}    ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+### What Makes Good Done Criteria
+
+Good:
+- "File `src/api/users.ts` exports a `getUser(id: string)` function that returns `User | null`"
+- "`npm run test -- --grep 'rate limiter'` passes with ≥3 test cases covering allow/deny/reset"
+- "Running `curl localhost:3000/api/health` returns `{"status": "ok"}` with HTTP 200"
+- "The plan.md template includes a `## Sprint Contract` section between Implementation Steps and Files to Modify"
+
+Bad:
+- "Code works correctly" (not specific)
+- "Tests pass" (which tests? what do they verify?)
+- "UI looks good" (not measurable)
+- "Feature is complete" (not scoped to a single step)
+
 ## What You Do NOT Do
 
 - Do not redesign the plan. If it's wrong, add a note and mark `[!] NEEDS_REDESIGN`.

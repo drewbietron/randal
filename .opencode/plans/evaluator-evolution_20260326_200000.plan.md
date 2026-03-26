@@ -466,7 +466,7 @@ README update (depends on adapter cleanup)
 - **Depends on**: Step 2 (plan.md template has Sprint Contract section and Done Criteria field)
 - **Verify**: Read `agent/agents/build.md` and confirm Contract Negotiation Mode section exists with protocol, output format, and examples.
 - **Verified**: ✅ Insertion point correct (after Functional Review Mode, before What You Do NOT Do). Dependencies correctly declared (Step 2 for plan.md template). Contract protocol has 6 steps. Output format and good/bad examples present. Risks/Flags section handles unclear requirements during negotiation.
-- [ ] pending
+- [x] done
 
 ### Step 5: Add Pivot-or-Refine protocol to build.md [backend]
 - **Action**: modify
