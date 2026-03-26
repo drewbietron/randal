@@ -116,6 +116,8 @@ function calculate(contextLimit: number, outputLimit: number, modelName: string)
 					: tier === 2
 						? "Medium context model — conservative budgets, checkpoint after each small batch"
 						: "Large context model — comfortable budgets, but still checkpoint for fresh context",
+			context_strategy: tier === 1 ? "compact" : "reset",
+			session_length: tier === 1 ? "long" : tier === 2 ? "medium" : "short",
 		},
 		null,
 		2,
@@ -143,6 +145,8 @@ function fallback(reason: string) {
 			},
 			note: `Fallback to Tier 2 defaults. Reason: ${reason}`,
 			warning: reason,
+			context_strategy: "reset",
+			session_length: "medium",
 		},
 		null,
 		2,
