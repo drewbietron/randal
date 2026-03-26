@@ -78,7 +78,7 @@ const ENTRY_POINT = "src/index.ts";
 // ---------------------------------------------------------------------------
 
 /** Validate that the Remotion project directory is well-formed. */
-function validateProjectDir(projectDir: string): void {
+async function validateProjectDir(projectDir: string): Promise<void> {
   const resolvedDir = resolve(projectDir);
 
   if (!existsSync(resolvedDir)) {
@@ -89,7 +89,7 @@ function validateProjectDir(projectDir: string): void {
   }
 
   const entryPoint = join(resolvedDir, ENTRY_POINT);
-  if (!existsSync(entryPoint)) {
+  if (!(await Bun.file(entryPoint).exists())) {
     throw new RenderError(
       `Remotion entry point not found: "${entryPoint}". Expected "${ENTRY_POINT}" in the project directory.`,
       "MISSING_ENTRY_POINT",
@@ -223,7 +223,7 @@ export async function renderVideo(
 
   // --- Preflight checks ---
   const resolvedProjectDir = resolve(projectDir);
-  validateProjectDir(resolvedProjectDir);
+  await validateProjectDir(resolvedProjectDir);
   await ensureOutputDir(outputPath);
 
   const resolvedOutputPath = resolve(outputPath);
@@ -313,7 +313,7 @@ export async function renderVideo(
   }
 
   // Verify the output file was created
-  if (!existsSync(resolvedOutputPath)) {
+  if (!(await Bun.file(resolvedOutputPath).exists())) {
     throw new RenderError(
       `Render appeared to succeed (exit code 0) but the output file was not found at "${resolvedOutputPath}".\nStdout: ${stdout.slice(0, 500)}`,
       "RENDER_FAILED",

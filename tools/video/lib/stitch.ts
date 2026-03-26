@@ -14,10 +14,8 @@
  * Uses `Bun.$` shell for subprocess execution.
  */
 
-import { existsSync } from "node:fs";
-import { writeFile, unlink, mkdir } from "node:fs/promises";
+import { unlink, mkdir } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 
 // ---------------------------------------------------------------------------
@@ -91,10 +89,11 @@ async function assertFfmpegAvailable(): Promise<void> {
 }
 
 /** Validate that all input clip paths exist on disk. */
-function validateClipPaths(clipPaths: string[]): void {
+async function validateClipPaths(clipPaths: string[]): Promise<void> {
   const missing: string[] = [];
   for (const clipPath of clipPaths) {
-    if (!existsSync(clipPath)) {
+    const exists = await Bun.file(clipPath).exists();
+    if (!exists) {
       missing.push(clipPath);
     }
   }
@@ -122,11 +121,11 @@ async function ensureOutputDir(outputPath: string): Promise<void> {
 
 /** Write a concat demuxer file list for ffmpeg. Returns the temp file path. */
 async function writeConcatFileList(clipPaths: string[]): Promise<string> {
-  const tempPath = join(tmpdir(), `ffmpeg-concat-${randomUUID()}.txt`);
+  const tempPath = join(tmpdir(), `ffmpeg-concat-${crypto.randomUUID()}.txt`);
   const content = clipPaths
     .map((p) => `file '${resolve(p)}'`)
     .join("\n");
-  await writeFile(tempPath, content, "utf-8");
+  await Bun.write(tempPath, content);
   return tempPath;
 }
 
@@ -391,7 +390,7 @@ export async function stitchClips(
 
   // --- Preflight checks ---
   await assertFfmpegAvailable();
-  validateClipPaths(clipPaths);
+  await validateClipPaths(clipPaths);
   await ensureOutputDir(outputPath);
 
   // --- Dispatch ---
