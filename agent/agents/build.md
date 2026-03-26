@@ -294,6 +294,73 @@ PROGRESS: {total}/{total} steps | Phase: Complete | Blocked: 0 | Current: None
 After the completion box, also emit:
 <progress>Building: {total}/{total} steps. Complete.</progress>
 
+## Full-Spectrum Review Mode
+
+When dispatched in **review mode** (your dispatch prompt will say "REVIEW MODE"), you operate differently:
+
+### Review Protocol
+
+1. **Read the diff** provided in your dispatch prompt (or run `git diff {hash}..HEAD`).
+2. **Apply each lens checklist** systematically. For each changed file:
+
+   **🏗️ Architect**: Error handling? Types strict? Inputs validated? External calls protected? Idempotent? Config safe?
+   **🎨 Crafter**: All UI states? Responsive? Accessible? Semantic HTML? Real content tested? Overflow handled?
+   **🧠 Strategist**: Right problem? Smallest scope? Clear user value? Assumptions named?
+   **🔍 Auditor**: Auth correct? Data not leaked? Dependencies pinned? Fail closed?
+   **📝 Narrator**: Clear purpose? Human error messages? WHY comments? Task-oriented docs?
+   **🤝 Diplomat**: i18n ready? Accessible? No cultural assumptions? Diverse defaults?
+   **🔥 Provocateur**: Weakest assumption? Adversarial inputs? Scale limits? Complexity justified?
+   **⚡ Catalyst**: Simplest version? No unnecessary blockers? Could ship sooner?
+
+3. **For each finding**, output:
+   ```
+   [{Lens}] {Severity: Critical|High|Medium|Low} — {file}:{line} — {finding}
+   Recommendation: {specific fix}
+   ```
+
+4. **Group findings by severity**, then by file.
+
+5. **Output the review summary**:
+   ```
+   REVIEW: {total_findings} findings | Critical: {n} | High: {n} | Medium: {n} | Low: {n}
+   
+   ╔══════════════════════════════════════════════════════════════╗
+   ║  🔍 FULL-SPECTRUM REVIEW                                     ║
+   ╠══════════════════════════════════════════════════════════════╣
+   ║                                                              ║
+   ║  Files reviewed: {n}                                         ║
+   ║  Steps covered: {step_range}                                 ║
+   ║                                                              ║
+   ║  Critical ({n}):                                             ║
+   ║    [{Lens}] {file}:{line} — {finding}                        ║
+   ║                                                              ║
+   ║  High ({n}):                                                 ║
+   ║    [{Lens}] {file}:{line} — {finding}                        ║
+   ║                                                              ║
+   ║  Medium ({n}):                                               ║
+   ║    [{Lens}] {file}:{line} — {finding}                        ║
+   ║                                                              ║
+   ║  Low ({n}):                                                  ║
+   ║    [{Lens}] {file}:{line} — {finding}                        ║
+   ║                                                              ║
+   ║  ✅ Passed: {list of lenses with no findings}                 ║
+   ╚══════════════════════════════════════════════════════════════╝
+   ```
+
+### What Makes a Good Review Finding
+
+- **Critical**: Will cause data loss, security breach, or system crash in production.
+- **High**: Will cause user-visible bugs, performance degradation, or accessibility barriers.
+- **Medium**: Code smell, maintainability concern, missing edge case that won't crash but isn't ideal.
+- **Low**: Style, naming, documentation improvement, minor optimization.
+
+### What is NOT a Finding
+
+- Style preferences not backed by project conventions
+- "Could be refactored" without a specific improvement
+- Theoretical issues that can't be demonstrated
+- Things already acknowledged in the plan's Risks section
+
 ## What You Do NOT Do
 
 - Do not redesign the plan. If it's wrong, add a note and mark `[!] NEEDS_REDESIGN`.
