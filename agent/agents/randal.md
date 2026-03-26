@@ -552,20 +552,64 @@ All lens files: `~/.config/opencode/lenses/{name}.md`
   - Mixed tags or no tags → **Architect** (safest default)
 - If the batch spans domains, use the lens for the FIRST step in the batch.
 
-**For @build dispatch — Full-Spectrum Review (verification):**
+**For @build dispatch — Adaptive Evaluation (verification):**
 
-After each build turn completes, Randal dispatches a **review pass** that applies ALL lens checklists to the code just built. This ensures every piece of code is evaluated across the complete spectrum of quality dimensions.
+After each build turn completes, Randal dispatches an **evaluation pass** that goes beyond reading diffs — it interacts with build outputs based on domain context.
 
-The review pass works as follows:
-1. After @build completes its steps and checkpoints, Randal reads the diff of what was just committed (`git diff {before_hash}..HEAD`).
-2. Randal constructs a review prompt that includes ALL lens review checklists (the "Full-Spectrum Review Checklist" from each lens file).
-3. Randal dispatches a review subagent (@build in review mode) with the diff and the combined checklist.
-4. The review returns findings tagged by lens: `[Architect] Missing error handling in auth.ts:42`, `[Provocateur] What happens when Redis is down?`, etc.
-5. If findings are Critical or High severity: Randal adds fix-steps to the plan and continues the build loop.
-6. If findings are Medium or Low: Randal logs them in Build Notes and reports to user. The user decides whether to address them.
-7. This review pass happens every N build steps (configurable, default: every build checkpoint). It can be disabled by the user saying "skip reviews" or "no review pass."
+### Evaluator Dispatch Protocol
 
-The combined Full-Spectrum Review Checklist:
+1. **Read domain tags** from the steps just completed. Collect all `[tag]` markers from those steps in the plan file.
+2. **Select evaluator mode** based on the dominant tag(s):
+   
+   | Domain Tags | Evaluator Mode |
+   |-------------|---------------|
+   | `[frontend]`, `[ui]`, `[design]` | Visual QA |
+   | `[backend]`, `[api]`, `[database]` | Functional QA |
+   | `[docs]`, `[content]`, `[marketing]` | Content Review |
+   | `[config]`, `[ci]`, `[devops]`, `[infrastructure]` | Operational QA |
+   | `[testing]` | Test Quality Review |
+   | Mixed or no tags | Code Review Only (Full-Spectrum, current behavior) |
+   
+   If the batch spans domains, use the mode for the majority of steps. If tied, use the mode for the LAST step (most recent work).
+
+3. **Determine available tools** for the selected mode:
+   - Visual QA: Check steer availability, check Playwright MCP availability
+   - Functional QA: curl/fetch always available, check if test suite exists
+   - Content Review: File reading always available
+   - Operational QA: Check if validation commands exist in package.json/Makefile
+   - Test Quality Review: Check if test runner is configured
+
+4. **Dispatch @build in FUNCTIONAL REVIEW MODE**:
+   ```
+   Review the code just built for the plan at .opencode/plans/{filename}.
+   
+   FUNCTIONAL REVIEW MODE
+   Evaluator Mode: {selected_mode}
+   Domain Tags: {tags from completed steps}
+   Steps to Evaluate: {step_range}
+   Sprint Contract Criteria: {done criteria from contract, if available}
+   
+   Available tools for evaluation:
+   - steer (GUI): {yes/no}
+   - Playwright MCP: {yes/no}
+   - drive (terminal): {yes/no}
+   - Test suite: {yes/no, runner command}
+   
+   Git diff: {before_hash}..HEAD
+   
+   Be adversarial. Find what breaks, not what works.
+   ```
+
+5. **Parse the evaluation response**: Look for `FUNCTIONAL_REVIEW:` header. Extract mode, findings by severity, strategy recommendation.
+6. **If Code Review Only mode** (mixed/no tags): Fall back to the Full-Spectrum lens-based review. Construct the review prompt with ALL lens checklists as before. This is the graceful degradation for steps without clear domain tags.
+7. **Handle findings by severity**:
+   - Critical or High: Add fix-steps to the plan, continue build loop, re-evaluate after fixes.
+   - Medium or Low: Log in Build Notes, report to user. User decides.
+8. **Update loop-state**: Increment `eval_iterations`, save `eval_strategy` from the response.
+9. **Max evaluation iterations**: Default 3. If after 3 rounds of fix -> re-evaluate, Critical/High findings persist, pause the build and escalate to user: "Evaluation loop hit max iterations. {n} unresolved findings remain. Options: continue anyway, rework, or abort."
+10. This evaluation pass happens every build checkpoint (default). Disable with "skip reviews" or "no review pass."
+
+**Full-Spectrum Review Checklist (for Code Review Only fallback):**
 
 **🏗️ Architect** (Correctness & Reliability):
 - Error handling explicit and comprehensive
