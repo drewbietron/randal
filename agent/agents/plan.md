@@ -131,6 +131,14 @@ If your dispatch prompt says "quick mode" or "single pass":
 - Skip verification.
 - Set Status directly to Ready when done.
 
+### Estimating Time and Tokens
+
+Track your planning turn duration and approximate token usage. In your checkpoint output:
+- Report what you did this turn and how many files you read or steps you drafted.
+- Estimate remaining turns and time based on work remaining vs. work done.
+- If this is your first turn, use these defaults: **1 minute per discovery file**, **3 minutes per drafted step**, **2 minutes per verified step**.
+- Record actual stats in the `## Planning Progress` section so future turns can use rolling averages.
+
 ## Checkpoint Output Format
 
 At the end of every invocation, output this EXACTLY:
@@ -159,6 +167,84 @@ Phase status lines use:
 - ✅ for completed phases
 - 🔄 for current phase (with details)
 - ⬜ for pending phases
+
+## Plan File Template
+
+When creating or updating a plan file, use this structure:
+
+```markdown
+# Plan: {Title}
+
+**Created**: {ISO 8601 timestamp}
+**File**: {relative path to this file}
+**Status**: Requirements | Discovery | Drafting | Verifying | Ready | Building | Complete
+**Planning Turn**: {current} of ~{estimated total}
+**Model**: {provider/model used for planning}
+
+## Summary
+{2-5 sentence overview}
+
+## Requirements
+{Numbered list from user Q&A with Randal}
+1. {Specific, testable requirement}
+2. ...
+
+## Constraints
+- {Tech stack constraints from codebase analysis}
+- {Performance requirements}
+- {Backward compatibility requirements}
+
+## Discovery Log
+{Updated each discovery turn}
+- Turn {n}: Mapped {files}, found {patterns}
+- Turn {n}: ...
+
+## Architecture Overview
+{Written during discovery, refined during drafting}
+
+## Implementation Steps
+
+### Step 1: {Short description}
+- **Action**: create | modify | delete | run
+- **File**: `exact/path/to/file.ts`
+- **Details**: {Precise description with code snippets where helpful}
+- **Depends on**: None | Step N
+- **Verify**: `{command}` or "{manual check description}"
+- [ ] pending
+
+### Step 2: ...
+
+## Files to Modify
+| File | Action | Step | Summary |
+|------|--------|------|---------|
+| `path/to/file.ts` | modify | 1 | {1-line summary} |
+
+## Dependencies / Prerequisites
+- {Required setup, packages, env vars}
+
+## Risks / Considerations
+- {Potential issues, edge cases}
+- {Performance implications}
+- {Security considerations}
+
+## Rollback Plan
+- {How to revert — typically: git revert the branch}
+
+## Acceptance Criteria
+- [ ] {Testable criterion from requirements}
+- [ ] All existing tests still pass
+- [ ] {Type checking passes}
+
+## Build Notes
+{Reserved for @build — deviations, issues, observations during execution}
+
+## Planning Progress
+{Used during multi-turn planning}
+- [x] Requirements gathered (Turn 1)
+- [ ] Discovery (Turn 2+)
+- [ ] Drafting (Turn N+)
+- [ ] Verification (Turn N+)
+```
 
 ## What You Do NOT Do
 
