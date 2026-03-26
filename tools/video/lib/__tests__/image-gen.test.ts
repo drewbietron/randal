@@ -19,12 +19,33 @@ function restoreFetch() {
 	}
 }
 
+/** Build a fake JPEG buffer (starts with FF D8 FF E0 JFIF header) padded to >100 bytes. */
+function fakeJpegBuffer(): Buffer {
+	const header = Buffer.from([
+		0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00,
+		0x01, 0x00, 0x01, 0x00, 0x00,
+	]);
+	return Buffer.concat([header, Buffer.alloc(200 - header.length, 0xaa)]);
+}
+
+/** Build a fake PNG buffer (starts with 89 50 4E 47 signature) padded to >100 bytes. */
+function fakePngBuffer(): Buffer {
+	const header = Buffer.from([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+		0x52, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x08, 0x02, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00,
+	]);
+	return Buffer.concat([header, Buffer.alloc(200 - header.length, 0xaa)]);
+}
+
 /** Build a fake OpenRouter response with a base64 image in a data URI. */
-function fakeImageResponse(base64Data?: string) {
+function fakeImageResponse(base64Data?: string, mimeLabel?: string) {
 	const data =
 		base64Data ??
 		// Generate a fake base64 payload large enough to pass the >100 byte sanity check.
 		Buffer.from("x".repeat(200)).toString("base64");
+
+	const mime = mimeLabel ?? "image/png";
 
 	return {
 		choices: [
@@ -34,7 +55,7 @@ function fakeImageResponse(base64Data?: string) {
 						{
 							type: "image_url",
 							image_url: {
-								url: `data:image/png;base64,${data}`,
+								url: `data:${mime};base64,${data}`,
 							},
 						},
 					],
@@ -230,8 +251,9 @@ describe("generateImage", () => {
 	// -------------------------------------------------------------------------
 
 	test("parses image from data URI in image_url part", async () => {
-		const imageData = Buffer.from("A".repeat(200));
-		const base64 = imageData.toString("base64");
+		// Use real PNG magic bytes so MIME detection confirms PNG
+		const pngData = fakePngBuffer();
+		const base64 = pngData.toString("base64");
 
 		saveFetch();
 		globalThis.fetch = (async () => {
@@ -251,8 +273,9 @@ describe("generateImage", () => {
 	});
 
 	test("parses image from inline_data part", async () => {
-		const imageData = Buffer.from("B".repeat(200));
-		const base64 = imageData.toString("base64");
+		// Use real JPEG magic bytes so MIME detection confirms JPEG
+		const jpegData = fakeJpegBuffer();
+		const base64 = jpegData.toString("base64");
 
 		const response = {
 			choices: [
@@ -283,6 +306,97 @@ describe("generateImage", () => {
 		const result = await generateImage("test prompt");
 
 		expect(result.buffer.length).toBeGreaterThan(100);
+		expect(result.mimeType).toBe("image/jpeg");
+	});
+
+	// -------------------------------------------------------------------------
+	// MIME correction — detectMimeType overrides wrong API metadata
+	// -------------------------------------------------------------------------
+
+	test("corrects mimeType when API says PNG but data is JPEG", async () => {
+		// API returns data:image/png;base64,... but the actual bytes are JPEG
+		const jpegData = fakeJpegBuffer();
+		const base64 = jpegData.toString("base64");
+
+		saveFetch();
+		globalThis.fetch = (async () => {
+			return new Response(JSON.stringify(fakeImageResponse(base64, "image/png")), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as typeof fetch;
+
+		const result = await generateImage("test prompt");
+
+		expect(result.buffer.length).toBeGreaterThan(100);
+		// The declared MIME was image/png, but actual bytes are JPEG — detection should correct it
+		expect(result.mimeType).toBe("image/jpeg");
+	});
+
+	test("corrects mimeType when inline_data has wrong mime_type", async () => {
+		// inline_data declares mime_type "image/png" but the actual bytes are JPEG
+		const jpegData = fakeJpegBuffer();
+		const base64 = jpegData.toString("base64");
+
+		const response = {
+			choices: [
+				{
+					message: {
+						content: [
+							{
+								type: "inline_data",
+								inline_data: {
+									data: base64,
+									mime_type: "image/png",
+								},
+							},
+						],
+					},
+				},
+			],
+		};
+
+		saveFetch();
+		globalThis.fetch = (async () => {
+			return new Response(JSON.stringify(response), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as typeof fetch;
+
+		const result = await generateImage("test prompt");
+
+		expect(result.buffer.length).toBeGreaterThan(100);
+		expect(result.mimeType).toBe("image/jpeg");
+	});
+
+	test("handles raw base64 JPEG without data URI", async () => {
+		// Content is a string containing a long base64 block that decodes to JPEG
+		const jpegData = fakeJpegBuffer();
+		const base64 = jpegData.toString("base64");
+
+		const response = {
+			choices: [
+				{
+					message: {
+						content: `Here is the generated image: ${base64}`,
+					},
+				},
+			],
+		};
+
+		saveFetch();
+		globalThis.fetch = (async () => {
+			return new Response(JSON.stringify(response), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		}) as typeof fetch;
+
+		const result = await generateImage("test prompt");
+
+		expect(result.buffer.length).toBeGreaterThan(100);
+		// Without a data URI, detection from bytes should identify it as JPEG
 		expect(result.mimeType).toBe("image/jpeg");
 	});
 
