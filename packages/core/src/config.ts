@@ -129,6 +129,7 @@ const openrouterEmbedderSchema = z.object({
 	type: z.literal("openrouter"),
 	model: z.string(),
 	apiKey: z.string(),
+	url: z.string().default("https://openrouter.ai/api/v1/embeddings"),
 });
 const ollamaEmbedderSchema = z.object({
 	type: z.literal("ollama"),
@@ -309,6 +310,7 @@ export const configSchema = z.object({
 			apiKey: z.string().default(""),
 			index: z.string().optional(),
 			embedder: embedderSchema.default({ type: "builtin" }),
+			semanticRatio: z.number().min(0).max(1).default(0.7),
 			sharing: z
 				.object({
 					publishTo: z.string().optional(),
