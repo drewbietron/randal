@@ -10,7 +10,8 @@ export PATH="/app/tools/bin:$PATH"
 # Manages the Meilisearch + Randal lifecycle:
 #   1. Starts embedded Meilisearch (unless RANDAL_SKIP_MEILISEARCH=true)
 #   2. Runs consumer's pre-start hook (if /app/pre-start.sh exists)
-#   3. Starts Randal via `randal serve`
+#   3. Configures GitHub CLI (if GH_TOKEN is set)
+#   4. Starts Randal via `randal serve`
 #
 # Environment Variables:
 #   MEILI_MASTER_KEY        — Meilisearch API key (default: randal-dev-key)
@@ -55,7 +56,18 @@ if [ -f /app/pre-start.sh ]; then
 fi
 
 # ──────────────────────────────────────────────────────
-# 3. Start Randal
+# 3. Configure GitHub CLI (if GH_TOKEN is set)
+# ──────────────────────────────────────────────────────
+if [ -n "${GH_TOKEN:-}" ]; then
+  gh auth setup-git 2>/dev/null && \
+    echo "[randal] GitHub CLI configured via GH_TOKEN" || \
+    echo "[randal] WARNING: gh auth setup-git failed"
+else
+  echo "[randal] GH_TOKEN not set — GitHub PR/push features disabled"
+fi
+
+# ──────────────────────────────────────────────────────
+# 4. Start Randal
 # ──────────────────────────────────────────────────────
 echo "[randal] Starting Randal..."
 exec bun run /app/packages/cli/src/index.ts serve "$@"
