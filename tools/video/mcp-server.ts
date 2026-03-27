@@ -7,7 +7,12 @@
  *   stitch_clips      — Concatenate clips with ffmpeg
  *   compose_video     — Rich composition via Remotion
  *   scaffold_project  — Create a new Remotion project from template
- *   list_providers    — List available video generation providers
+ *   list_providers            — List available video generation providers
+ *   create_character          — Create a persistent character with structured CID
+ *   generate_with_character   — Generate an image of a saved character in a scene
+ *   list_characters           — List all saved character profiles
+ *   get_character             — Get a character's full profile
+ *   update_character          — Update a saved character's fields
  *
  * Transport: stdio (for OpenCode MCP integration)
  * Runtime: Bun
@@ -27,6 +32,21 @@ import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
 import { analyzeVideoWithVision, extractFrames, prepareVideoReference } from "./lib/video-ref";
+import {
+	saveCharacter,
+	loadCharacter,
+	listCharacters as listAllCharacters,
+	updateCharacter,
+	characterExists,
+	ensureCharacterDir,
+	getCharacterDir,
+	buildReferencePrompt,
+	buildCharacterPrompt,
+	generateWithConsistency,
+	CharacterStorageError,
+	CharacterPhysicalSchema,
+} from "./lib/characters";
+import type { CharacterProfile, CharacterPhysical } from "./lib/characters";
 
 // ---------------------------------------------------------------------------
 // Constants
