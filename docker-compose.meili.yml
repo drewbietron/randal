@@ -2,6 +2,7 @@ services:
   meili:
     image: getmeili/meilisearch:v1.12
     container_name: randal-meili
+    restart: unless-stopped
     ports:
       - "7701:7700"
     environment:
