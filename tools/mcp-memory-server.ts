@@ -427,7 +427,7 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 	const scope = resolveSearchScope(params.scope as string | undefined);
 
-	if (!storeAvailable) {
+	if (!(await ensureStore())) {
 		return { results: [], message: "Meilisearch is not available" };
 	}
 
@@ -464,7 +464,7 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 		throw new ToolError("Missing required parameter: category");
 	}
 
-	if (!storeAvailable) {
+	if (!(await ensureStore())) {
 		return { stored: false, message: "Meilisearch is not available" };
 	}
 
@@ -504,7 +504,7 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
-	if (!storeAvailable) {
+	if (!(await ensureStore())) {
 		return { results: [], message: "Meilisearch is not available" };
 	}
 
@@ -541,7 +541,7 @@ async function handleChatSearch(params: Record<string, unknown>): Promise<unknow
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 	const scope = params.scope as string | undefined;
 
-	if (!messagesAvailable) {
+	if (!(await ensureMessages())) {
 		return { results: [], message: "Chat history is not available" };
 	}
 
@@ -595,7 +595,7 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 
 	const limit = typeof params.limit === "number" ? params.limit : 50;
 
-	if (!messagesAvailable) {
+	if (!(await ensureMessages())) {
 		return { messages: [], message: "Chat history is not available" };
 	}
 
@@ -622,7 +622,7 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 async function handleChatRecent(params: Record<string, unknown>): Promise<unknown> {
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
-	if (!messagesAvailable) {
+	if (!(await ensureMessages())) {
 		return { results: [], message: "Chat history is not available" };
 	}
 
@@ -658,7 +658,7 @@ async function handleChatLog(params: Record<string, unknown>): Promise<unknown> 
 	const scope = (params.scope as string) || defaultScope;
 	const channel = (params.channel as string) || "opencode";
 
-	if (!messagesAvailable) {
+	if (!(await ensureMessages())) {
 		return { logged: false, message: "Chat history is not available" };
 	}
 
