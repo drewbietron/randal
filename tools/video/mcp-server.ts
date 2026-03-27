@@ -24,6 +24,21 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { attachAudioToVideo, generateMusic, generateSpeech, mixAudioTracks } from "./lib/audio-gen";
+import {
+	CharacterPhysicalSchema,
+	CharacterStorageError,
+	buildCharacterPrompt,
+	buildReferencePrompt,
+	characterExists,
+	ensureCharacterDir,
+	generateWithConsistency,
+	getCharacterDir,
+	listCharacters as listAllCharacters,
+	loadCharacter,
+	saveCharacter,
+	updateCharacter,
+} from "./lib/characters";
+import type { CharacterPhysical, CharacterProfile } from "./lib/characters";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
 import { listAudioProviders } from "./lib/providers/audio-registry";
@@ -32,21 +47,6 @@ import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
 import { analyzeVideoWithVision, extractFrames, prepareVideoReference } from "./lib/video-ref";
-import {
-	saveCharacter,
-	loadCharacter,
-	listCharacters as listAllCharacters,
-	updateCharacter,
-	characterExists,
-	ensureCharacterDir,
-	getCharacterDir,
-	buildReferencePrompt,
-	buildCharacterPrompt,
-	generateWithConsistency,
-	CharacterStorageError,
-	CharacterPhysicalSchema,
-} from "./lib/characters";
-import type { CharacterProfile, CharacterPhysical } from "./lib/characters";
 
 // ---------------------------------------------------------------------------
 // Constants

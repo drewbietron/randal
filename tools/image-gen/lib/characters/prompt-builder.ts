@@ -54,14 +54,10 @@ export function buildCIDBlock(physical: CharacterPhysical, name?: string): strin
 
 	// Identity line
 	const nameClause = name ? ` named ${name}` : "";
-	groups.push(
-		`A ${physical.age} ${physical.gender} of ${physical.ethnicity} descent${nameClause}`,
-	);
+	groups.push(`A ${physical.age} ${physical.gender} of ${physical.ethnicity} descent${nameClause}`);
 
 	// Skin / build
-	groups.push(
-		`with ${physical.skin_tone} skin, ${physical.build} build, ${physical.height}`,
-	);
+	groups.push(`with ${physical.skin_tone} skin, ${physical.build} build, ${physical.height}`);
 
 	// Face structure
 	groups.push(
@@ -74,9 +70,7 @@ export function buildCIDBlock(physical: CharacterPhysical, name?: string): strin
 	);
 
 	// Nose / brows / mouth
-	groups.push(
-		`Nose: ${physical.nose}. Brows: ${physical.brows}. Mouth: ${physical.mouth}`,
-	);
+	groups.push(`Nose: ${physical.nose}. Brows: ${physical.brows}. Mouth: ${physical.mouth}`);
 
 	// Hair
 	groups.push(
@@ -94,7 +88,7 @@ export function buildCIDBlock(physical: CharacterPhysical, name?: string): strin
 		groups.push(`Distinguishing marks: ${physical.distinguishing_marks}`);
 	}
 
-	return groups.join(". ") + ".";
+	return `${groups.join(". ")}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +123,7 @@ export function buildCharacterPrompt(
 
 	// 4. Style anchor
 	if (profile.style_anchor) {
-		parts.push(profile.style_anchor + ".");
+		parts.push(`${profile.style_anchor}.`);
 	}
 
 	// 5. Negative prompts
@@ -153,7 +147,7 @@ export function buildReferencePrompt(profile: CharacterProfile): string {
 	];
 
 	if (profile.style_anchor) {
-		parts.push(profile.style_anchor + ".");
+		parts.push(`${profile.style_anchor}.`);
 	}
 
 	return parts.join(" ");

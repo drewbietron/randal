@@ -8,13 +8,9 @@
  */
 
 import { analyzeImage } from "../image-analyze";
-import type {
-	CharacterProfile,
-	ConsistencyScore,
-	CharacterGenerationResult,
-} from "./types";
-import { CharacterStorageError } from "./types";
 import { buildCIDBlock } from "./prompt-builder";
+import type { CharacterGenerationResult, CharacterProfile, ConsistencyScore } from "./types";
+import { CharacterStorageError } from "./types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -22,7 +18,7 @@ import { buildCIDBlock } from "./prompt-builder";
 
 const DEFAULT_MIN_SCORE = 7;
 const DEFAULT_MAX_RETRIES = 2;
-const SCORE_DIMENSIONS = ["hair", "face", "skin", "build", "age"] as const;
+const _SCORE_DIMENSIONS = ["hair", "face", "skin", "build", "age"] as const;
 
 const CONSISTENCY_SYSTEM_PROMPT = `You are a character consistency evaluator. Compare the provided image against a character identity description (CID).
 Score each dimension from 1 (completely wrong) to 10 (perfect match).
@@ -121,14 +117,15 @@ export function parseConsistencyResponse(rawResponse: string): ConsistencyScore 
 	// Attempt 3: regex extraction of individual fields
 	const scoreRegex = /"(overall|hair|face|skin|build|age)"\s*:\s*(\d+)/g;
 	const result = { ...defaults };
-	let match: RegExpExecArray | null;
+	let match: RegExpExecArray | null = scoreRegex.exec(rawResponse);
 
-	while ((match = scoreRegex.exec(rawResponse)) !== null) {
+	while (match !== null) {
 		const key = match[1] as keyof Omit<ConsistencyScore, "details">;
-		const value = parseInt(match[2], 10);
-		if (!isNaN(value)) {
+		const value = Number.parseInt(match[2], 10);
+		if (!Number.isNaN(value)) {
 			result[key] = clampScore(value);
 		}
+		match = scoreRegex.exec(rawResponse);
 	}
 
 	// Try to extract details array via regex
@@ -162,11 +159,9 @@ export async function checkConsistency(
 	profile: CharacterProfile,
 ): Promise<ConsistencyScore> {
 	try {
-		const result = await analyzeImage(
-			imagePath,
-			buildComparisonPrompt(profile),
-			{ systemPrompt: CONSISTENCY_SYSTEM_PROMPT },
-		);
+		const result = await analyzeImage(imagePath, buildComparisonPrompt(profile), {
+			systemPrompt: CONSISTENCY_SYSTEM_PROMPT,
+		});
 
 		// Prefer rawResponse (the unprocessed model output); fall back to description
 		const raw = result.rawResponse ?? result.description;
@@ -326,8 +321,8 @@ export async function generateWithConsistency(
 
 	// All attempts exhausted — return the best candidate
 	return {
-		image_path: bestCandidate!.imagePath,
-		consistency_score: bestCandidate!.score,
+		image_path: bestCandidate?.imagePath,
+		consistency_score: bestCandidate?.score,
 		retries_used: totalAttempts - 1,
 		character_name: characterName,
 	};

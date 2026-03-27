@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeProfile } from "./fixtures";
 import {
 	buildComparisonPrompt,
 	buildDriftEmphasis,
@@ -7,6 +6,7 @@ import {
 	parseConsistencyResponse,
 } from "../consistency";
 import type { ConsistencyScore } from "../types";
+import { makeProfile } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,7 +39,7 @@ describe("consistency", () => {
 		if (originalEnv !== undefined) {
 			process.env.OPENROUTER_API_KEY = originalEnv;
 		} else {
-			delete process.env.OPENROUTER_API_KEY;
+			process.env.OPENROUTER_API_KEY = undefined;
 		}
 		restoreFetch();
 	});
@@ -70,7 +70,8 @@ describe("consistency", () => {
 		});
 
 		test("parses JSON wrapped in ```json code fence", () => {
-			const raw = '```json\n{"overall": 7, "hair": 8, "face": 6, "skin": 7, "build": 5, "age": 8, "details": ["note"]}\n```';
+			const raw =
+				'```json\n{"overall": 7, "hair": 8, "face": 6, "skin": 7, "build": 5, "age": 8, "details": ["note"]}\n```';
 			const score = parseConsistencyResponse(raw);
 			expect(score.overall).toBe(7);
 			expect(score.hair).toBe(8);
@@ -78,14 +79,16 @@ describe("consistency", () => {
 		});
 
 		test("parses JSON wrapped in ``` code fence (no language tag)", () => {
-			const raw = '```\n{"overall": 6, "hair": 5, "face": 7, "skin": 8, "build": 6, "age": 7, "details": []}\n```';
+			const raw =
+				'```\n{"overall": 6, "hair": 5, "face": 7, "skin": 8, "build": 6, "age": 7, "details": []}\n```';
 			const score = parseConsistencyResponse(raw);
 			expect(score.overall).toBe(6);
 			expect(score.face).toBe(7);
 		});
 
 		test("extracts scores via regex fallback when JSON is malformed", () => {
-			const raw = 'Here is my analysis: "overall": 8, "hair": 7, "face": 6, "skin": 9, "build": 5, "age": 8, but json is broken {';
+			const raw =
+				'Here is my analysis: "overall": 8, "hair": 7, "face": 6, "skin": 9, "build": 5, "age": 8, but json is broken {';
 			const score = parseConsistencyResponse(raw);
 			expect(score.overall).toBe(8);
 			expect(score.hair).toBe(7);
@@ -278,19 +281,21 @@ describe("consistency", () => {
 			globalThis.fetch = async () => {
 				return new Response(
 					JSON.stringify({
-						choices: [{
-							message: {
-								content: JSON.stringify({
-									overall: 9,
-									hair: 9,
-									face: 8,
-									skin: 9,
-									build: 8,
-									age: 9,
-									details: ["excellent match"],
-								}),
+						choices: [
+							{
+								message: {
+									content: JSON.stringify({
+										overall: 9,
+										hair: 9,
+										face: 8,
+										skin: 9,
+										build: 8,
+										age: 9,
+										details: ["excellent match"],
+									}),
+								},
 							},
-						}],
+						],
 					}),
 					{ status: 200 },
 				);
@@ -299,8 +304,8 @@ describe("consistency", () => {
 			// Create a fake image file for analyzeImage to read
 			const fakePath = `/tmp/char-test-${crypto.randomUUID()}.png`;
 			const pngHeader = Buffer.from([
-				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-				0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+				0x52,
 			]);
 			await Bun.write(fakePath, Buffer.concat([pngHeader, Buffer.alloc(200, 0xaa)]));
 
@@ -321,11 +326,16 @@ describe("consistency", () => {
 
 			expect(generateCallCount).toBe(1);
 			expect(result.consistency_score).not.toBeNull();
-			expect(result.consistency_score!.overall).toBe(9);
+			expect(result.consistency_score?.overall).toBe(9);
 			expect(result.retries_used).toBe(0);
 
 			// Cleanup
-			try { await Bun.file(fakePath).exists() && (await import("node:fs/promises")).then(fs => fs.rm(fakePath)); } catch { /* ignore */ }
+			try {
+				(await Bun.file(fakePath).exists()) &&
+					(await import("node:fs/promises")).then((fs) => fs.rm(fakePath));
+			} catch {
+				/* ignore */
+			}
 		});
 
 		test("retries and returns best attempt when score below threshold", async () => {
@@ -352,8 +362,8 @@ describe("consistency", () => {
 
 			const fakePath = `/tmp/char-test-retry-${crypto.randomUUID()}.png`;
 			const pngHeader = Buffer.from([
-				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-				0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+				0x52,
 			]);
 			await Bun.write(fakePath, Buffer.concat([pngHeader, Buffer.alloc(200, 0xaa)]));
 
@@ -376,10 +386,15 @@ describe("consistency", () => {
 			expect(generateCallCount).toBe(3);
 			// Should return the best scoring attempt (overall: 6)
 			expect(result.consistency_score).not.toBeNull();
-			expect(result.consistency_score!.overall).toBe(6);
+			expect(result.consistency_score?.overall).toBe(6);
 			expect(result.retries_used).toBe(2);
 
-			try { await Bun.file(fakePath).exists() && (await import("node:fs/promises")).then(fs => fs.rm(fakePath)); } catch { /* ignore */ }
+			try {
+				(await Bun.file(fakePath).exists()) &&
+					(await import("node:fs/promises")).then((fs) => fs.rm(fakePath));
+			} catch {
+				/* ignore */
+			}
 		});
 
 		test("respects maxRetries=0 (single attempt)", async () => {
@@ -389,13 +404,21 @@ describe("consistency", () => {
 			globalThis.fetch = async () => {
 				return new Response(
 					JSON.stringify({
-						choices: [{
-							message: {
-								content: JSON.stringify({
-									overall: 3, hair: 3, face: 3, skin: 3, build: 3, age: 3, details: [],
-								}),
+						choices: [
+							{
+								message: {
+									content: JSON.stringify({
+										overall: 3,
+										hair: 3,
+										face: 3,
+										skin: 3,
+										build: 3,
+										age: 3,
+										details: [],
+									}),
+								},
 							},
-						}],
+						],
 					}),
 					{ status: 200 },
 				);
@@ -403,8 +426,8 @@ describe("consistency", () => {
 
 			const fakePath = `/tmp/char-test-noretry-${crypto.randomUUID()}.png`;
 			const pngHeader = Buffer.from([
-				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-				0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+				0x52,
 			]);
 			await Bun.write(fakePath, Buffer.concat([pngHeader, Buffer.alloc(200, 0xaa)]));
 
@@ -426,7 +449,12 @@ describe("consistency", () => {
 			expect(generateCallCount).toBe(1);
 			expect(result.retries_used).toBe(0);
 
-			try { await Bun.file(fakePath).exists() && (await import("node:fs/promises")).then(fs => fs.rm(fakePath)); } catch { /* ignore */ }
+			try {
+				(await Bun.file(fakePath).exists()) &&
+					(await import("node:fs/promises")).then((fs) => fs.rm(fakePath));
+			} catch {
+				/* ignore */
+			}
 		});
 	});
 });

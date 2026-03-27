@@ -9,9 +9,9 @@
  * patterns in mcp-server.ts (ensureDir) and image-analyze.ts (Bun.file).
  */
 
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdir, readdir, rm } from "node:fs/promises";
 import type { CharacterProfile } from "./types";
 import { CharacterStorageError } from "./types";
 
@@ -101,10 +101,7 @@ export async function loadCharacter(name: string): Promise<CharacterProfile> {
 	const file = Bun.file(path);
 
 	if (!(await file.exists())) {
-		throw new CharacterStorageError(
-			`Character "${name}" not found`,
-			"NOT_FOUND",
-		);
+		throw new CharacterStorageError(`Character "${name}" not found`, "NOT_FOUND");
 	}
 
 	try {

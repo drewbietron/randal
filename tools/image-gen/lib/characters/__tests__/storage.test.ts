@@ -1,20 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { join } from "node:path";
-import { mkdtemp, rm, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { makeProfile } from "./fixtures";
+import { join } from "node:path";
 import {
-	saveCharacter,
-	loadCharacter,
-	listCharacters,
-	updateCharacter,
-	deleteCharacter,
 	characterExists,
 	characterPath,
-	getCharacterDir,
+	deleteCharacter,
 	ensureCharacterDir,
+	getCharacterDir,
+	listCharacters,
+	loadCharacter,
+	saveCharacter,
+	updateCharacter,
 } from "../storage";
 import { CharacterStorageError } from "../types";
+import { makeProfile } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Test isolation via RANDAL_CHARACTER_DIR
@@ -32,7 +32,7 @@ afterEach(async () => {
 	if (originalCharDir !== undefined) {
 		process.env.RANDAL_CHARACTER_DIR = originalCharDir;
 	} else {
-		delete process.env.RANDAL_CHARACTER_DIR;
+		process.env.RANDAL_CHARACTER_DIR = undefined;
 	}
 	try {
 		await rm(tempDir, { recursive: true });
@@ -87,7 +87,7 @@ describe("storage", () => {
 			const path = characterPath("test-character");
 			const text = await Bun.file(path).text();
 			expect(text).toContain("\t");
-			expect(text).not.toMatch(/^  /m); // no space indentation
+			expect(text).not.toMatch(/^ {2}/m); // no space indentation
 		});
 	});
 
@@ -133,6 +133,7 @@ describe("storage", () => {
 		test("deep-merges physical.hair without losing other hair fields", async () => {
 			await saveCharacter(makeProfile());
 			const updated = await updateCharacter("test-character", {
+				// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 				physical: { hair: { color: "platinum blonde" } } as any,
 			});
 			expect(updated.physical.hair.color).toBe("platinum blonde");
@@ -143,6 +144,7 @@ describe("storage", () => {
 		test("deep-merges physical.eyes without losing other eye fields", async () => {
 			await saveCharacter(makeProfile());
 			const updated = await updateCharacter("test-character", {
+				// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 				physical: { eyes: { color: "bright green" } } as any,
 			});
 			expect(updated.physical.eyes.color).toBe("bright green");

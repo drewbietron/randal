@@ -172,5 +172,8 @@ export const CharacterPhysicalSchema = z.object({
 	hair: CharacterHairSchema.describe("Structured hair descriptors"),
 	facial_hair: z.string().optional().describe("Facial hair, e.g. 'trimmed goatee' or omit if none"),
 	skin_details: z.string().optional().describe("Skin details, e.g. 'light freckles across nose'"),
-	distinguishing_marks: z.string().optional().describe("Distinguishing marks, e.g. 'small mole above right lip'"),
+	distinguishing_marks: z
+		.string()
+		.optional()
+		.describe("Distinguishing marks, e.g. 'small mole above right lip'"),
 });

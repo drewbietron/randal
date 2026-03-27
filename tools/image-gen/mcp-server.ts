@@ -21,29 +21,26 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import {
-	analyzeImage,
-	detectMimeType,
-	ensureCorrectExtension,
-	generateImage,
-	listImageProviders,
 	// Character module
 	CharacterPhysicalSchema,
 	CharacterStorageError,
-	saveCharacter,
-	loadCharacter,
-	listCharacters as listAllCharacters,
-	updateCharacter,
-	characterExists,
-	ensureCharacterDir,
-	getCharacterDir,
-	buildReferencePrompt,
+	analyzeImage,
 	buildCharacterPrompt,
+	buildReferencePrompt,
+	characterExists,
+	detectMimeType,
+	ensureCharacterDir,
+	ensureCorrectExtension,
+	generateImage,
 	generateWithConsistency,
+	getCharacterDir,
+	listCharacters as listAllCharacters,
+	listImageProviders,
+	loadCharacter,
+	saveCharacter,
+	updateCharacter,
 } from "./lib/index";
-import type {
-	CharacterProfile,
-	CharacterPhysical,
-} from "./lib/index";
+import type { CharacterPhysical, CharacterProfile } from "./lib/index";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -208,7 +205,8 @@ server.tool(
 const CharacterPhysicalOverrideSchema = CharacterPhysicalSchema.deepPartial();
 
 const CharacterUpdateSchema = z.object({
-	physical: CharacterPhysicalSchema.deepPartial().optional()
+	physical: CharacterPhysicalSchema.deepPartial()
+		.optional()
 		.describe("Partial physical attribute updates (deep-merged with existing)"),
 	style_anchor: z.string().optional().describe("Update the default style anchor"),
 	negative_prompts: z.array(z.string()).optional().describe("Replace the negative prompts list"),
@@ -224,7 +222,9 @@ server.tool(
 	"Create a persistent character with structured physical descriptors (CID). Auto-generates a reference portrait and refines the CID via vision analysis.",
 	{
 		name: z.string().min(1).describe("Character name (unique identifier, e.g. 'elena-vargas')"),
-		physical: CharacterPhysicalSchema.describe("Structured physical attributes — the Character Identity Descriptor (CID)"),
+		physical: CharacterPhysicalSchema.describe(
+			"Structured physical attributes — the Character Identity Descriptor (CID)",
+		),
 		style_anchor: z
 			.string()
 			.optional()
@@ -248,11 +248,22 @@ server.tool(
 		provider: z.string().optional().describe("Image provider override"),
 		model: z.string().optional().describe("Image model override"),
 	},
-	async ({ name, physical, style_anchor, negative_prompts, additional_details, generate_reference, provider, model }) => {
+	async ({
+		name,
+		physical,
+		style_anchor,
+		negative_prompts,
+		additional_details,
+		generate_reference,
+		provider,
+		model,
+	}) => {
 		try {
 			// 1. Guard: reject duplicate names
 			if (await characterExists(name)) {
-				return err(`Character "${name}" already exists. Use update_character to modify, or choose a different name.`);
+				return err(
+					`Character "${name}" already exists. Use update_character to modify, or choose a different name.`,
+				);
 			}
 
 			// 2. Build initial profile
@@ -289,12 +300,15 @@ server.tool(
 				await Bun.write(refPath, result.buffer);
 
 				// 5. Analyze the reference to see what the model actually rendered
-				const analysis = await analyzeImage(refPath, [
-					"Describe this person's physical appearance in detail.",
-					"Focus on: face shape, jawline, chin, cheekbones, eye color/shape, nose, brows, mouth/lips,",
-					"skin tone, hair color/length/style/texture, build, apparent age, any distinguishing marks.",
-					"Be precise and specific — this will be used to reproduce this exact person in future images.",
-				].join(" "));
+				const analysis = await analyzeImage(
+					refPath,
+					[
+						"Describe this person's physical appearance in detail.",
+						"Focus on: face shape, jawline, chin, cheekbones, eye color/shape, nose, brows, mouth/lips,",
+						"skin tone, hair color/length/style/texture, build, apparent age, any distinguishing marks.",
+						"Be precise and specific — this will be used to reproduce this exact person in future images.",
+					].join(" "),
+				);
 
 				// 6. Update profile with reference path and analysis
 				//    Do NOT overwrite user-provided CID fields — the user's structured input
@@ -329,16 +343,24 @@ server.tool(
 	"generate_with_character",
 	"Generate an image of a saved character in a specific scene. The character's CID is automatically prepended to the prompt. Optionally verifies consistency and retries if the result drifts.",
 	{
-		character_name: z.string().min(1).describe("Name of an existing character (as passed to create_character)"),
-		prompt: z.string().min(1).describe("Scene/action description — the character's identity is prepended automatically"),
-		overrides: CharacterPhysicalOverrideSchema
-			.optional()
-			.describe("Temporary physical attribute overrides for this generation only (e.g., different hairstyle). Does NOT modify the saved profile."),
+		character_name: z
+			.string()
+			.min(1)
+			.describe("Name of an existing character (as passed to create_character)"),
+		prompt: z
+			.string()
+			.min(1)
+			.describe("Scene/action description — the character's identity is prepended automatically"),
+		overrides: CharacterPhysicalOverrideSchema.optional().describe(
+			"Temporary physical attribute overrides for this generation only (e.g., different hairstyle). Does NOT modify the saved profile.",
+		),
 		verify_consistency: z
 			.boolean()
 			.optional()
 			.default(true)
-			.describe("Analyze the output against the CID and retry if consistency score < min_score (default: true)"),
+			.describe(
+				"Analyze the output against the CID and retry if consistency score < min_score (default: true)",
+			),
 		max_retries: z
 			.number()
 			.int()
@@ -387,9 +409,7 @@ server.tool(
 			const profile = await loadCharacter(character_name);
 
 			// 2. If style_prefix provided, temporarily override style_anchor for prompt building
-			const effectiveProfile = style_prefix
-				? { ...profile, style_anchor: style_prefix }
-				: profile;
+			const effectiveProfile = style_prefix ? { ...profile, style_anchor: style_prefix } : profile;
 
 			// 3. Build the composite prompt (CID + scene + style + negatives)
 			const compositePrompt = buildCharacterPrompt(

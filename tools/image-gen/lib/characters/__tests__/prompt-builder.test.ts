@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { makePhysical, makeProfile } from "./fixtures";
 import {
 	buildCIDBlock,
 	buildCharacterPrompt,
@@ -7,6 +6,7 @@ import {
 	buildReferencePrompt,
 	mergePhysical,
 } from "../prompt-builder";
+import { makePhysical, makeProfile } from "./fixtures";
 
 // ---------------------------------------------------------------------------
 // Tests — all pure functions, no async, no mocking
@@ -32,6 +32,7 @@ describe("prompt-builder", () => {
 
 		test("deep-merges eyes (override only color, keep shape)", () => {
 			const base = makePhysical();
+			// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 			const result = mergePhysical(base, { eyes: { color: "bright green" } as any });
 			expect(result.eyes.color).toBe("bright green");
 			expect(result.eyes.shape).toBe(base.eyes.shape);
@@ -41,6 +42,7 @@ describe("prompt-builder", () => {
 
 		test("deep-merges hair (override only style, keep color)", () => {
 			const base = makePhysical();
+			// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 			const result = mergePhysical(base, { hair: { style: "buzzcut" } as any });
 			expect(result.hair.style).toBe("buzzcut");
 			expect(result.hair.color).toBe(base.hair.color);
@@ -51,6 +53,7 @@ describe("prompt-builder", () => {
 			const base = makePhysical();
 			const originalAge = base.age;
 			const originalEyeColor = base.eyes.color;
+			// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 			mergePhysical(base, { age: "old", eyes: { color: "red" } as any });
 			expect(base.age).toBe(originalAge);
 			expect(base.eyes.color).toBe(originalEyeColor);
@@ -146,6 +149,7 @@ describe("prompt-builder", () => {
 			const profile = makeProfile();
 			const originalHairColor = profile.physical.hair.color;
 			const prompt = buildCharacterPrompt(profile, "scene", {
+				// biome-ignore lint/suspicious/noExplicitAny: partial override for testing deep merge
 				hair: { color: "platinum blonde" } as any,
 			});
 			expect(prompt).toContain("platinum blonde");
