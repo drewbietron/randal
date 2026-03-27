@@ -473,12 +473,13 @@ If a worktree already exists (e.g., resuming a paused build), reuse it. Do not c
 
 ### Autonomous Git Management
 
-Randal fully owns the git workflow. The user should never need to manually push, create PRs, or consolidate branches. Here's how:
+Randal fully owns the git workflow. The user should never need to manually push, create PRs, or merge branches. All git operations run from the appropriate worktree.
 
 #### Auto-Push on Build Completion
 When a build completes (all steps checked, verification passed):
-1. Push the branch to remote: `git push -u origin {branch-name}`
+1. Push the branch from the worktree: `git -C {worktree_path} push -u origin {branch-name}`
 2. If push fails (auth, permissions), report the error but don't block. The branch is still local.
+3. Update loop-state.json: set status to `"complete"`, record push timestamp.
 
 #### Auto-PR Creation
 After pushing, automatically create a pull request:
@@ -506,24 +507,70 @@ After pushing, automatically create a pull request:
 4. Store the PR URL in loop-state.json under the build entry.
 5. Report PR URL to user in the build completion report.
 
-If `gh` is not authenticated, skip PR creation and report: "⚠️ GitHub CLI not authenticated. Branch pushed but PR not created. Run `gh auth login` to enable auto-PR."
+If `gh` is not authenticated, skip PR creation and report: "GitHub CLI not authenticated. Branch pushed but PR not created. Run `gh auth login` to enable auto-PR."
 
-#### Branch Consolidation
-When multiple builds from the same session touch related code:
-1. At build completion, check if other recent branches (last 24h) exist that could be consolidated.
-2. Consolidation criteria:
-   - Same topic area (e.g., two builds both touching `packages/memory/`)
-   - One branch is a superset of another (child branch)
-   - User explicitly asks to consolidate
-3. If consolidation makes sense, merge the branches into the most comprehensive one and create a single PR.
-4. If branches are truly independent (different topics, no file overlap), create separate PRs.
+#### Pre-Merge Overlap Detection
+
+Before creating a PR, check for file overlap with other active branches:
+1. Get the list of files changed in this branch: `git -C {worktree_path} diff --name-only main...HEAD`
+2. For each other active build in loop-state.json (status = `"building"` or `"complete"`):
+   - Get its changed files: `git diff --name-only main...{other-branch}`
+   - Compute the intersection.
+3. If overlapping files exist, report:
+   ```
+   Warning: File overlap detected with branch {other-branch}:
+     - {file1}
+     - {file2}
+   Recommend merging {first-branch} before {second-branch} to avoid conflicts.
+   ```
+4. This is advisory, not blocking. Record the overlap in loop-state.json under both builds.
+
+#### Sequential Merge with Auto-Rebase
+
+When multiple branches are ready to merge:
+1. **Order by readiness**: Branches that completed first merge first. If overlap was detected, the branch with fewer changed files merges first.
+2. **Merge the first branch**:
+   ```bash
+   gh pr merge {pr-number} --merge --delete-branch
+   ```
+3. **Update main locally**:
+   ```bash
+   git checkout main && git pull origin main
+   ```
+4. **Rebase the next branch** onto updated main:
+   ```bash
+   git -C {next-worktree-path} fetch origin main
+   git -C {next-worktree-path} rebase origin/main
+   ```
+5. **If rebase conflicts**:
+   - Attempt auto-resolution for trivial conflicts (whitespace, import ordering).
+   - If conflicts are non-trivial, abort the rebase and escalate to user:
+     ```
+     Rebase conflict in {branch-name} after merging {prev-branch}.
+     Conflicting files: {list}
+     Options: (1) I'll resolve manually, (2) abort and create separate PR, (3) squash-merge instead.
+     ```
+6. **Force-push the rebased branch**: `git -C {worktree-path} push --force-with-lease origin {branch-name}`
+7. **Merge the rebased PR**: `gh pr merge {pr-number} --merge --delete-branch`
+8. **Repeat** for remaining branches.
 
 #### Post-Merge Cleanup
-When a PR is merged (detected via `gh pr list --state merged`):
-1. Delete the local branch: `git branch -d {branch-name}`
-2. Delete the remote branch: `git push origin --delete {branch-name}`
-3. Update loop-state.json: set build status to "merged".
-4. Prune stale remote refs: `git fetch --prune`
+
+When a PR is merged (detected via `gh pr list --state merged` or after Randal merges it):
+1. Remove the worktree: `git worktree remove {worktree_path}` (use `--force` only if the worktree has no uncommitted changes; if it does, warn the user first).
+2. Delete the local branch: `git branch -d {branch-name}` (should already be deleted by `--delete-branch` on merge, but clean up if not).
+3. Prune stale remote refs: `git fetch --prune`
+4. Update loop-state.json: set build status to `"merged"`, clear `worktree_path`.
+5. Clean up the worktrees parent directory if empty:
+   ```bash
+   rmdir ../{repo-name}-worktrees 2>/dev/null || true
+   ```
+
+#### Worktree Safety Rules
+
+- **Never delete a worktree with uncommitted work.** Check `git -C {path} status --porcelain` first.
+- **Never delete a worktree for a paused/errored build** unless the user explicitly requests it.
+- **Periodic cleanup**: When starting a new planning session, check for stale worktrees via `git worktree list`. If any worktrees belong to builds with status `"merged"` or `"error"` (and no uncommitted work), clean them up.
 
 ### loop-state.json Schema
 
