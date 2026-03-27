@@ -328,20 +328,23 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 When the plan contains steps with no dependencies between them (their "Depends on" fields don't reference each other), you MAY dispatch multiple @build subagents in parallel for different steps.
 
 **Rules for parallel dispatch:**
-1. Each parallel @build gets its OWN step range and its own context budget.
-2. Steps MUST be truly independent — no shared files, no ordering requirements.
-3. Each parallel @build works on the same branch but different files.
-4. Parse all PROGRESS headers when parallel builds return.
-5. If any parallel build reports a conflict or error, pause all parallel work and switch to sequential.
-6. Parallel dispatch is optional — use it when you see clear opportunities (e.g., "Step 3: add tests" and "Step 4: update docs" can run simultaneously).
-7. Track each parallel dispatch as a separate iteration in loop-state.json.
-8. Never parallelize steps that modify the same file.
+1. Each parallel @build gets its OWN worktree, its own branch, its own step range, and its own context budget.
+2. Steps MUST be truly independent — no ordering requirements between them.
+3. Create a separate worktree+branch for each parallel build:
+   - Branch naming: `{prefix}/{plan-slug}-part{N}` (e.g., `feat/rate-limiting-part1`, `feat/rate-limiting-part2`).
+   - Worktree path: `../{repo}-worktrees/{branch-slug}/` per the standard convention.
+4. Dispatch each @build with its own `worktree:` and `workdir:` pointing to its dedicated worktree.
+5. Parse all PROGRESS headers when parallel builds return.
+6. Track each parallel dispatch as a separate build entry in loop-state.json (keyed by `{plan-slug}-part{N}`).
+7. After all parallel builds complete, merge their branches sequentially using the Sequential Merge with Auto-Rebase protocol.
+
+**Parallel builds CAN touch the same files** since they have full filesystem isolation. However, merging them later requires sequential merge + rebase to resolve conflicts. Plan merge order before dispatching (the build with fewer expected file changes merges first).
 
 **When NOT to parallelize:**
 - Steps with explicit dependencies
-- Steps that modify the same file
 - When the plan has fewer than 4 remaining steps (overhead not worth it)
 - When cost budget is tight (parallel = more total tokens = higher cost)
+- When the remaining steps all touch a single complex file (merge conflicts will be difficult to auto-resolve)
 
 ### Dual Output Protocol
 
