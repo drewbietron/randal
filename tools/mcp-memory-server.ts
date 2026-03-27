@@ -43,6 +43,9 @@ const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "openai/text-embedding-3-
 const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
 const SEMANTIC_RATIO = Number.parseFloat(process.env.SEMANTIC_RATIO || "0.7");
 const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "anthropic/claude-haiku-3";
+const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
+	process.env.MEILI_DUMP_INTERVAL_MS || String(6 * 60 * 60 * 1000), 10
+);
 
 /** Categories that default to global scope (cross-project). */
 const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
@@ -182,6 +185,40 @@ async function ensureMessages(): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Periodic dump scheduling
+// ---------------------------------------------------------------------------
+
+/** Schedule periodic Meilisearch dumps via POST /dumps API. */
+function startDumpScheduler(): void {
+	if (MEILI_DUMP_INTERVAL_MS <= 0) {
+		log("info", "Dump scheduling disabled (MEILI_DUMP_INTERVAL_MS <= 0)");
+		return;
+	}
+	log("info", `Dump scheduler started: interval ${MEILI_DUMP_INTERVAL_MS}ms (${(MEILI_DUMP_INTERVAL_MS / 3600000).toFixed(1)}h)`);
+
+	setInterval(async () => {
+		try {
+			const headers: Record<string, string> = { "Content-Type": "application/json" };
+			if (MEILI_MASTER_KEY) {
+				headers.Authorization = `Bearer ${MEILI_MASTER_KEY}`;
+			}
+			const resp = await fetch(`${MEILI_URL}/dumps`, {
+				method: "POST",
+				headers,
+			});
+			if (resp.ok) {
+				const body = await resp.json();
+				log("info", `Dump triggered successfully: ${JSON.stringify(body)}`);
+			} else {
+				log("warn", `Dump request failed: ${resp.status} ${resp.statusText}`);
+			}
+		} catch (err) {
+			log("warn", `Dump request error: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}, MEILI_DUMP_INTERVAL_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -910,6 +947,9 @@ async function main(): Promise<void> {
 
 	// Fire-and-forget: retry init in background so MCP server is immediately responsive
 	retryInit();
+
+	// Start periodic dump scheduler (works for both local and remote Meilisearch)
+	startDumpScheduler();
 
 	log("info", "Listening on stdin for JSON-RPC requests...");
 
