@@ -210,12 +210,33 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
    - If `session_length` is `"short"`: Reduce `build_steps_per_invocation` by 1 (minimum 2) to avoid context exhaustion mid-step.
    - If `session_length` is `"long"`: Allow the default or user-specified budget. No adjustment needed.
 
-1.5. **Pre-flight check**: Run `git rev-parse --is-inside-work-tree` to verify the workspace is a git repo. If it fails, ask the user: "This directory isn't a git repo. Should I initialize one (`git init`), or skip git operations for this build?" If skipping git, instruct @build to skip branch creation and commits.
+1.5. **Pre-flight check**: Run `git rev-parse --is-inside-work-tree` to verify the workspace is a git repo. If it fails, ask the user: "This directory isn't a git repo. Should I initialize one (`git init`), or skip git operations for this build?" If skipping git, instruct @build to skip commits.
 
-2. **Check if a branch should be created**:
-   - Read the plan file to get the plan slug.
-   - If no branch exists for this plan: tell @build to create `{branch-prefix}/{plan-slug}`.
-   - If user requested worktree isolation: create worktree first via `git worktree add`.
+2. **Create worktree + branch** (Randal does this, NOT @build):
+   - Read the plan file to get the plan slug and determine the branch prefix.
+   - Derive the branch name: `{prefix}/{plan-slug}` (see Branch Naming Convention).
+   - Check if a worktree already exists for this branch (see Handling Existing Worktrees).
+   - If no worktree exists, create one:
+     ```bash
+     repo_name=$(basename "$(git rev-parse --show-toplevel)")
+     branch_slug="{plan-slug}"  # e.g. "memory-search"
+     branch_name="{prefix}/{plan-slug}"  # e.g. "feat/memory-search"
+     worktree_parent="../${repo_name}-worktrees"
+     worktree_path="${worktree_parent}/${branch_slug}"
+     
+     mkdir -p "$worktree_parent"
+     git worktree add "$worktree_path" -b "$branch_name"
+     ```
+   - If the worktree already exists (resuming a paused build), verify the branch is correct:
+     ```bash
+     git -C "$worktree_path" branch --show-current
+     ```
+   - Update loop-state.json immediately: set `worktree_path`, `branch`, status to `"building"`.
+   - Copy the plan file into the worktree's `.opencode/plans/` directory so @build can read it:
+     ```bash
+     mkdir -p "${worktree_path}/.opencode/plans"
+     cp .opencode/plans/{plan-file} "${worktree_path}/.opencode/plans/"
+     ```
 
 2.5. **Dispatch @build in CONTRACT MODE** to negotiate sprint contracts for the upcoming batch:
    ```
@@ -228,6 +249,8 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
    
    Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
    ```
+   Pass `workdir: {worktree_path}` so @build reads the plan from the worktree.
+   
    Parse the `CONTRACT:` header from @build's response. If the contract looks reasonable (criteria are specific and testable), proceed to dispatch @build for implementation. If @build flags risks or unclear requirements, report them to the user before proceeding.
    
    **Skip conditions**: Sprint contracts are skipped when:
@@ -242,11 +265,13 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
    
    CONTEXT BUDGET: Complete at most {N} steps, then checkpoint.
    
-    Git branch: {branch-prefix}/{plan-slug}
-    Commit after each completed step using the format in your instructions.
+   Git branch: {branch-name}
+   Worktree: {worktree_path}
+   Commit after each completed step using the format in your instructions.
    
    Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
    ```
+   **Critical**: Pass `workdir: {worktree_path}` so all @build bash commands execute in the worktree.
    If resuming, include: `task_id: {saved_task_id}` for warm resume.
 
 4. **Parse @build's checkpoint**: Look for the `PROGRESS:` header line. Extract completed/total, blocked count, current step.
