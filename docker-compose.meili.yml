@@ -2,9 +2,16 @@ services:
   meili:
     image: getmeili/meilisearch:v1.12
     container_name: randal-meili
+    restart: unless-stopped
     ports:
       - "7701:7700"
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-randal-local-key}
+    command:
+      - meilisearch
+      - --schedule-snapshot
+      - --snapshot-interval-sec=86400
+      - --snapshot-dir=/meili_data/snapshots
+      - --dump-dir=/meili_data/dumps
     volumes:
       - ./meili-data:/meili_data
