@@ -27,12 +27,17 @@ export {
 } from "./registry";
 
 // ---------------------------------------------------------------------------
-// Image provider types + registry
+// Image provider types + registry — re-exported from @randal/image-gen-tool
 // ---------------------------------------------------------------------------
 
 export type { GenerateImageOptions, GenerateImageResult, ImageProvider } from "./types";
-export { OpenRouterImageProvider } from "./openrouter-image";
-export { registerImageProvider, getImageProvider, listImageProviders } from "./image-registry";
+
+// Re-export image provider registry from @randal/image-gen-tool
+export {
+	registerImageProvider,
+	getImageProvider,
+	listImageProviders,
+} from "@randal/image-gen-tool";
 
 // ---------------------------------------------------------------------------
 // Audio provider types + registry
