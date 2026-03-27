@@ -41,11 +41,15 @@ You are a **build subagent**. You execute implementation plans step-by-step, com
 
 1. **Read the plan file** from the path in your dispatch prompt.
 2. **Check the Status field** — if "Complete", report that and stop.
-3. **Check for a branch**: If the dispatch prompt specifies a branch, ensure you're on it. If not, create it:
+3. **Verify worktree and branch**: Confirm you're on the correct branch in the correct worktree:
    ```bash
-   # See "Git Discipline" section for full branch and commit instructions
-   git checkout -b {branch-name} 2>/dev/null || git checkout {branch-name}
+   # Verify branch matches dispatch prompt
+   current_branch=$(git branch --show-current)
+   echo "Branch: $current_branch"
+   # Verify working directory is a worktree (not the main repo)
+   git rev-parse --show-toplevel
    ```
+   If the branch doesn't match the dispatch prompt, STOP and report the error. Do not create branches — Randal owns branch/worktree creation.
 4. **Handle dirty state** (crash recovery):
    - Check `git status` for uncommitted changes.
    - If there are uncommitted changes:
@@ -103,17 +107,15 @@ The plan file contains these key sections you interact with:
 
 ## Git Discipline
 
-### Branch Creation
+### Worktree Verification
 
-On your first invocation for a plan, create a feature branch:
+You always work in a worktree that Randal has already created. On your first invocation, verify you're on the correct branch:
 ```bash
-git checkout -b {branch-name} 2>/dev/null || git checkout {branch-name}
+current=$(git branch --show-current)
+echo "On branch: $current"
 ```
 
-If the dispatch prompt says "worktree: {path}", you're working in an isolated worktree. The branch was already created by Randal. Just verify you're on it:
-```bash
-git branch --show-current
-```
+If the branch doesn't match the one specified in your dispatch prompt, this is an ERROR — do not proceed. Report the mismatch in your PROGRESS header and checkpoint immediately. Randal is responsible for creating worktrees and branches; you never create them yourself.
 
 ### Committing After Each Step
 
@@ -121,9 +123,8 @@ After implementing and verifying a step, commit it. The commit must happen BEFOR
 
 Commit sequence:
 1. `git add` the specific files you changed (NOT `git add .`)
-2. `git add .opencode/plans/{plan-file}` (to include the updated checkbox)
-3. Commit with the format below
-4. Verify the commit landed: `git log -1 --oneline`
+2. Commit with the format below
+3. Verify the commit landed: `git log -1 --oneline`
 
 ### Commit Message Format
 
@@ -178,7 +179,7 @@ Step: 1 of 12
 - ✅ Source code changes for the current step
 - ✅ Test files added or modified for this step
 - ✅ Config files changed as part of this step
-- ✅ The updated plan file (with checkbox marked)
+- ❌ NEVER commit plan files (`.opencode/` is gitignored — plan files are operational state, not source code)
 - ❌ NEVER commit `.env`, credentials, API keys, secrets
 - ❌ NEVER commit `node_modules/`, `dist/`, build artifacts
 - ❌ NEVER commit unrelated changes (only files relevant to this step)
@@ -198,12 +199,14 @@ git reset HEAD {file}
 
 ### Working in Worktrees
 
-If the dispatch prompt specifies `worktree: {path}`:
-- Your working directory is already the worktree (Randal set it up)
-- The branch is already created and checked out
+You ALWAYS work in a worktree. This is the only mode of operation:
+- Your working directory is the worktree path (set by Randal via `workdir` in the dispatch)
+- The branch is already created and checked out by Randal
 - Commits go to the worktree's branch, NOT the main repo's branch
 - The main repo's working directory is untouched
 - All file paths in the plan are relative to the worktree root
+- Use `workdir` parameter on all Bash tool calls — do NOT `cd` into the worktree manually
+- If you need to reference the main repo (rare), use `git rev-parse --git-common-dir` to find it
 
 ### Commit Grouping
 
