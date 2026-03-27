@@ -581,13 +581,13 @@ When writing to loop-state.json, always follow this schema:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "builds": {
     "{plan-slug}": {
       "plan_file": ".opencode/plans/{slug}_{timestamp}.plan.md",
-      "worktree": null | "path/to/worktree",
+      "worktree_path": "../{repo}-worktrees/{branch-slug}/",
       "branch": "{prefix}/{plan-slug}",
-      "status": "planning" | "plan_ready" | "building" | "complete" | "error" | "paused" | "merged",
+      "status": "planning" | "plan_ready" | "building" | "complete" | "merging" | "merged" | "error" | "paused",
       "mode": "thorough" | "quick",
       "model": "provider/model-id",
       "context_budget": 4,
@@ -603,6 +603,9 @@ When writing to loop-state.json, always follow this schema:
       },
       "eval_iterations": 0,
       "eval_strategy": null,
+      "files_changed": ["src/api/rate-limiter.ts", "src/api/middleware.ts"],
+      "merge_order": 1,
+      "overlap_with": ["{other-plan-slug}"],
       "pr_number": null,
       "pr_url": null,
       "started_at": "2026-03-25T20:15:00Z",
@@ -625,6 +628,14 @@ When writing to loop-state.json, always follow this schema:
 }
 ```
 
+**Key schema changes from v1:**
+- `worktree_path` (string, **required**): Always set — every build has a worktree. Path is relative to the main repo root.
+- `files_changed` (string[], default `[]`): Populated after build completes. Used for pre-merge overlap detection.
+- `merge_order` (integer | null): Set when multiple branches are queued for merge. Lower number merges first.
+- `overlap_with` (string[], default `[]`): Other build slugs that share changed files with this build. Advisory.
+- `status` adds `"merging"`: Set while a branch is being merged/rebased.
+- Removed: `"worktree": null | "path"` — replaced by non-nullable `worktree_path`.
+
 ### Recovery Dashboard Format
 
 ```
@@ -632,16 +643,18 @@ When writing to loop-state.json, always follow this schema:
 ║  📋 SESSION RECOVERY                                         ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  {for each build with status != "complete":}                 ║
+║  {for each build with status != "merged":}                   ║
 ║  {icon} {name}  {progress_bar}  {completed}/{total}  {status}║
-║     Branch: {branch-name} · {time_ago}                       ║
+║     Branch: {branch-name} · Worktree: {worktree_path}        ║
+║     {time_ago} · {if merge_order: Merge order: #{merge_order}}║
+║     {if overlap_with: ⚠ File overlap with: {overlap_with}}   ║
 ║     {if error: Error: {description}}                         ║
 ║                                                              ║
 ║  Commands: "resume {name}" · "abort {name}" · "status"       ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-Status icons: ⏸️ paused, 🔄 planning, 🏗️ building, ✅ complete, ❌ error
+Status icons: ⏸️ paused, 🔄 planning, 🏗️ building, 🔀 merging, ✅ complete, ✅✅ merged, ❌ error
 
 ### Abort Behavior
 
