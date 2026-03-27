@@ -122,6 +122,69 @@ const messageManager = new MessageManager({
 let messagesAvailable = false;
 
 // ---------------------------------------------------------------------------
+// Init retry with exponential backoff & lazy re-init helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Retry store.init() and messageManager.init() with exponential backoff.
+ * Each subsystem is retried independently so one failing doesn't block the other.
+ * Never throws — sets availability flags on success, logs warnings on failure.
+ */
+async function retryInit(): Promise<void> {
+	const MAX_ATTEMPTS = 5;
+	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+		try {
+			await store.init();
+			storeAvailable = true;
+			log("info", `Store initialized at ${MEILI_URL} (attempt ${attempt})`);
+			break;
+		} catch (err) {
+			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
+			log("warn", `Store init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`);
+			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
+		}
+	}
+	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+		try {
+			await messageManager.init();
+			messagesAvailable = true;
+			log("info", `MessageManager initialized (attempt ${attempt})`);
+			break;
+		} catch (err) {
+			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
+			log("warn", `MessageManager init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`);
+			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
+		}
+	}
+}
+
+/** Lazy re-init: attempt store.init() if not yet available. Returns true if available. */
+async function ensureStore(): Promise<boolean> {
+	if (storeAvailable) return true;
+	try {
+		await store.init();
+		storeAvailable = true;
+		log("info", "Store lazy re-init succeeded");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Lazy re-init: attempt messageManager.init() if not yet available. Returns true if available. */
+async function ensureMessages(): Promise<boolean> {
+	if (messagesAvailable) return true;
+	try {
+		await messageManager.init();
+		messagesAvailable = true;
+		log("info", "MessageManager lazy re-init succeeded");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------------------
 // JSON-RPC types
 // ---------------------------------------------------------------------------
 
@@ -845,37 +908,8 @@ async function processLine(line: string): Promise<void> {
 async function main(): Promise<void> {
 	log("info", `randal-memory MCP server starting (index: ${MEILI_INDEX}, scope: ${defaultScope})`);
 
-	// Initialize MeilisearchStore (non-fatal if unavailable)
-	try {
-		await store.init();
-		storeAvailable = true;
-		log(
-			"info",
-			`Store initialized at ${MEILI_URL} (embedder: ${embedder ? "openrouter" : "none"})`,
-		);
-	} catch (err) {
-		storeAvailable = false;
-		log(
-			"warn",
-			`Store initialization failed at ${MEILI_URL}: ${err instanceof Error ? err.message : String(err)}. Tools will return empty results.`,
-		);
-	}
-
-	// Initialize MessageManager for chat history (non-fatal if unavailable)
-	try {
-		await messageManager.init();
-		messagesAvailable = true;
-		log(
-			"info",
-			`MessageManager initialized (summary: ${summaryGeneratorConfig ? "enabled" : "disabled"})`,
-		);
-	} catch (err) {
-		messagesAvailable = false;
-		log(
-			"warn",
-			`MessageManager initialization failed: ${err instanceof Error ? err.message : String(err)}. Chat tools will return empty results.`,
-		);
-	}
+	// Fire-and-forget: retry init in background so MCP server is immediately responsive
+	retryInit();
 
 	log("info", "Listening on stdin for JSON-RPC requests...");
 
