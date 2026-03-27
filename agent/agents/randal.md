@@ -362,6 +362,8 @@ Always emit BOTH the pretty UX box AND the tags. The TUI user sees the boxes, th
 
 ### Git Worktree Strategy
 
+**Every build gets its own git worktree.** The main worktree stays clean and is never built in directly. This eliminates git index contention and allows unlimited concurrent builds.
+
 #### Branch Naming Convention
 
 Never use `opencode/` as a branch prefix. Use semantic prefixes based on the plan's intent:
@@ -386,24 +388,63 @@ Never use `opencode/` as a branch prefix. Use semantic prefixes based on the pla
 - Plan: "Fix authentication token refresh" → `fix/auth-token-refresh`
 - Plan: "Refactor runner prompt assembly" → `refactor/runner-prompt-assembly`
 
-#### Level 1: Single Build, Same Directory (default)
-- @build creates branch `{prefix}/{plan-slug}` from current HEAD
-- Works in the current working directory
-- Commits after each step
-- User stays on the branch until they merge or switch back
+#### Worktree Path Convention
 
-#### Level 2: Single Build, Worktree Isolation
-- Triggered by user saying "build in worktree" or "build isolated"
-- Create a worktree via `git worktree add`
-- @build works in the isolated worktree directory
-- User's current directory is untouched
-- On completion, report the branch name for review/merge
+Worktrees are created as siblings to the repository in a dedicated directory:
 
-#### Level 3: Multiple Parallel Builds
-- Each plan dispatched for build gets its own worktree automatically
-- Track all active worktrees in loop-state.json
-- No conflicts possible — full filesystem isolation
-- User reviews/merges each branch independently
+```
+../{repo-name}-worktrees/{branch-slug}/
+```
+
+Example layout for a repo at `/Users/dev/randal`:
+```
+/Users/dev/randal/                          ← main worktree (clean, never built in)
+/Users/dev/randal-worktrees/                ← worktree parent directory
+/Users/dev/randal-worktrees/memory-search/  ← worktree for feat/memory-search
+/Users/dev/randal-worktrees/fix-auth/       ← worktree for fix/auth-token-refresh
+```
+
+Git metadata stays in `.git/worktrees/` inside the main repo as normal.
+
+#### Worktree Lifecycle
+
+Randal fully owns the worktree lifecycle. @build never creates worktrees or branches.
+
+1. **Create**: Before dispatching @build, Randal creates the worktree + branch:
+   ```bash
+   # Ensure the worktrees parent directory exists
+   mkdir -p ../{repo-name}-worktrees
+   # Create worktree with new branch from current HEAD
+   git worktree add ../{repo-name}-worktrees/{branch-slug} -b {prefix}/{plan-slug}
+   ```
+2. **Track**: Record `worktree_path` and `branch` in loop-state.json immediately after creation.
+3. **Build**: Dispatch @build with `workdir: {worktree-path}`. @build works exclusively in the worktree.
+4. **Push**: On build completion, push the branch from the worktree: `git -C {worktree-path} push -u origin {branch}`.
+5. **PR**: Create a pull request via `gh pr create`.
+6. **Merge**: Merge the PR (sequential merge with rebase for multiple branches).
+7. **Cleanup**: After merge, remove the worktree and delete the branch:
+   ```bash
+   git worktree remove ../{repo-name}-worktrees/{branch-slug}
+   git branch -d {prefix}/{plan-slug}
+   git push origin --delete {prefix}/{plan-slug}
+   ```
+
+#### Deriving Repo Name and Worktree Path
+
+```bash
+# Get the repo name from the main worktree root
+repo_name=$(basename "$(git rev-parse --show-toplevel)")
+worktree_parent="../${repo_name}-worktrees"
+worktree_path="${worktree_parent}/{branch-slug}"
+```
+
+#### Handling Existing Worktrees
+
+Before creating a worktree, check if one already exists for this branch:
+```bash
+git worktree list --porcelain | grep -A1 "branch refs/heads/{prefix}/{plan-slug}"
+```
+If a worktree already exists (e.g., resuming a paused build), reuse it. Do not create a duplicate.
 
 ### Autonomous Git Management
 
