@@ -1,14 +1,15 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-	extractFrames,
-	analyzeVideoWithVision,
-	prepareVideoReference,
 	VideoRefError,
+	analyzeVideoWithVision,
+	extractFrames,
+	prepareVideoReference,
 } from "../video-ref";
+import type { VideoRefErrorCode } from "../video-ref";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,12 +37,12 @@ function restoreEnv() {
 	if (savedOpenRouterKey !== undefined) {
 		process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
 	} else {
-		delete process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = undefined;
 	}
 }
 
 /** Small PNG file (1x1 pixel, valid) for mocking frame output. */
-function fakePngBuffer(): Buffer {
+function _fakePngBuffer(): Buffer {
 	return Buffer.from(
 		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
 		"base64",
@@ -49,7 +50,7 @@ function fakePngBuffer(): Buffer {
 }
 
 /** Build a fake OpenRouter vision response. */
-function fakeVisionResponse(analysis: Record<string, unknown>): Response {
+function _fakeVisionResponse(analysis: Record<string, unknown>): Response {
 	return new Response(
 		JSON.stringify({
 			choices: [
@@ -167,7 +168,7 @@ describe("analyzeVideoWithVision", () => {
 	});
 
 	test("throws ANALYSIS_FAILED when OPENROUTER_API_KEY is not set", async () => {
-		delete process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = undefined;
 		const tmpDir = await mkdtemp(join(tmpdir(), "video-ref-test-"));
 		const fakePath = join(tmpDir, "fake.mp4");
 		await writeFile(fakePath, Buffer.alloc(100, 0x00));
@@ -250,16 +251,16 @@ describe("analyzeVideoWithVision", () => {
 		process.env.OPENROUTER_API_KEY = "test-key-or";
 
 		let capturedUrl = "";
-		let capturedHeaders: Record<string, string> = {};
-		let capturedBody = "";
+		let _capturedHeaders: Record<string, string> = {};
+		let _capturedBody = "";
 
 		// Mock fetch to capture the request
 		globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
 			capturedUrl = typeof input === "string" ? input : input.toString();
-			capturedHeaders = Object.fromEntries(
+			_capturedHeaders = Object.fromEntries(
 				Object.entries(init?.headers as Record<string, string>),
 			);
-			capturedBody = init?.body as string;
+			_capturedBody = init?.body as string;
 
 			// Return a non-JSON text response from the vision model
 			return new Response(
@@ -314,7 +315,8 @@ describe("VideoAnalysis parsing", () => {
 	});
 
 	test("markdown code block wrapped JSON is handled", () => {
-		const responseText = '```json\n{"description":"test","scenes":[],"style":"minimal","subjects":[],"mood":"neutral"}\n```';
+		const responseText =
+			'```json\n{"description":"test","scenes":[],"style":"minimal","subjects":[],"mood":"neutral"}\n```';
 
 		// Simulate the code block stripping logic
 		let jsonText = responseText.trim();
@@ -332,7 +334,7 @@ describe("VideoAnalysis parsing", () => {
 	test("non-JSON response falls back to description-only", () => {
 		const responseText = "This video shows a beautiful sunset over the ocean with warm colors.";
 
-		let result;
+		let result: Record<string, unknown>;
 		try {
 			JSON.parse(responseText);
 			result = { description: responseText };
@@ -495,7 +497,7 @@ describe("VideoRefError", () => {
 		];
 
 		for (const code of validCodes) {
-			const error = new VideoRefError(`test ${code}`, code as any);
+			const error = new VideoRefError(`test ${code}`, code as VideoRefErrorCode);
 			expect(error.code).toBe(code);
 		}
 	});

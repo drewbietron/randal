@@ -5,10 +5,10 @@
  * are auto-registered on import.
  */
 
-import type { AudioProvider } from "./types";
-import { VideoProviderError } from "./types";
 import { ElevenLabsProvider } from "./elevenlabs";
 import { OpenRouterTTSProvider } from "./openrouter-tts";
+import type { AudioProvider } from "./types";
+import { VideoProviderError } from "./types";
 
 // ---------------------------------------------------------------------------
 // Registry

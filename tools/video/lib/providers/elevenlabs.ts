@@ -8,10 +8,10 @@
  */
 
 import type {
+	AudioFormat,
 	AudioProvider,
 	GenerateSpeechOptions,
 	GenerateSpeechResult,
-	AudioFormat,
 } from "./types";
 import { VideoProviderError } from "./types";
 
@@ -134,11 +134,7 @@ export class ElevenLabsProvider implements AudioProvider {
 		options: GenerateSpeechOptions = {},
 	): Promise<GenerateSpeechResult> {
 		if (!text || text.trim() === "") {
-			throw new VideoProviderError(
-				"Text must be a non-empty string.",
-				"API_ERROR",
-				this.name,
-			);
+			throw new VideoProviderError("Text must be a non-empty string.", "API_ERROR", this.name);
 		}
 
 		const apiKey = this.getApiKey();
@@ -192,7 +188,7 @@ export class ElevenLabsProvider implements AudioProvider {
 						errorMessage =
 							typeof detail === "string"
 								? detail
-								: (detail?.message as string) ?? JSON.stringify(errorBody);
+								: ((detail?.message as string) ?? JSON.stringify(errorBody));
 					} catch {
 						errorMessage = `HTTP ${status}: ${response.statusText}`;
 					}

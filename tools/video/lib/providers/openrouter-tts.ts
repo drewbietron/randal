@@ -10,10 +10,10 @@
  */
 
 import type {
+	AudioFormat,
 	AudioProvider,
 	GenerateSpeechOptions,
 	GenerateSpeechResult,
-	AudioFormat,
 } from "./types";
 import { VideoProviderError } from "./types";
 
@@ -67,10 +67,7 @@ function sleep(ms: number): Promise<void> {
 export class OpenRouterTTSProvider implements AudioProvider {
 	readonly name = "openrouter-tts";
 	readonly description = "TTS via OpenRouter (OpenAI tts-1, tts-1-hd, etc.)";
-	readonly models = [
-		"openai/tts-1",
-		"openai/tts-1-hd",
-	];
+	readonly models = ["openai/tts-1", "openai/tts-1-hd"];
 
 	private readonly apiBaseUrl: string;
 
@@ -88,11 +85,7 @@ export class OpenRouterTTSProvider implements AudioProvider {
 		options: GenerateSpeechOptions = {},
 	): Promise<GenerateSpeechResult> {
 		if (!text || text.trim() === "") {
-			throw new VideoProviderError(
-				"Text must be a non-empty string.",
-				"API_ERROR",
-				this.name,
-			);
+			throw new VideoProviderError("Text must be a non-empty string.", "API_ERROR", this.name);
 		}
 
 		const apiKey = this.getApiKey();

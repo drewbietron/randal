@@ -93,10 +93,7 @@ const DEFAULT_SAMPLE_COUNT = 1;
 const SUBMIT_MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 1_000;
 
-const AI_STUDIO_MODELS: VeoModel[] = [
-	"veo-3.0-generate-001",
-	"veo-3.1-generate-preview",
-];
+const AI_STUDIO_MODELS: VeoModel[] = ["veo-3.0-generate-001", "veo-3.1-generate-preview"];
 
 const VERTEX_AI_MODELS: VeoModel[] = [
 	"veo-3.0-generate-001",
@@ -140,12 +137,12 @@ export class VeoProvider implements VideoProvider {
 		// Vertex AI
 		const vertexKey = process.env.VERTEX_AI_API_KEY;
 		const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-		if (vertexKey && vertexKey.trim() && projectId && projectId.trim()) {
+		if (vertexKey?.trim() && projectId && projectId.trim()) {
 			return true;
 		}
 		// AI Studio
 		const aiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
-		if (aiStudioKey && aiStudioKey.trim()) {
+		if (aiStudioKey?.trim()) {
 			return true;
 		}
 		return false;
@@ -157,11 +154,11 @@ export class VeoProvider implements VideoProvider {
 	private detectBackend(): VeoBackend {
 		const vertexKey = process.env.VERTEX_AI_API_KEY;
 		const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-		if (vertexKey && vertexKey.trim() && projectId && projectId.trim()) {
+		if (vertexKey?.trim() && projectId && projectId.trim()) {
 			return "vertex";
 		}
 		const aiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
-		if (aiStudioKey && aiStudioKey.trim()) {
+		if (aiStudioKey?.trim()) {
 			return "ai-studio";
 		}
 		throw new VideoProviderError(
@@ -279,7 +276,7 @@ export class VeoProvider implements VideoProvider {
 
 	private buildSubmitUrl(model: VeoModel): string {
 		if (this.backend === "vertex") {
-			const projectId = process.env.GOOGLE_CLOUD_PROJECT!.trim();
+			const projectId = process.env.GOOGLE_CLOUD_PROJECT?.trim();
 			return `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:predictLongRunning`;
 		}
 		return `${AI_STUDIO_API_BASE}/models/${model}:predictLongRunning`;
@@ -443,7 +440,7 @@ export class VeoProvider implements VideoProvider {
 		model: VeoModel,
 	): { url: string; init: RequestInit } {
 		if (this.backend === "vertex") {
-			const projectId = process.env.GOOGLE_CLOUD_PROJECT!.trim();
+			const projectId = process.env.GOOGLE_CLOUD_PROJECT?.trim();
 			const url = `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:fetchPredictOperation`;
 			return {
 				url,

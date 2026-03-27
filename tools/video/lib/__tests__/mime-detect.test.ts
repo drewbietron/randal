@@ -248,10 +248,7 @@ describe("detectMimeType", () => {
 	});
 
 	test("uses fallbackMimeType for unknown bytes", () => {
-		const result = detectMimeType(
-			Buffer.from([0x01, 0x02, 0x03, 0x04]),
-			"image/jpeg",
-		);
+		const result = detectMimeType(Buffer.from([0x01, 0x02, 0x03, 0x04]), "image/jpeg");
 		expect(result.mimeType).toBe("image/jpeg");
 		expect(result.extension).toBe("jpg");
 	});

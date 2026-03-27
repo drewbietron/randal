@@ -11,7 +11,7 @@
 
 import { readFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
-import { dirname, resolve, join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { detectMimeType } from "./mime-detect";
 
@@ -149,10 +149,7 @@ async function assertFfmpegAvailable(): Promise<void> {
 async function assertFileExists(filePath: string, label: string): Promise<void> {
 	const exists = await Bun.file(filePath).exists();
 	if (!exists) {
-		throw new VideoRefError(
-			`${label} file not found: ${filePath}`,
-			"MISSING_INPUT",
-		);
+		throw new VideoRefError(`${label} file not found: ${filePath}`, "MISSING_INPUT");
 	}
 }
 
@@ -297,10 +294,7 @@ export async function extractFrames(
 	const outputDir = options.outputDir ?? DEFAULT_OUTPUT_DIR;
 
 	if (intervalSeconds === undefined && count <= 0) {
-		throw new VideoRefError(
-			`count must be a positive number (got ${count}).`,
-			"INVALID_ARGUMENTS",
-		);
+		throw new VideoRefError(`count must be a positive number (got ${count}).`, "INVALID_ARGUMENTS");
 	}
 
 	if (intervalSeconds !== undefined && intervalSeconds <= 0) {
@@ -484,16 +478,13 @@ Respond with ONLY the JSON object, no markdown code blocks, no extra text.`;
 			);
 		}
 
-		const data = await response.json() as {
+		const data = (await response.json()) as {
 			choices?: Array<{ message?: { content?: string } }>;
 		};
 
 		responseText = data.choices?.[0]?.message?.content ?? "";
 		if (!responseText) {
-			throw new VideoRefError(
-				"Vision model returned an empty response.",
-				"ANALYSIS_FAILED",
-			);
+			throw new VideoRefError("Vision model returned an empty response.", "ANALYSIS_FAILED");
 		}
 	} catch (error) {
 		if (error instanceof VideoRefError) throw error;
@@ -513,11 +504,7 @@ Respond with ONLY the JSON object, no markdown code blocks, no extra text.`;
 			);
 		}
 
-		throw new VideoRefError(
-			`Failed to analyze video: ${errorMessage}`,
-			"ANALYSIS_FAILED",
-			error,
-		);
+		throw new VideoRefError(`Failed to analyze video: ${errorMessage}`, "ANALYSIS_FAILED", error);
 	}
 
 	// --- Parse response ---
@@ -616,9 +603,7 @@ export async function prepareVideoReference(
 	const frames = await extractFrames(videoPath, { count: extractionCount });
 
 	// --- Analyze original video ---
-	const analysisPrompt =
-		`Analyze these video frames in detail. I want to modify this video to: ${changes}\n` +
-		"Provide a thorough analysis of the original video content so I can generate a modified version.";
+	const analysisPrompt = `Analyze these video frames in detail. I want to modify this video to: ${changes}\nProvide a thorough analysis of the original video content so I can generate a modified version.`;
 
 	const analysis = await analyzeVideoWithVision(videoPath, analysisPrompt, {
 		frameCount: extractionCount,

@@ -2,20 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
 	AudioGenError,
-	generateSpeech,
-	generateMusic,
-	mixAudioTracks,
 	attachAudioToVideo,
+	generateMusic,
+	generateSpeech,
+	mixAudioTracks,
 } from "../audio-gen";
-import {
-	getAudioProvider,
-	listAudioProviders,
-	registerAudioProvider,
-} from "../providers/audio-registry";
+import { getAudioProvider, listAudioProviders } from "../providers/audio-registry";
 import { ElevenLabsProvider } from "../providers/elevenlabs";
 import { OpenRouterTTSProvider } from "../providers/openrouter-tts";
 import { VideoProviderError } from "../providers/types";
-import type { AudioProvider, GenerateSpeechResult } from "../providers/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,12 +40,12 @@ function restoreEnv() {
 	if (savedElevenLabsKey !== undefined) {
 		process.env.ELEVENLABS_API_KEY = savedElevenLabsKey;
 	} else {
-		delete process.env.ELEVENLABS_API_KEY;
+		process.env.ELEVENLABS_API_KEY = undefined;
 	}
 	if (savedOpenRouterKey !== undefined) {
 		process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
 	} else {
-		delete process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = undefined;
 	}
 }
 
@@ -77,7 +72,7 @@ describe("ElevenLabsProvider", () => {
 	});
 
 	test("throws MISSING_API_KEY when ELEVENLABS_API_KEY not set", async () => {
-		delete process.env.ELEVENLABS_API_KEY;
+		process.env.ELEVENLABS_API_KEY = undefined;
 		const provider = new ElevenLabsProvider();
 
 		try {
@@ -102,9 +97,7 @@ describe("ElevenLabsProvider", () => {
 
 		globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
 			capturedUrl = typeof input === "string" ? input : input.toString();
-			capturedHeaders = Object.fromEntries(
-				Object.entries(init?.headers as Record<string, string>),
-			);
+			capturedHeaders = Object.fromEntries(Object.entries(init?.headers as Record<string, string>));
 			capturedBody = init?.body as string;
 			return new Response(audioData, {
 				status: 200,
@@ -186,7 +179,7 @@ describe("OpenRouterTTSProvider", () => {
 	});
 
 	test("throws MISSING_API_KEY when OPENROUTER_API_KEY not set", async () => {
-		delete process.env.OPENROUTER_API_KEY;
+		process.env.OPENROUTER_API_KEY = undefined;
 		const provider = new OpenRouterTTSProvider();
 
 		try {
@@ -211,9 +204,7 @@ describe("OpenRouterTTSProvider", () => {
 
 		globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
 			capturedUrl = typeof input === "string" ? input : input.toString();
-			capturedHeaders = Object.fromEntries(
-				Object.entries(init?.headers as Record<string, string>),
-			);
+			capturedHeaders = Object.fromEntries(Object.entries(init?.headers as Record<string, string>));
 			capturedBody = init?.body as string;
 			return new Response(audioData, {
 				status: 200,
@@ -333,7 +324,7 @@ describe("generateSpeech", () => {
 	});
 
 	test("throws MISSING_API_KEY propagated from provider", async () => {
-		delete process.env.ELEVENLABS_API_KEY;
+		process.env.ELEVENLABS_API_KEY = undefined;
 
 		try {
 			await generateSpeech("Hello", { provider: "elevenlabs" });
@@ -450,11 +441,7 @@ describe("attachAudioToVideo", () => {
 		await Bun.write(tmpVideo, Buffer.alloc(100, 0x00));
 
 		try {
-			await attachAudioToVideo(
-				tmpVideo,
-				"/tmp/nonexistent-audio-12345.mp3",
-				"/tmp/output.mp4",
-			);
+			await attachAudioToVideo(tmpVideo, "/tmp/nonexistent-audio-12345.mp3", "/tmp/output.mp4");
 			expect.unreachable("should have thrown");
 		} catch (error) {
 			expect(error).toBeInstanceOf(AudioGenError);

@@ -18,26 +18,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-import {
-	generateSpeech,
-	generateMusic,
-	mixAudioTracks,
-	attachAudioToVideo,
-	AudioGenError,
-} from "./lib/audio-gen";
-import {
-	extractFrames,
-	analyzeVideoWithVision,
-	prepareVideoReference,
-	VideoRefError,
-} from "./lib/video-ref";
-import { listAudioProviders } from "./lib/providers/audio-registry";
+import { attachAudioToVideo, generateMusic, generateSpeech, mixAudioTracks } from "./lib/audio-gen";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
+import { listAudioProviders } from "./lib/providers/audio-registry";
 import { listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
+import { analyzeVideoWithVision, extractFrames, prepareVideoReference } from "./lib/video-ref";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -368,10 +357,7 @@ server.tool(
 			.optional()
 			.describe("Audio provider name. Uses first configured provider if omitted"),
 		speed: z.number().optional().describe("Speaking speed multiplier (1.0 = normal)"),
-		format: z
-			.enum(["mp3", "wav"])
-			.optional()
-			.describe("Output audio format (default: mp3)"),
+		format: z.enum(["mp3", "wav"]).optional().describe("Output audio format (default: mp3)"),
 		output_dir: z
 			.string()
 			.optional()
@@ -472,8 +458,14 @@ server.tool(
 			.array(
 				z.object({
 					path: z.string().describe("Path to an audio file"),
-					volume: z.number().optional().describe("Volume multiplier (0.0 to 1.0+). Defaults to 1.0"),
-					delay: z.number().optional().describe("Delay before this track starts, in seconds. Defaults to 0"),
+					volume: z
+						.number()
+						.optional()
+						.describe("Volume multiplier (0.0 to 1.0+). Defaults to 1.0"),
+					delay: z
+						.number()
+						.optional()
+						.describe("Delay before this track starts, in seconds. Defaults to 0"),
 				}),
 			)
 			.min(1)
@@ -567,10 +559,7 @@ server.tool(
 			.number()
 			.optional()
 			.describe("Extract a frame every N seconds (overrides count)"),
-		format: z
-			.enum(["png", "jpg"])
-			.optional()
-			.describe("Output image format (default: png)"),
+		format: z.enum(["png", "jpg"]).optional().describe("Output image format (default: png)"),
 		output_dir: z
 			.string()
 			.optional()
@@ -607,9 +596,7 @@ server.tool(
 	"Analyze a video with a vision model to get a structured description of its content",
 	{
 		video_path: z.string().describe("Path to the input video file"),
-		prompt: z
-			.string()
-			.describe("Describe what you want to understand about the video"),
+		prompt: z.string().describe("Describe what you want to understand about the video"),
 		frame_count: z
 			.number()
 			.optional()
@@ -644,11 +631,10 @@ server.tool(
 		video_path: z.string().describe("Path to the source video file"),
 		changes: z
 			.string()
-			.describe("Describe what to change about the video (e.g. 'make the sky purple and add rain')"),
-		extraction_count: z
-			.number()
-			.optional()
-			.describe("Number of frames to extract (default: 4)"),
+			.describe(
+				"Describe what to change about the video (e.g. 'make the sky purple and add rain')",
+			),
+		extraction_count: z.number().optional().describe("Number of frames to extract (default: 4)"),
 		analysis_model: z
 			.string()
 			.optional()

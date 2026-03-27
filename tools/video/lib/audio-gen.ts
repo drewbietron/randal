@@ -8,9 +8,8 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { getAudioProvider, listAudioProviders } from "./providers/audio-registry";
+import { getAudioProvider } from "./providers/audio-registry";
 import type {
-	AudioProvider,
 	GenerateMusicOptions,
 	GenerateMusicResult,
 	GenerateSpeechOptions,
@@ -127,10 +126,7 @@ async function runFfmpeg(args: string[]): Promise<{ stdout: string; stderr: stri
 async function assertFileExists(filePath: string, label: string): Promise<void> {
 	const exists = await Bun.file(filePath).exists();
 	if (!exists) {
-		throw new AudioGenError(
-			`${label} file not found: ${filePath}`,
-			"MISSING_INPUT",
-		);
+		throw new AudioGenError(`${label} file not found: ${filePath}`, "MISSING_INPUT");
 	}
 }
 
@@ -206,8 +202,7 @@ export async function generateMusic(
 		const provider = getAudioProvider(options?.provider);
 		if (!provider.generateMusic) {
 			throw new AudioGenError(
-				`Provider "${provider.name}" does not support music generation. ` +
-					"Try a different provider or use generateSpeech instead.",
+				`Provider "${provider.name}" does not support music generation. Try a different provider or use generateSpeech instead.`,
 				"MUSIC_NOT_SUPPORTED",
 			);
 		}
@@ -252,10 +247,7 @@ export async function generateMusic(
  * );
  * ```
  */
-export async function mixAudioTracks(
-	tracks: MixTrack[],
-	outputPath: string,
-): Promise<string> {
+export async function mixAudioTracks(tracks: MixTrack[], outputPath: string): Promise<string> {
 	// --- Validate ---
 	if (!Array.isArray(tracks) || tracks.length === 0) {
 		throw new AudioGenError(
@@ -265,10 +257,7 @@ export async function mixAudioTracks(
 	}
 
 	if (!outputPath || outputPath.trim() === "") {
-		throw new AudioGenError(
-			"outputPath must be a non-empty string.",
-			"INVALID_ARGUMENTS",
-		);
+		throw new AudioGenError("outputPath must be a non-empty string.", "INVALID_ARGUMENTS");
 	}
 
 	// Validate all track files exist
@@ -326,9 +315,7 @@ export async function mixAudioTracks(
 		mixInputs.push(`[${label}]`);
 	}
 
-	filterParts.push(
-		`${mixInputs.join("")}amix=inputs=${tracks.length}:duration=longest`,
-	);
+	filterParts.push(`${mixInputs.join("")}amix=inputs=${tracks.length}:duration=longest`);
 
 	args.push("-filter_complex", filterParts.join(";"));
 	args.push(absOutput);
@@ -385,10 +372,14 @@ export async function attachAudioToVideo(
 
 	const args: string[] = [
 		"-y",
-		"-i", resolve(videoPath),
-		"-i", resolve(audioPath),
-		"-c:v", "copy",
-		"-c:a", "aac",
+		"-i",
+		resolve(videoPath),
+		"-i",
+		resolve(audioPath),
+		"-c:v",
+		"copy",
+		"-c:a",
+		"aac",
 	];
 
 	if (replace) {
