@@ -1,8 +1,8 @@
 {
-	"name": "@randal/video-tool",
+	"name": "@randal/image-gen-tool",
 	"version": "0.1.0",
 	"private": true,
-	"description": "Video generation tool for Randal — image gen (OpenRouter), video gen (Veo), composition (Remotion)",
+	"description": "Image generation and analysis tool for Randal — generate images (OpenRouter) and analyze them with multimodal models",
 	"type": "module",
 	"main": "lib/index.ts",
 	"scripts": {
@@ -11,7 +11,6 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.12.0",
-		"@randal/image-gen-tool": "file:../image-gen",
 		"zod": "^3.24.0"
 	},
 	"devDependencies": {

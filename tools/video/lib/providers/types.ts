@@ -76,3 +76,96 @@ export class VideoProviderError extends Error {
 		this.name = "VideoProviderError";
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Image provider types — re-exported from @randal/image-gen-tool
+// ---------------------------------------------------------------------------
+
+// Re-export image types from @randal/image-gen-tool for backward compatibility
+export type {
+	GenerateImageOptions,
+	GenerateImageResult,
+	ImageProvider,
+} from "@randal/image-gen-tool";
+
+// ---------------------------------------------------------------------------
+// Audio provider types
+// ---------------------------------------------------------------------------
+
+export type AudioFormat = "mp3" | "wav" | "ogg" | "aac" | "flac" | "pcm";
+
+export interface GenerateSpeechOptions {
+	/** Voice ID or name (provider-specific). */
+	voice?: string;
+	/** Override the default model. */
+	model?: string;
+	/** Speaking speed multiplier (1.0 = normal). */
+	speed?: number;
+	/** Output audio format. Defaults to "mp3". */
+	format?: AudioFormat;
+	/** Language code (e.g. "en", "es"). */
+	language?: string;
+	/** Provider-specific options. */
+	providerOptions?: Record<string, unknown>;
+}
+
+export interface GenerateSpeechResult {
+	/** The raw audio data. */
+	buffer: Buffer;
+	/** MIME type of the audio (e.g. "audio/mpeg"). */
+	mimeType: string;
+	/** The model used. */
+	model: string;
+	/** Duration in seconds (if available). */
+	duration?: number;
+	/** Provider-specific metadata (e.g. voice used, characters billed). */
+	metadata?: Record<string, unknown>;
+}
+
+export interface GenerateMusicOptions {
+	/** Duration in seconds. */
+	duration?: number;
+	/** Genre hint (e.g. "cinematic", "electronic"). */
+	genre?: string;
+	/** Mood hint (e.g. "epic", "melancholy", "upbeat"). */
+	mood?: string;
+	/** Tempo in BPM. */
+	tempo?: number;
+	/** Output audio format. Defaults to "mp3". */
+	format?: AudioFormat;
+	/** Override the default model. */
+	model?: string;
+	/** Provider-specific options. */
+	providerOptions?: Record<string, unknown>;
+}
+
+export interface GenerateMusicResult {
+	/** The raw audio data. */
+	buffer: Buffer;
+	/** MIME type of the audio. */
+	mimeType: string;
+	/** The model used. */
+	model: string;
+	/** Duration in seconds. */
+	duration?: number;
+	/** Provider-specific metadata. */
+	metadata?: Record<string, unknown>;
+}
+
+export interface AudioProvider {
+	/** Unique provider name (e.g. "elevenlabs", "openrouter-tts") */
+	readonly name: string;
+	/** Human-readable description */
+	readonly description: string;
+	/** List of supported models */
+	readonly models: string[];
+
+	/** Generate speech from text */
+	generateSpeech(text: string, options?: GenerateSpeechOptions): Promise<GenerateSpeechResult>;
+
+	/** Generate music from a prompt (optional — not all providers support this) */
+	generateMusic?(prompt: string, options?: GenerateMusicOptions): Promise<GenerateMusicResult>;
+
+	/** Check if the provider is configured */
+	isConfigured(): boolean;
+}

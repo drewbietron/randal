@@ -32,9 +32,18 @@
 				"GOOGLE_CLOUD_PROJECT": "{env:GOOGLE_CLOUD_PROJECT}"
 			},
 			"enabled": true
+		},
+		"image-gen": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/image-gen/mcp-server.ts"],
+			"environment": {
+				"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}"
+			},
+			"enabled": true
 		}
 	},
 	"tools": {
-		"video_*": true
+		"video_*": true,
+		"image-gen_*": true
 	}
 }

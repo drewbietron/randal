@@ -500,7 +500,7 @@ describe("MessageManager.add()", () => {
 			topicKeywords: ["test"],
 		}));
 
-		const { manager, mockIdx } = createManagerWithMock({
+		const { manager } = createManagerWithMock({
 			summaryThreshold: 1, // Would trigger immediately for regular messages
 			summaryGenerator: { apiKey: "test-key" },
 		});

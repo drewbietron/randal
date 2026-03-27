@@ -122,6 +122,66 @@ Use semantic understanding of intent, not keyword matching. For example, 'Fix th
 
 If the user's request clearly involves a trivial change (≤2 files, no architectural impact, obvious implementation), suggest quick mode proactively: "This looks straightforward — want me to handle it in quick mode, or go thorough?" Examples of trivially quick tasks: adding a .gitignore, renaming a variable across a few files, adding a simple config option, fixing a typo, updating a dependency version. When in doubt, default to thorough.
 
+## Project Verification Profile
+
+Before declaring any work "done," Randal must verify it the same way the project verifies it. This is not hardcoded — it's discovered from the project itself.
+
+### Discovery (once per session, cached)
+
+At the start of the first build in a session, discover the project's verification profile:
+
+1. **Check for CI config**: Look for `.github/workflows/*.yml`, `.gitlab-ci.yml`, `Jenkinsfile`, `.circleci/config.yml`, `bitbucket-pipelines.yml`, or similar. Parse the steps the CI runs (install, typecheck, lint, test, build, etc.).
+2. **Check for project scripts**: Read `package.json` scripts, `Makefile` targets, `Cargo.toml`, `pyproject.toml`, `go.mod`, etc. Identify the "check" or "verify" command if one exists (e.g., `bun run check`, `make ci`, `cargo clippy && cargo test`).
+3. **Synthesize a verification checklist**: Create an ordered list of commands that represent "CI would pass." Store this in the build's loop-state entry under `verification_profile`.
+
+Example profiles:
+```
+# Node/Bun project with Biome
+verification_profile:
+  install: "bun install --frozen-lockfile"
+  typecheck: "bun run typecheck"
+  lint: "bun run lint"
+  test: "bun run test"
+
+# Rust project
+verification_profile:
+  check: "cargo check"
+  clippy: "cargo clippy -- -D warnings"
+  test: "cargo test"
+
+# Python project
+verification_profile:
+  lint: "ruff check ."
+  typecheck: "mypy src/"
+  test: "pytest"
+
+# No CI found
+verification_profile: null  # skip verification gate, warn user
+```
+
+If no CI config or check commands are found, warn: "⚠️ No CI configuration found. Skipping automated verification. Consider adding a CI workflow." But still proceed — the absence of CI doesn't block the build.
+
+### Gate (before every push)
+
+After all build steps are complete and before pushing to remote, Randal dispatches @build to run the verification profile:
+
+```
+Run the project verification gate. Execute these commands in order from the repo root.
+Stop on the first failure. Fix the issue, commit the fix, then re-run from the beginning.
+
+{verification_profile commands, one per line}
+
+If all pass, report VERIFICATION: PASS.
+If any fail after 3 fix attempts, report VERIFICATION: FAIL with details.
+```
+
+Rules:
+- The gate runs the FULL profile every time — not just the steps related to what changed. CI doesn't cherry-pick, and neither should this.
+- If a command fails, @build fixes the issue and commits the fix before re-running.
+- Maximum 3 fix-and-retry cycles. After that, report the failure to the user — don't loop forever.
+- The gate is mandatory. It cannot be skipped by the agent. The user can skip it by saying "skip verification" or "push without checks."
+- If the profile includes `install --frozen-lockfile` (or equivalent) and it fails, the lockfile needs regenerating. Fix it.
+
 ## Planning Pipeline
 
 ### Phase 0: Requirements Gathering (You <-> User, Interactive)
@@ -276,20 +336,32 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 
 8. **Repeat** until PROGRESS shows all steps complete.
 
+8.5. **Run the Project Verification Gate**: After all steps are complete (PROGRESS shows done), dispatch @build to run the verification profile discovered during session init (see "Project Verification Profile" section above). This is the final gate before pushing.
+   - If VERIFICATION: PASS → proceed to push and report completion.
+   - If VERIFICATION: FAIL after 3 fix attempts → report the failure to the user. Do NOT push. Do NOT declare the build complete.
+   - Include the verification result in the completion report:
+     ```
+     ✅ Verification: install ✓ · typecheck ✓ · lint ✓ · test ✓
+     ```
+     or:
+     ```
+     ❌ Verification failed: lint ✗ (3 fix attempts exhausted)
+     ```
+
 9. **Report completion**:
-   ```
-   ✅ Build complete: {slug}
-      {total} steps completed · {total_time} · {total_tokens} tokens
-       Branch: {branch-prefix}/{plan-slug} (ready for review/merge)
-       PR: {pr_url} (if created)
-       
-       💾 Commits:
-          {hash} {message}
-          {hash} {message}
-          ...
-       
-       All acceptance criteria verified. ✅
-   ```
+    ```
+    ✅ Build complete: {slug}
+       {total} steps completed · {total_time} · {total_tokens} tokens
+        Branch: {branch-prefix}/{plan-slug} (ready for review/merge)
+        PR: {pr_url} (if created)
+        
+        🔬 Verification: {each profile step} ✓
+        
+        💾 Commits:
+           {hash} {message}
+           {hash} {message}
+           ...
+    ```
 
    Also emit: `<promise>COMPLETE</promise>`
 
@@ -410,7 +482,7 @@ Never use `opencode/` as a branch prefix. Use semantic prefixes based on the pla
 Randal fully owns the git workflow. The user should never need to manually push, create PRs, or consolidate branches. Here's how:
 
 #### Auto-Push on Build Completion
-When a build completes (all steps checked, verification passed):
+When a build completes (all steps checked, Project Verification Gate passed):
 1. Push the branch to remote: `git push -u origin {branch-name}`
 2. If push fails (auth, permissions), report the error but don't block. The branch is still local.
 
@@ -476,6 +548,12 @@ When writing to loop-state.json, always follow this schema:
       "model": "provider/model-id",
       "context_budget": 4,
       "phase": "requirements" | "discovery" | "drafting" | "verifying" | "building",
+      "verification_profile": {
+        "install": "bun install --frozen-lockfile",
+        "typecheck": "bun run typecheck",
+        "lint": "bun run lint",
+        "test": "bun run test"
+      } | null,
       "total_steps": 12,
       "completed_steps": 8,
       "current_step": 9,

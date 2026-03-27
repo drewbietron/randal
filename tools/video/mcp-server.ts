@@ -18,11 +18,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
+import { attachAudioToVideo, generateMusic, generateSpeech, mixAudioTracks } from "./lib/audio-gen";
 import { generateImage } from "./lib/image-gen";
+import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
+import { listAudioProviders } from "./lib/providers/audio-registry";
 import { listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
+import { analyzeVideoWithVision, extractFrames, prepareVideoReference } from "./lib/video-ref";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,6 +34,7 @@ import { generateVideoClip } from "./lib/video-gen";
 
 const DEFAULT_ASSET_DIR = "/tmp/video-gen/assets";
 const DEFAULT_CLIP_DIR = "/tmp/video-gen/clips";
+const DEFAULT_AUDIO_DIR = "/tmp/video-gen/audio";
 const REMOTION_TEMPLATE_DIR = resolve(dirname(import.meta.path), "remotion-template");
 
 // ---------------------------------------------------------------------------
@@ -94,13 +99,19 @@ server.tool(
 				style: style_prefix,
 			});
 
-			const outPath = join(dir, filename);
+			// Detect actual MIME type from the image bytes and correct the filename extension
+			const detected = detectMimeType(result.buffer);
+			const correctedFilename = ensureCorrectExtension(filename, detected.mimeType);
+			const outPath = join(dir, correctedFilename);
 			await Bun.write(outPath, result.buffer);
 
 			const stat = Bun.file(outPath);
 			return ok({
 				path: outPath,
+				mimeType: detected.mimeType,
 				sizeBytes: stat.size,
+				requestedFilename: filename,
+				actualFilename: correctedFilename,
 			});
 		} catch (error) {
 			return err(error instanceof Error ? error.message : String(error));
@@ -159,7 +170,8 @@ server.tool(
 				}
 				const arrayBuf = await file.arrayBuffer();
 				referenceImage = Buffer.from(arrayBuf);
-				referenceImageMimeType = file.type || "image/png";
+				const detected = detectMimeType(referenceImage);
+				referenceImageMimeType = detected.mimeType;
 			}
 
 			const result = await generateVideoClip(prompt, {
@@ -322,6 +334,328 @@ server.tool(
 
 			return ok({
 				path: projectPath,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: generate_speech
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"generate_speech",
+	"Generate speech audio from text using a TTS provider (ElevenLabs, OpenRouter, etc.)",
+	{
+		text: z.string().describe("The text to convert to speech"),
+		voice: z.string().optional().describe("Voice ID or name (provider-specific)"),
+		model: z.string().optional().describe("Override the default model"),
+		provider: z
+			.string()
+			.optional()
+			.describe("Audio provider name. Uses first configured provider if omitted"),
+		speed: z.number().optional().describe("Speaking speed multiplier (1.0 = normal)"),
+		format: z.enum(["mp3", "wav"]).optional().describe("Output audio format (default: mp3)"),
+		output_dir: z
+			.string()
+			.optional()
+			.describe(`Directory to save the audio (default: ${DEFAULT_AUDIO_DIR})`),
+		filename: z.string().optional().describe("Output filename (default: auto-generated UUID)"),
+	},
+	async ({ text, voice, model, provider, speed, format, output_dir, filename }) => {
+		try {
+			const dir = output_dir ?? DEFAULT_AUDIO_DIR;
+			await ensureDir(dir);
+
+			const result = await generateSpeech(text, {
+				voice,
+				model,
+				provider,
+				speed,
+				format: format as "mp3" | "wav" | undefined,
+			});
+
+			const ext = format ?? "mp3";
+			const outFilename = filename ?? `speech-${crypto.randomUUID()}.${ext}`;
+			const outPath = join(dir, outFilename);
+			await Bun.write(outPath, result.buffer);
+
+			const stat = Bun.file(outPath);
+			return ok({
+				path: outPath,
+				mimeType: result.mimeType,
+				sizeBytes: stat.size,
+				duration: result.duration,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: generate_music
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"generate_music",
+	"Generate music from a text prompt using an audio provider",
+	{
+		prompt: z.string().describe("Text description of the music to generate"),
+		duration: z.number().optional().describe("Duration in seconds"),
+		genre: z.string().optional().describe("Genre hint (e.g. 'cinematic', 'electronic')"),
+		mood: z.string().optional().describe("Mood hint (e.g. 'epic', 'melancholy', 'upbeat')"),
+		provider: z
+			.string()
+			.optional()
+			.describe("Audio provider name. Uses first configured provider if omitted"),
+		output_dir: z
+			.string()
+			.optional()
+			.describe(`Directory to save the audio (default: ${DEFAULT_AUDIO_DIR})`),
+		filename: z.string().optional().describe("Output filename (default: auto-generated UUID)"),
+	},
+	async ({ prompt, duration, genre, mood, provider, output_dir, filename }) => {
+		try {
+			const dir = output_dir ?? DEFAULT_AUDIO_DIR;
+			await ensureDir(dir);
+
+			const result = await generateMusic(prompt, {
+				duration,
+				genre,
+				mood,
+				provider,
+			});
+
+			const outFilename = filename ?? `music-${crypto.randomUUID()}.mp3`;
+			const outPath = join(dir, outFilename);
+			await Bun.write(outPath, result.buffer);
+
+			const stat = Bun.file(outPath);
+			return ok({
+				path: outPath,
+				mimeType: result.mimeType,
+				sizeBytes: stat.size,
+				duration: result.duration,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: mix_audio
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"mix_audio",
+	"Mix multiple audio tracks into one using ffmpeg",
+	{
+		tracks: z
+			.array(
+				z.object({
+					path: z.string().describe("Path to an audio file"),
+					volume: z
+						.number()
+						.optional()
+						.describe("Volume multiplier (0.0 to 1.0+). Defaults to 1.0"),
+					delay: z
+						.number()
+						.optional()
+						.describe("Delay before this track starts, in seconds. Defaults to 0"),
+				}),
+			)
+			.min(1)
+			.describe("Audio tracks to mix"),
+		output_path: z.string().describe("Path for the output audio file"),
+	},
+	async ({ tracks, output_path }) => {
+		try {
+			const resultPath = await mixAudioTracks(tracks, output_path);
+			const stat = Bun.file(resultPath);
+			return ok({
+				path: resultPath,
+				sizeBytes: stat.size,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: attach_audio
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"attach_audio",
+	"Attach an audio track to a video file using ffmpeg",
+	{
+		video_path: z.string().describe("Path to the input video file"),
+		audio_path: z.string().describe("Path to the input audio file"),
+		output_path: z.string().describe("Path for the output video file"),
+		replace: z
+			.boolean()
+			.optional()
+			.describe("If true, replaces existing audio. If false (default), adds as additional track"),
+	},
+	async ({ video_path, audio_path, output_path, replace }) => {
+		try {
+			const resultPath = await attachAudioToVideo(video_path, audio_path, output_path, {
+				replace,
+			});
+			const stat = Bun.file(resultPath);
+			return ok({
+				path: resultPath,
+				sizeBytes: stat.size,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_audio_providers
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"list_audio_providers",
+	"List available audio generation providers and their configuration status",
+	{},
+	async () => {
+		try {
+			const providers = listAudioProviders();
+			const result = providers.map((p) => ({
+				name: p.name,
+				description: p.description,
+				models: p.models,
+				configured: p.isConfigured(),
+			}));
+			return ok(result);
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: extract_frames
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"extract_frames",
+	"Extract key frames from a video file using ffmpeg",
+	{
+		video_path: z.string().describe("Path to the input video file"),
+		count: z
+			.number()
+			.optional()
+			.describe("Number of frames to extract (default: 5). Ignored if interval_seconds is set"),
+		interval_seconds: z
+			.number()
+			.optional()
+			.describe("Extract a frame every N seconds (overrides count)"),
+		format: z.enum(["png", "jpg"]).optional().describe("Output image format (default: png)"),
+		output_dir: z
+			.string()
+			.optional()
+			.describe("Directory for extracted frames (default: /tmp/video-gen/frames)"),
+	},
+	async ({ video_path, count, interval_seconds, format, output_dir }) => {
+		try {
+			const frames = await extractFrames(video_path, {
+				count,
+				intervalSeconds: interval_seconds,
+				format: format as "png" | "jpg" | undefined,
+				outputDir: output_dir,
+			});
+
+			return ok({
+				frames: frames.map((f) => ({
+					path: f.path,
+					timestamp: f.timestamp,
+					mimeType: f.mimeType,
+				})),
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: analyze_video
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"analyze_video",
+	"Analyze a video with a vision model to get a structured description of its content",
+	{
+		video_path: z.string().describe("Path to the input video file"),
+		prompt: z.string().describe("Describe what you want to understand about the video"),
+		frame_count: z
+			.number()
+			.optional()
+			.describe("Number of frames to extract for analysis (default: 4)"),
+		model: z
+			.string()
+			.optional()
+			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash-preview)"),
+	},
+	async ({ video_path, prompt, frame_count, model }) => {
+		try {
+			const analysis = await analyzeVideoWithVision(video_path, prompt, {
+				frameCount: frame_count,
+				model,
+			});
+
+			return ok({ analysis });
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: prepare_reference
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"prepare_reference",
+	"Prepare a video clip as generation input: extract frames, analyze with vision, and build an enriched prompt",
+	{
+		video_path: z.string().describe("Path to the source video file"),
+		changes: z
+			.string()
+			.describe(
+				"Describe what to change about the video (e.g. 'make the sky purple and add rain')",
+			),
+		extraction_count: z.number().optional().describe("Number of frames to extract (default: 4)"),
+		analysis_model: z
+			.string()
+			.optional()
+			.describe("Vision model for analysis (default: google/gemini-2.5-flash-preview)"),
+		target_provider: z
+			.string()
+			.optional()
+			.describe("Target video generation provider (for capability checking)"),
+	},
+	async ({ video_path, changes, extraction_count, analysis_model, target_provider }) => {
+		try {
+			const result = await prepareVideoReference(video_path, changes, {
+				extractionCount: extraction_count,
+				analysisModel: analysis_model,
+				targetProvider: target_provider,
+			});
+
+			return ok({
+				referenceImages: result.referenceImages,
+				enrichedPrompt: result.enrichedPrompt,
+				originalAnalysis: result.originalAnalysis,
 			});
 		} catch (error) {
 			return err(error instanceof Error ? error.message : String(error));
