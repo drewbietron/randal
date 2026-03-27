@@ -37,6 +37,25 @@ export interface TextOverlay {
 }
 
 // ---------------------------------------------------------------------------
+// Audio Track
+// ---------------------------------------------------------------------------
+
+export interface AudioTrack {
+	/** Path to the audio file, relative to the Remotion project's `public/` directory. */
+	src: string;
+	/** Volume multiplier (0.0 to 1.0+). Defaults to 1.0. */
+	volume?: number;
+	/** Offset in seconds from the start of the scene/video to begin playback. Defaults to 0. */
+	startOffset?: number;
+	/** Fade in duration in seconds. Defaults to 0 (no fade). */
+	fadeIn?: number;
+	/** Fade out duration in seconds. Defaults to 0 (no fade). */
+	fadeOut?: number;
+	/** Whether the audio should loop. Defaults to false. */
+	loop?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Scene
 // ---------------------------------------------------------------------------
 
@@ -60,6 +79,8 @@ export interface Scene {
 	transition?: Transition;
 	/** Optional text overlay rendered on top of the scene background. */
 	overlay?: TextOverlay;
+	/** Optional audio track for this scene. */
+	audio?: AudioTrack;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +98,8 @@ export interface VideoScript {
 	height?: number;
 	/** Ordered list of scenes that compose the video. Must contain >= 1 scene. */
 	scenes: Scene[];
+	/** Global audio tracks that span the entire video (background music, narration, etc.). */
+	globalAudio?: AudioTrack[];
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +115,30 @@ export const VIDEO_DEFAULTS = {
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
+
+/** Validate an AudioTrack. Returns error messages scoped to the given prefix. */
+function validateAudioTrack(track: AudioTrack, prefix: string): string[] {
+	const errors: string[] = [];
+
+	if (!track.src || track.src.trim() === "") {
+		errors.push(`${prefix}: audio "src" must be a non-empty string.`);
+	}
+
+	if (track.volume !== undefined && track.volume < 0) {
+		errors.push(`${prefix}: audio "volume" must be >= 0 (got ${track.volume}).`);
+	}
+	if (track.startOffset !== undefined && track.startOffset < 0) {
+		errors.push(`${prefix}: audio "startOffset" must be >= 0 (got ${track.startOffset}).`);
+	}
+	if (track.fadeIn !== undefined && track.fadeIn < 0) {
+		errors.push(`${prefix}: audio "fadeIn" must be >= 0 (got ${track.fadeIn}).`);
+	}
+	if (track.fadeOut !== undefined && track.fadeOut < 0) {
+		errors.push(`${prefix}: audio "fadeOut" must be >= 0 (got ${track.fadeOut}).`);
+	}
+
+	return errors;
+}
 
 /** Validate that a VideoScript is structurally sound. Returns error messages. */
 export function validateVideoScript(script: VideoScript): string[] {
@@ -164,6 +211,17 @@ export function validateVideoScript(script: VideoScript): string[] {
 					`${prefix}: transition duration (${scene.transition.duration}s) must be less than scene duration (${scene.duration}s).`,
 				);
 			}
+		}
+
+		if (scene.audio) {
+			errors.push(...validateAudioTrack(scene.audio, `${prefix} audio`));
+		}
+	}
+
+	// Validate global audio tracks
+	if (script.globalAudio) {
+		for (let i = 0; i < script.globalAudio.length; i++) {
+			errors.push(...validateAudioTrack(script.globalAudio[i], `Global audio track ${i}`));
 		}
 	}
 
