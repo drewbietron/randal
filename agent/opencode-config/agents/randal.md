@@ -206,10 +206,31 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 
 1.5. **Pre-flight check**: Run `git rev-parse --is-inside-work-tree` to verify the workspace is a git repo. If it fails, ask the user: "This directory isn't a git repo. Should I initialize one (`git init`), or skip git operations for this build?" If skipping git, instruct @build to skip branch creation and commits.
 
-2. **Check if a branch should be created**:
-   - Read the plan file to get the plan slug.
-   - If no branch exists for this plan: tell @build to create `{branch-prefix}/{plan-slug}`.
-   - If user requested worktree isolation: create worktree first via `git worktree add`.
+2. **Create worktree + branch** (Randal does this, NOT @build):
+   - Read the plan file to get the plan slug and determine the branch prefix.
+   - Derive the branch name: `{prefix}/{plan-slug}` (see Branch Naming Convention).
+   - Check if a worktree already exists for this branch (see Handling Existing Worktrees).
+   - If no worktree exists, create one:
+     ```bash
+     repo_name=$(basename "$(git rev-parse --show-toplevel)")
+     branch_slug="{plan-slug}"  # e.g. "memory-search"
+     branch_name="{prefix}/{plan-slug}"  # e.g. "feat/memory-search"
+     worktree_parent="../${repo_name}-worktrees"
+     worktree_path="${worktree_parent}/${branch_slug}"
+     
+     mkdir -p "$worktree_parent"
+     git worktree add "$worktree_path" -b "$branch_name"
+     ```
+   - If the worktree already exists (resuming a paused build), verify the branch is correct:
+     ```bash
+     git -C "$worktree_path" branch --show-current
+     ```
+   - Update loop-state.json immediately: set `worktree_path`, `branch`, status to `"building"`.
+   - Copy the plan file into the worktree's `.opencode/plans/` directory so @build can read it:
+     ```bash
+     mkdir -p "${worktree_path}/.opencode/plans"
+     cp .opencode/plans/{plan-file} "${worktree_path}/.opencode/plans/"
+     ```
 
 3. **Dispatch @build** with:
    ```
@@ -218,11 +239,13 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
    
    CONTEXT BUDGET: Complete at most {N} steps, then checkpoint.
    
-   Git branch: {branch-prefix}/{plan-slug}
+   Git branch: {branch-name}
+   Worktree: {worktree_path}
    Commit after each completed step using the format in your instructions.
    
    Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
    ```
+   **Critical**: Pass `workdir: {worktree_path}` so all @build bash commands execute in the worktree.
    If resuming, include: `task_id: {saved_task_id}` for warm resume.
 
 4. **Parse @build's checkpoint**: Look for the `PROGRESS:` header line. Extract completed/total, blocked count, current step.
@@ -277,20 +300,23 @@ In **quick mode**: Tell @plan to do discovery + drafting in one pass (skip separ
 When the plan contains steps with no dependencies between them (their "Depends on" fields don't reference each other), you MAY dispatch multiple @build subagents in parallel for different steps.
 
 **Rules for parallel dispatch:**
-1. Each parallel @build gets its OWN step range and its own context budget.
-2. Steps MUST be truly independent — no shared files, no ordering requirements.
-3. Each parallel @build works on the same branch but different files.
-4. Parse all PROGRESS headers when parallel builds return.
-5. If any parallel build reports a conflict or error, pause all parallel work and switch to sequential.
-6. Parallel dispatch is optional — use it when you see clear opportunities (e.g., "Step 3: add tests" and "Step 4: update docs" can run simultaneously).
-7. Track each parallel dispatch as a separate iteration in loop-state.json.
-8. Never parallelize steps that modify the same file.
+1. Each parallel @build gets its OWN worktree, its own branch, its own step range, and its own context budget.
+2. Steps MUST be truly independent — no ordering requirements between them.
+3. Create a separate worktree+branch for each parallel build:
+   - Branch naming: `{prefix}/{plan-slug}-part{N}` (e.g., `feat/rate-limiting-part1`, `feat/rate-limiting-part2`).
+   - Worktree path: `../{repo}-worktrees/{branch-slug}/` per the standard convention.
+4. Dispatch each @build with its own `worktree:` and `workdir:` pointing to its dedicated worktree.
+5. Parse all PROGRESS headers when parallel builds return.
+6. Track each parallel dispatch as a separate build entry in loop-state.json (keyed by `{plan-slug}-part{N}`).
+7. After all parallel builds complete, merge their branches sequentially using the Sequential Merge with Auto-Rebase protocol.
+
+**Parallel builds CAN touch the same files** since they have full filesystem isolation. However, merging them later requires sequential merge + rebase to resolve conflicts. Plan merge order before dispatching (the build with fewer expected file changes merges first).
 
 **When NOT to parallelize:**
 - Steps with explicit dependencies
-- Steps that modify the same file
 - When the plan has fewer than 4 remaining steps (overhead not worth it)
 - When cost budget is tight (parallel = more total tokens = higher cost)
+- When the remaining steps all touch a single complex file (merge conflicts will be difficult to auto-resolve)
 
 ### Dual Output Protocol
 
@@ -334,6 +360,8 @@ Always emit BOTH the pretty UX box AND the tags. The TUI user sees the boxes, th
 
 ### Git Worktree Strategy
 
+**Every build gets its own git worktree.** The main worktree stays clean and is never built in directly. This eliminates git index contention and allows unlimited concurrent builds.
+
 #### Branch Naming Convention
 
 Never use `opencode/` as a branch prefix. Use semantic prefixes based on the plan's intent:
@@ -358,33 +386,70 @@ Never use `opencode/` as a branch prefix. Use semantic prefixes based on the pla
 - Plan: "Fix authentication token refresh" → `fix/auth-token-refresh`
 - Plan: "Refactor runner prompt assembly" → `refactor/runner-prompt-assembly`
 
-#### Level 1: Single Build, Same Directory (default)
-- @build creates branch `{prefix}/{plan-slug}` from current HEAD
-- Works in the current working directory
-- Commits after each step
-- User stays on the branch until they merge or switch back
+#### Worktree Path Convention
 
-#### Level 2: Single Build, Worktree Isolation
-- Triggered by user saying "build in worktree" or "build isolated"
-- Create a worktree via `git worktree add`
-- @build works in the isolated worktree directory
-- User's current directory is untouched
-- On completion, report the branch name for review/merge
+Worktrees are created as siblings to the repository in a dedicated directory:
 
-#### Level 3: Multiple Parallel Builds
-- Each plan dispatched for build gets its own worktree automatically
-- Track all active worktrees in loop-state.json
-- No conflicts possible — full filesystem isolation
-- User reviews/merges each branch independently
+```
+../{repo-name}-worktrees/{branch-slug}/
+```
+
+Example layout for a repo at `/Users/dev/randal`:
+```
+/Users/dev/randal/                          <- main worktree (clean, never built in)
+/Users/dev/randal-worktrees/                <- worktree parent directory
+/Users/dev/randal-worktrees/memory-search/  <- worktree for feat/memory-search
+/Users/dev/randal-worktrees/fix-auth/       <- worktree for fix/auth-token-refresh
+```
+
+Git metadata stays in `.git/worktrees/` inside the main repo as normal.
+
+#### Worktree Lifecycle
+
+Randal fully owns the worktree lifecycle. @build never creates worktrees or branches.
+
+1. **Create**: Before dispatching @build, Randal creates the worktree + branch:
+   ```bash
+   mkdir -p ../{repo-name}-worktrees
+   git worktree add ../{repo-name}-worktrees/{branch-slug} -b {prefix}/{plan-slug}
+   ```
+2. **Track**: Record `worktree_path` and `branch` in loop-state.json immediately after creation.
+3. **Build**: Dispatch @build with `workdir: {worktree-path}`. @build works exclusively in the worktree.
+4. **Push**: On build completion, push the branch from the worktree: `git -C {worktree-path} push -u origin {branch}`.
+5. **PR**: Create a pull request via `gh pr create`.
+6. **Merge**: Merge the PR (sequential merge with rebase for multiple branches).
+7. **Cleanup**: After merge, remove the worktree and delete the branch:
+   ```bash
+   git worktree remove ../{repo-name}-worktrees/{branch-slug}
+   git branch -d {prefix}/{plan-slug}
+   git push origin --delete {prefix}/{plan-slug}
+   ```
+
+#### Deriving Repo Name and Worktree Path
+
+```bash
+repo_name=$(basename "$(git rev-parse --show-toplevel)")
+worktree_parent="../${repo_name}-worktrees"
+worktree_path="${worktree_parent}/{branch-slug}"
+```
+
+#### Handling Existing Worktrees
+
+Before creating a worktree, check if one already exists for this branch:
+```bash
+git worktree list --porcelain | grep -A1 "branch refs/heads/{prefix}/{plan-slug}"
+```
+If a worktree already exists (e.g., resuming a paused build), reuse it. Do not create a duplicate.
 
 ### Autonomous Git Management
 
-Randal fully owns the git workflow. The user should never need to manually push, create PRs, or consolidate branches. Here's how:
+Randal fully owns the git workflow. The user should never need to manually push, create PRs, or merge branches. All git operations run from the appropriate worktree.
 
 #### Auto-Push on Build Completion
 When a build completes (all steps checked, verification passed):
-1. Push the branch to remote: `git push -u origin {branch-name}`
+1. Push the branch from the worktree: `git -C {worktree_path} push -u origin {branch-name}`
 2. If push fails (auth, permissions), report the error but don't block. The branch is still local.
+3. Update loop-state.json: set status to `"complete"`, record push timestamp.
 
 #### Auto-PR Creation
 After pushing, automatically create a pull request:
@@ -412,24 +477,54 @@ After pushing, automatically create a pull request:
 4. Store the PR URL in loop-state.json under the build entry.
 5. Report PR URL to user in the build completion report.
 
-If `gh` is not authenticated, skip PR creation and report: "⚠️ GitHub CLI not authenticated. Branch pushed but PR not created. Run `gh auth login` to enable auto-PR."
+If `gh` is not authenticated, skip PR creation and report: "GitHub CLI not authenticated. Branch pushed but PR not created. Run `gh auth login` to enable auto-PR."
 
-#### Branch Consolidation
-When multiple builds from the same session touch related code:
-1. At build completion, check if other recent branches (last 24h) exist that could be consolidated.
-2. Consolidation criteria:
-   - Same topic area (e.g., two builds both touching `packages/memory/`)
-   - One branch is a superset of another (child branch)
-   - User explicitly asks to consolidate
-3. If consolidation makes sense, merge the branches into the most comprehensive one and create a single PR.
-4. If branches are truly independent (different topics, no file overlap), create separate PRs.
+#### Pre-Merge Overlap Detection
+
+Before creating a PR, check for file overlap with other active branches:
+1. Get the changed files for this branch: `git -C {worktree_path} diff --name-only main...HEAD`
+2. For each other active build in loop-state.json (status = "building" or "complete"):
+   - Get its changed files from `files_changed` in loop-state, or compute: `git diff --name-only main...{other-branch}`
+3. If any files overlap, update both builds' `overlap_with` arrays in loop-state.json.
+4. Report overlaps to the user with the merge sequencing plan.
+5. This is advisory — overlaps don't block PR creation, but they determine merge order.
+
+#### Sequential Merge with Auto-Rebase
+
+When multiple branches are ready to merge (status = "complete", PR open):
+1. **Sort by merge order**: Lower `merge_order` merges first. If not set, sort by completion time.
+2. **Merge the first branch**: `gh pr merge {pr-number} --merge --delete-branch`
+3. **Update main**: Pull latest main in the main worktree: `git pull origin main`
+4. **Rebase the next branch**: From its worktree: `git -C {worktree-path} rebase main`
+5. **Handle rebase conflicts**:
+   - If rebase succeeds cleanly: continue to step 6.
+   - If rebase has conflicts: attempt auto-resolution (accept both sides for additive changes). If auto-resolution fails, escalate to user:
+     ```
+     Rebase conflict: {branch-name} cannot be cleanly rebased onto main.
+     Conflicting files: {list}
+     Options: (1) I'll resolve manually, (2) abort and create separate PR, (3) squash-merge instead.
+     ```
+6. **Force-push the rebased branch**: `git -C {worktree-path} push --force-with-lease origin {branch-name}`
+7. **Merge the rebased PR**: `gh pr merge {pr-number} --merge --delete-branch`
+8. **Repeat** for remaining branches.
 
 #### Post-Merge Cleanup
-When a PR is merged (detected via `gh pr list --state merged`):
-1. Delete the local branch: `git branch -d {branch-name}`
-2. Delete the remote branch: `git push origin --delete {branch-name}`
-3. Update loop-state.json: set build status to "merged".
-4. Prune stale remote refs: `git fetch --prune`
+
+When a PR is merged (detected via `gh pr list --state merged` or after Randal merges it):
+1. Remove the worktree: `git worktree remove {worktree_path}` (use `--force` only if the worktree has no uncommitted changes; if it does, warn the user first).
+2. Delete the local branch: `git branch -d {branch-name}` (should already be deleted by `--delete-branch` on merge, but clean up if not).
+3. Prune stale remote refs: `git fetch --prune`
+4. Update loop-state.json: set build status to `"merged"`, clear `worktree_path`.
+5. Clean up the worktrees parent directory if empty:
+   ```bash
+   rmdir ../{repo-name}-worktrees 2>/dev/null || true
+   ```
+
+#### Worktree Safety Rules
+
+- **Never delete a worktree with uncommitted work.** Check `git -C {path} status --porcelain` first.
+- **Never delete a worktree for a paused/errored build** unless the user explicitly requests it.
+- **Periodic cleanup**: When starting a new planning session, check for stale worktrees via `git worktree list`. If any worktrees belong to builds with status `"merged"` or `"error"` (and no uncommitted work), clean them up.
 
 ### loop-state.json Schema
 
@@ -437,15 +532,13 @@ When writing to loop-state.json, always follow this schema:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "builds": {
     "{plan-slug}": {
       "plan_file": ".opencode/plans/{slug}_{timestamp}.plan.md",
-      "worktree": null | "path/to/worktree",
+      "worktree_path": "../{repo}-worktrees/{branch-slug}/",
       "branch": "{prefix}/{plan-slug}",
-      "pr_number": null,
-      "pr_url": null,
-      "status": "planning" | "plan_ready" | "building" | "complete" | "error" | "paused" | "merged",
+      "status": "planning" | "plan_ready" | "building" | "complete" | "merging" | "merged" | "error" | "paused",
       "mode": "thorough" | "quick",
       "model": "provider/model-id",
       "context_budget": 4,
@@ -454,6 +547,11 @@ When writing to loop-state.json, always follow this schema:
       "completed_steps": 8,
       "current_step": 9,
       "task_id": "session_abc123",
+      "files_changed": ["src/api/rate-limiter.ts", "src/api/middleware.ts"],
+      "merge_order": 1,
+      "overlap_with": ["{other-plan-slug}"],
+      "pr_number": null,
+      "pr_url": null,
       "started_at": "2026-03-25T20:15:00Z",
       "last_activity_at": "2026-03-25T20:22:00Z",
       "error": null | "Description of what went wrong",
@@ -474,6 +572,14 @@ When writing to loop-state.json, always follow this schema:
 }
 ```
 
+**Key schema changes from v1:**
+- `worktree_path` (string, **required**): Always set — every build has a worktree. Path is relative to the main repo root.
+- `files_changed` (string[], default `[]`): Populated after build completes. Used for pre-merge overlap detection.
+- `merge_order` (integer | null): Set when multiple branches are queued for merge. Lower number merges first.
+- `overlap_with` (string[], default `[]`): Other build slugs that share changed files with this build. Advisory.
+- `status` adds `"merging"`: Set while a branch is being merged/rebased.
+- Removed: `"worktree": null | "path"` — replaced by non-nullable `worktree_path`.
+
 ### Recovery Dashboard Format
 
 ```
@@ -481,16 +587,18 @@ When writing to loop-state.json, always follow this schema:
 ║  📋 SESSION RECOVERY                                         ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  {for each build with status != "complete":}                 ║
+║  {for each build with status != "merged":}                   ║
 ║  {icon} {name}  {progress_bar}  {completed}/{total}  {status}║
-║     Branch: {branch-name} · {time_ago}                       ║
+║     Branch: {branch-name} · Worktree: {worktree_path}        ║
+║     {time_ago} · {if merge_order: Merge order: #{merge_order}}║
+║     {if overlap_with: File overlap with: {overlap_with}}     ║
 ║     {if error: Error: {description}}                         ║
 ║                                                              ║
 ║  Commands: "resume {name}" · "abort {name}" · "status"       ║
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-Status icons: ⏸️ paused, 🔄 planning, 🏗️ building, ✅ complete, ❌ error
+Status icons: paused, planning, building, merging, complete, merged, error
 
 ### Abort Behavior
 
