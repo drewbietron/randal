@@ -44,7 +44,8 @@ const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1
 const SEMANTIC_RATIO = Number.parseFloat(process.env.SEMANTIC_RATIO || "0.7");
 const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "anthropic/claude-haiku-3";
 const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
-	process.env.MEILI_DUMP_INTERVAL_MS || String(6 * 60 * 60 * 1000), 10
+	process.env.MEILI_DUMP_INTERVAL_MS || String(6 * 60 * 60 * 1000),
+	10,
 );
 
 /** Categories that default to global scope (cross-project). */
@@ -143,7 +144,10 @@ async function retryInit(): Promise<void> {
 			break;
 		} catch (err) {
 			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
-			log("warn", `Store init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`);
+			log(
+				"warn",
+				`Store init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`,
+			);
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
 	}
@@ -155,7 +159,10 @@ async function retryInit(): Promise<void> {
 			break;
 		} catch (err) {
 			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
-			log("warn", `MessageManager init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`);
+			log(
+				"warn",
+				`MessageManager init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`,
+			);
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
 	}
@@ -197,7 +204,10 @@ function startDumpScheduler(): void {
 		log("info", "Dump scheduling disabled (MEILI_DUMP_INTERVAL_MS <= 0)");
 		return;
 	}
-	log("info", `Dump scheduler started: interval ${MEILI_DUMP_INTERVAL_MS}ms (${(MEILI_DUMP_INTERVAL_MS / 3600000).toFixed(1)}h)`);
+	log(
+		"info",
+		`Dump scheduler started: interval ${MEILI_DUMP_INTERVAL_MS}ms (${(MEILI_DUMP_INTERVAL_MS / 3600000).toFixed(1)}h)`,
+	);
 
 	setInterval(async () => {
 		try {
