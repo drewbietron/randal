@@ -57,3 +57,49 @@ export {
 	ImageAnalysisError,
 	type ImageAnalysisErrorCode,
 } from "./image-analyze";
+
+// ---------------------------------------------------------------------------
+// Character consistency
+// ---------------------------------------------------------------------------
+
+export {
+	// Types & schemas
+	CharacterStorageError,
+	CharacterEyesSchema,
+	CharacterHairSchema,
+	CharacterPhysicalSchema,
+	// Storage
+	getCharacterDir,
+	ensureCharacterDir,
+	characterPath,
+	characterExists,
+	saveCharacter,
+	loadCharacter,
+	listCharacters,
+	updateCharacter,
+	deleteCharacter,
+	// Prompt builder
+	mergePhysical,
+	buildCIDBlock,
+	buildCharacterPrompt,
+	buildNegativePrompt,
+	buildReferencePrompt,
+	// Consistency
+	checkConsistency,
+	generateWithConsistency,
+	parseConsistencyResponse,
+	buildComparisonPrompt,
+	buildDriftEmphasis,
+} from "./characters";
+
+export type {
+	CharacterEyes,
+	CharacterHair,
+	CharacterPhysical,
+	CharacterProfile,
+	ConsistencyScore,
+	GenerateWithCharacterOptions,
+	CharacterGenerationResult,
+	CharacterErrorCode,
+	GenerateWithConsistencyOptions,
+} from "./characters";
