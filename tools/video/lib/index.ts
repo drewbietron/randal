@@ -36,6 +36,42 @@ export {
 	type RenderErrorCode,
 } from "./renderer";
 
+// MIME detection
+export {
+	detectMimeType,
+	mimeToExtension,
+	extensionToMime,
+	ensureCorrectExtension,
+	type MimeDetectionResult,
+} from "./mime-detect";
+
+// Audio generation
+export {
+	generateSpeech,
+	generateMusic,
+	mixAudioTracks,
+	attachAudioToVideo,
+	AudioGenError,
+	type AudioGenOptions,
+	type AudioGenErrorCode,
+	type MixTrack,
+} from "./audio-gen";
+
+// Video reference processing
+export {
+	extractFrames,
+	analyzeVideoWithVision,
+	prepareVideoReference,
+	VideoRefError,
+	type ExtractFramesOptions,
+	type ExtractedFrame,
+	type AnalyzeVideoOptions,
+	type VideoAnalysis,
+	type PrepareReferenceOptions,
+	type PreparedReference,
+	type VideoRefErrorCode,
+} from "./video-ref";
+
 // Provider architecture
 export type {
 	AspectRatio,
