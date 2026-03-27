@@ -47,3 +47,13 @@ export {
 	getImageProvider,
 	listImageProviders,
 } from "./providers";
+
+// ---------------------------------------------------------------------------
+// Image analysis
+// ---------------------------------------------------------------------------
+
+export {
+	analyzeImage,
+	ImageAnalysisError,
+	type ImageAnalysisErrorCode,
+} from "./image-analyze";
