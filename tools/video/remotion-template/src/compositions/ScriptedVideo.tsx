@@ -6,9 +6,26 @@
  */
 
 import React from "react";
-import { AbsoluteFill, Img, Sequence, Video, staticFile, useVideoConfig } from "remotion";
+import {
+	AbsoluteFill,
+	Audio,
+	Img,
+	Sequence,
+	Video,
+	interpolate,
+	staticFile,
+	useCurrentFrame,
+	useVideoConfig,
+} from "remotion";
 import { getTransitionComponent } from "../lib/transitions";
-import type { OverlayPosition, OverlayStyle, Scene, TextOverlay, VideoScript } from "../lib/types";
+import type {
+	AudioTrack,
+	OverlayPosition,
+	OverlayStyle,
+	Scene,
+	TextOverlay,
+	VideoScript,
+} from "../lib/types";
 import { validateVideoScript } from "../lib/types";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +148,47 @@ function OverlayText({ overlay }: { overlay: TextOverlay }): React.ReactElement 
 	);
 }
 
+/** Renders an audio track with volume, fade-in/out, offset, and loop support. */
+function AudioTrackRenderer({
+	audio,
+	sceneDurationFrames,
+}: {
+	audio: AudioTrack;
+	sceneDurationFrames: number;
+}): React.ReactElement {
+	const frame = useCurrentFrame();
+	const { fps } = useVideoConfig();
+
+	// Calculate volume with fade in/out
+	let volume = audio.volume ?? 1.0;
+
+	if (audio.fadeIn && audio.fadeIn > 0) {
+		const fadeInFrames = Math.round(audio.fadeIn * fps);
+		volume *= interpolate(frame, [0, fadeInFrames], [0, 1], {
+			extrapolateRight: "clamp",
+		});
+	}
+
+	if (audio.fadeOut && audio.fadeOut > 0) {
+		const fadeOutFrames = Math.round(audio.fadeOut * fps);
+		const fadeOutStart = sceneDurationFrames - fadeOutFrames;
+		if (frame >= fadeOutStart) {
+			volume *= interpolate(frame, [fadeOutStart, sceneDurationFrames], [1, 0], {
+				extrapolateLeft: "clamp",
+			});
+		}
+	}
+
+	const startFromFrames = Math.round((audio.startOffset ?? 0) * fps);
+
+	return React.createElement(Audio, {
+		src: staticFile(audio.src),
+		volume,
+		startFrom: startFromFrames,
+		loop: audio.loop,
+	});
+}
+
 // ---------------------------------------------------------------------------
 // Main composition
 // ---------------------------------------------------------------------------
@@ -212,6 +270,12 @@ export function ScriptedVideo({ script }: ScriptedVideoProps): React.ReactElemen
 			null,
 			React.createElement(SceneBackground, { scene }),
 			scene.overlay ? React.createElement(OverlayText, { overlay: scene.overlay }) : null,
+			scene.audio
+				? React.createElement(AudioTrackRenderer, {
+						audio: scene.audio,
+						sceneDurationFrames,
+					})
+				: null,
 		);
 
 		const wrappedContent = TransitionWrapper
@@ -236,6 +300,30 @@ export function ScriptedVideo({ script }: ScriptedVideoProps): React.ReactElemen
 		);
 
 		currentFrame += sceneDurationFrames - overlapFrames;
+	}
+
+	// Render global audio tracks spanning the full video duration
+	const totalDurationFrames = currentFrame;
+
+	if (script.globalAudio) {
+		for (let i = 0; i < script.globalAudio.length; i++) {
+			const track = script.globalAudio[i];
+			sequences.push(
+				React.createElement(
+					Sequence,
+					{
+						key: `global-audio-${i}`,
+						from: 0,
+						durationInFrames: totalDurationFrames,
+						name: `Global Audio ${i}`,
+					},
+					React.createElement(AudioTrackRenderer, {
+						audio: track,
+						sceneDurationFrames: totalDurationFrames,
+					}),
+				),
+			);
+		}
 	}
 
 	return React.createElement(AbsoluteFill, null, ...sequences);
