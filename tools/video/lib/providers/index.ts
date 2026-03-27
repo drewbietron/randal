@@ -2,6 +2,10 @@
  * Video providers — barrel export.
  */
 
+// ---------------------------------------------------------------------------
+// Video provider types + registry
+// ---------------------------------------------------------------------------
+
 export type {
 	AspectRatio,
 	ClipDuration,
@@ -21,3 +25,27 @@ export {
 	getProvider,
 	listProviders,
 } from "./registry";
+
+// ---------------------------------------------------------------------------
+// Image provider types + registry
+// ---------------------------------------------------------------------------
+
+export type { GenerateImageOptions, GenerateImageResult, ImageProvider } from "./types";
+export { OpenRouterImageProvider } from "./openrouter-image";
+export { registerImageProvider, getImageProvider, listImageProviders } from "./image-registry";
+
+// ---------------------------------------------------------------------------
+// Audio provider types + registry
+// ---------------------------------------------------------------------------
+
+export type {
+	AudioFormat,
+	GenerateSpeechOptions,
+	GenerateSpeechResult,
+	GenerateMusicOptions,
+	GenerateMusicResult,
+	AudioProvider,
+} from "./types";
+export { ElevenLabsProvider } from "./elevenlabs";
+export { OpenRouterTTSProvider } from "./openrouter-tts";
+export { registerAudioProvider, getAudioProvider, listAudioProviders } from "./audio-registry";
