@@ -7,7 +7,12 @@
  *   stitch_clips      — Concatenate clips with ffmpeg
  *   compose_video     — Rich composition via Remotion
  *   scaffold_project  — Create a new Remotion project from template
- *   list_providers    — List available video generation providers
+ *   list_providers            — List available video generation providers
+ *   create_character          — Create a persistent character with structured CID
+ *   generate_with_character   — Generate an image of a saved character in a scene
+ *   list_characters           — List all saved character profiles
+ *   get_character             — Get a character's full profile
+ *   update_character          — Update a saved character's fields
  *
  * Transport: stdio (for OpenCode MCP integration)
  * Runtime: Bun
@@ -19,6 +24,21 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 import { attachAudioToVideo, generateMusic, generateSpeech, mixAudioTracks } from "./lib/audio-gen";
+import {
+	CharacterPhysicalSchema,
+	CharacterStorageError,
+	buildCharacterPrompt,
+	buildReferencePrompt,
+	characterExists,
+	ensureCharacterDir,
+	generateWithConsistency,
+	getCharacterDir,
+	listCharacters as listAllCharacters,
+	loadCharacter,
+	saveCharacter,
+	updateCharacter,
+} from "./lib/characters";
+import type { CharacterPhysical, CharacterProfile } from "./lib/characters";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
 import { listAudioProviders } from "./lib/providers/audio-registry";
