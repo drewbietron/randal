@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Load .env vars into process environment (single source of truth for all secrets)
+if [ -f /app/.env ]; then
+  set -a
+  source /app/.env
+  set +a
+fi
+
 # Ensure /app/tools/bin is on PATH (belt-and-suspenders with Dockerfile ENV)
 export PATH="/app/tools/bin:$PATH"
 
