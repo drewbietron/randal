@@ -149,8 +149,9 @@ export class ElevenLabsProvider implements AudioProvider {
 			text: text.trim(),
 			model_id: model,
 			voice_settings: {
-				stability: 0.5,
-				similarity_boost: 0.75,
+				stability: options.stability ?? 0.5,
+				similarity_boost: options.similarityBoost ?? 0.75,
+				...(options.style !== undefined && { style: options.style }),
 			},
 		};
 
@@ -291,8 +292,17 @@ export class ElevenLabsProvider implements AudioProvider {
 		);
 	}
 
-	// generateMusic is NOT supported — ElevenLabs doesn't do music generation.
-	// Left undefined per the AudioProvider interface (optional method).
+	async listVoices(): Promise<
+		Array<{ voiceId: string; name: string; labels?: Record<string, string> }>
+	> {
+		const apiKey = this.getApiKey();
+		const voices = await listVoices(apiKey);
+		return voices.map((v) => ({
+			voiceId: v.voice_id,
+			name: v.name,
+			labels: v.labels,
+		}));
+	}
 
 	private getApiKey(): string {
 		const key = process.env.ELEVENLABS_API_KEY;
