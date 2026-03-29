@@ -226,7 +226,11 @@ const sandboxSchema = z
 const updatesSchema = z
 	.object({
 		autoCheck: z.boolean().default(false),
-		channel: z.enum(["stable", "latest"]).default("stable"),
+		autoApply: z.boolean().default(false),
+		autoRestart: z.boolean().default(false),
+		channel: z.enum(["stable", "main"]).default("main"),
+		interval: z.string().nullable().default("6h"),
+		notify: z.boolean().default(true),
 	})
 	.default({});
 
