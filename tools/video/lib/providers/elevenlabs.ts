@@ -1,8 +1,7 @@
 /**
- * ElevenLabs TTS provider — generates speech audio via the ElevenLabs API.
+ * ElevenLabs audio provider — generates speech and music via the ElevenLabs API.
  *
- * HTTP-only implementation (no SDK dependency) for text-to-speech.
- * Does NOT support music generation.
+ * HTTP-only implementation (no SDK dependency) for text-to-speech and music generation.
  *
  * Environment: ELEVENLABS_API_KEY
  */
@@ -10,6 +9,8 @@
 import type {
 	AudioFormat,
 	AudioProvider,
+	GenerateMusicOptions,
+	GenerateMusicResult,
 	GenerateSpeechOptions,
 	GenerateSpeechResult,
 } from "./types";
@@ -110,7 +111,7 @@ export async function listVoices(apiKey?: string): Promise<ElevenLabsVoice[]> {
 
 export class ElevenLabsProvider implements AudioProvider {
 	readonly name = "elevenlabs";
-	readonly description = "ElevenLabs — high-quality text-to-speech";
+	readonly description = "ElevenLabs — high-quality text-to-speech and music generation";
 	readonly models = [
 		"eleven_multilingual_v2",
 		"eleven_turbo_v2_5",
@@ -285,6 +286,108 @@ export class ElevenLabsProvider implements AudioProvider {
 		// Unreachable, but satisfies TypeScript
 		throw new VideoProviderError(
 			`Failed after ${MAX_RETRIES + 1} attempts.`,
+			"NETWORK_ERROR",
+			this.name,
+			undefined,
+			lastError,
+		);
+	}
+
+	async generateMusic(
+		prompt: string,
+		options: GenerateMusicOptions = {},
+	): Promise<GenerateMusicResult> {
+		if (!prompt || prompt.trim() === "") {
+			throw new VideoProviderError(
+				"Music prompt must be a non-empty string.",
+				"API_ERROR",
+				this.name,
+			);
+		}
+
+		const apiKey = this.getApiKey();
+		const durationSeconds = Math.min(options.duration ?? 30, 120); // API caps at 120s
+
+		const requestBody: Record<string, unknown> = {
+			prompt: prompt.trim(),
+			duration_seconds: durationSeconds,
+		};
+
+		let lastError: unknown;
+		for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+			try {
+				const response = await fetch(`${this.apiBaseUrl}/music/generate`, {
+					method: "POST",
+					headers: {
+						"xi-api-key": apiKey,
+						"Content-Type": "application/json",
+						Accept: "audio/mpeg",
+					},
+					body: JSON.stringify(requestBody),
+				});
+
+				if (!response.ok) {
+					const status = response.status;
+					let errorMessage: string;
+					try {
+						const errorBody = (await response.json()) as Record<string, unknown>;
+						errorMessage = (errorBody.detail as string) ?? JSON.stringify(errorBody);
+					} catch {
+						errorMessage = `HTTP ${status}: ${response.statusText}`;
+					}
+
+					if (status === 429) {
+						if (attempt < MAX_RETRIES) {
+							await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+							continue;
+						}
+						throw new VideoProviderError(
+							`Rate limited after ${MAX_RETRIES + 1} attempts: ${errorMessage}`,
+							"RATE_LIMITED",
+							this.name,
+							status,
+						);
+					}
+
+					throw new VideoProviderError(
+						`ElevenLabs music generation failed: ${errorMessage}`,
+						"API_ERROR",
+						this.name,
+						status,
+					);
+				}
+
+				const buffer = Buffer.from(await response.arrayBuffer());
+				return {
+					buffer,
+					mimeType: "audio/mpeg",
+					model: "elevenlabs-music-v1",
+					duration: durationSeconds,
+					metadata: {
+						provider: this.name,
+						prompt: prompt.trim(),
+						durationRequested: durationSeconds,
+					},
+				};
+			} catch (error) {
+				if (error instanceof VideoProviderError) throw error;
+				lastError = error;
+				if (attempt < MAX_RETRIES) {
+					await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+					continue;
+				}
+				throw new VideoProviderError(
+					`Network error after ${MAX_RETRIES + 1} attempts: ${error instanceof Error ? error.message : String(error)}`,
+					"NETWORK_ERROR",
+					this.name,
+					undefined,
+					error,
+				);
+			}
+		}
+
+		throw new VideoProviderError(
+			`Music generation failed after ${MAX_RETRIES + 1} attempts.`,
 			"NETWORK_ERROR",
 			this.name,
 			undefined,
