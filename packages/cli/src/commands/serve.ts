@@ -198,17 +198,96 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 
 	let gateway = await startGateway({ config, port });
 
+	// ── Periodic auto-update timer ──────────────────────────────
+	const { parseDuration } = await import("@randal/scheduler");
+	let updateTimer: ReturnType<typeof setInterval> | undefined;
+
+	function startUpdateTimer() {
+		const updates = ctx.config.updates;
+		const interval = updates?.interval;
+		if (!interval || !updates?.autoApply) return;
+
+		let intervalMs: number;
+		try {
+			intervalMs = parseDuration(interval);
+		} catch {
+			console.error(
+				`\x1b[31mInvalid update interval "${interval}" — periodic updates disabled.\x1b[0m`,
+			);
+			return;
+		}
+
+		// Minimum 5 minutes to prevent tight loops
+		const MIN_INTERVAL = 5 * 60 * 1000;
+		if (intervalMs < MIN_INTERVAL) {
+			console.warn(`\x1b[33mUpdate interval too short (${interval}), clamping to 5m.\x1b[0m`);
+			intervalMs = MIN_INTERVAL;
+		}
+
+		updateTimer = setInterval(async () => {
+			try {
+				const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
+				if (isContainer()) return;
+
+				const currentUpdates = ctx.config.updates;
+				const channel = currentUpdates?.channel ?? "main";
+				const update = await checkForUpdate(channel);
+				if (!update.available) return;
+
+				console.log(
+					`\x1b[33mPeriodic update: ${update.current} -> ${update.latest}. Applying...\x1b[0m`,
+				);
+				const result = await applyUpdate({ channel });
+
+				if (result.applied) {
+					console.log(`\x1b[32mUpdated: ${result.fromVersion} -> ${result.toVersion}\x1b[0m`);
+
+					// Trigger graceful restart if configured
+					if (currentUpdates?.autoRestart) {
+						// Allow 2s for channel notifications to flush
+						setTimeout(() => {
+							process.kill(process.pid, "SIGHUP");
+						}, 2000);
+					}
+				}
+			} catch (err) {
+				// Log and continue — never crash the running gateway for update failures
+				console.error(
+					`\x1b[2mPeriodic update failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+				);
+			}
+		}, intervalMs);
+
+		// Ensure timer doesn't prevent process exit
+		if (updateTimer && typeof updateTimer === "object" && "unref" in updateTimer) {
+			updateTimer.unref();
+		}
+
+		console.log(`\x1b[2mPeriodic update check every ${interval}\x1b[0m`);
+	}
+
+	startUpdateTimer();
+
 	// Graceful restart on SIGHUP — stops the gateway, reloads config, and restarts.
 	// In-flight jobs are saved to disk and will be resumed on the new gateway instance.
 	process.on("SIGHUP", async () => {
 		console.log("\n\x1b[33mSIGHUP received — graceful restart...\x1b[0m");
+		// Clear periodic update timer during restart
+		if (updateTimer) {
+			clearInterval(updateTimer);
+			updateTimer = undefined;
+		}
 		try {
 			gateway.stop();
 			// Reload config to pick up any code/config changes
 			const freshConfig = loadConfig(ctx.configPath);
 			const envChanged = await ensureMeilisearch(ctx);
 			const finalConfig = envChanged ? loadConfig(ctx.configPath) : freshConfig;
+			// Update ctx.config so timer uses fresh config
+			ctx.config = finalConfig;
 			gateway = await startGateway({ config: finalConfig, port });
+			// Restart the timer with potentially new config
+			startUpdateTimer();
 			console.log("\x1b[32mGateway restarted successfully.\x1b[0m");
 		} catch (err) {
 			console.error("\x1b[31mGraceful restart failed:\x1b[0m", err);
