@@ -1,4 +1,4 @@
-FROM oven/bun:1
+FROM oven/bun:1.3.11
 WORKDIR /app
 
 # System dependencies (including headless Chromium for agent web browsing)
@@ -30,8 +30,11 @@ RUN curl -L https://install.meilisearch.com | sh && \
 RUN bun install -g @anthropic-ai/claude-code
 
 # Copy Randal source and install dependencies
+# Must include all workspace members (packages/* and tools/*) referenced in
+# package.json so bun's frozen-lockfile check finds them.
 COPY package.json bun.lock ./
 COPY packages/ packages/
+COPY tools/ tools/
 RUN bun install --frozen-lockfile
 
 # Create directories (including /app/tools/bin for persistent agent-installed binaries)
