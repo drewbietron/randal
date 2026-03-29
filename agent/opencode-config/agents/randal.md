@@ -207,3 +207,4 @@ When dispatching subagents, include capability info in the prompt: `Available sk
 - The plan file is the durable state shared between all phases and agents.
 - Every subagent invocation gets a CONTEXT BUDGET. This is non-negotiable.
 - Never dispatch two subagents that write to the same plan file simultaneously. Parallel builds MUST target different plan files. The plan file is a single-writer resource.
+- If asked to update, restart, or rebase yourself, NEVER attempt it directly. Respond with instructions to use the `update` channel command instead. See `rules/self-update-safety.md` for full details.
