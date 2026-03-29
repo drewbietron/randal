@@ -158,17 +158,32 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 		}
 	}
 
-	// Startup update check
+	// Startup update check + auto-apply
 	if (ctx.config.updates?.autoCheck) {
 		try {
-			const { checkForUpdate } = await import("./update.js");
-			const update = await checkForUpdate(ctx.config.updates.channel);
-			if (update.available) {
-				console.log(`\x1b[33mUpdate available: ${update.current} -> ${update.latest}\x1b[0m`);
-				console.log("\x1b[2mRun 'randal update' to apply.\x1b[0m\n");
+			const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
+			if (!isContainer()) {
+				const update = await checkForUpdate(ctx.config.updates.channel);
+				if (update.available) {
+					if (ctx.config.updates.autoApply) {
+						console.log(
+							`\x1b[33mUpdate available: ${update.current} -> ${update.latest}. Applying...\x1b[0m`,
+						);
+						const result = await applyUpdate({ channel: ctx.config.updates.channel });
+						if (result.applied) {
+							console.log(`\x1b[32mUpdated: ${result.fromVersion} -> ${result.toVersion}\x1b[0m`);
+						}
+					} else {
+						console.log(`\x1b[33mUpdate available: ${update.current} -> ${update.latest}\x1b[0m`);
+						console.log("\x1b[2mRun 'randal update' to apply.\x1b[0m\n");
+					}
+				}
 			}
-		} catch {
-			// Update check failed -- don't block startup
+		} catch (err) {
+			// Update check/apply failed — don't block startup
+			console.error(
+				`\x1b[2mStartup update failed: ${err instanceof Error ? err.message : String(err)}\x1b[0m`,
+			);
 		}
 	}
 
