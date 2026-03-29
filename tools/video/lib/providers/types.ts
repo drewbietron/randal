@@ -105,6 +105,12 @@ export interface GenerateSpeechOptions {
 	format?: AudioFormat;
 	/** Language code (e.g. "en", "es"). */
 	language?: string;
+	/** Voice stability (0.0–1.0). Higher = more consistent. Provider-specific. */
+	stability?: number;
+	/** Voice similarity boost (0.0–1.0). Higher = more similar to original voice. Provider-specific. */
+	similarityBoost?: number;
+	/** Voice style exaggeration (0.0–1.0). Provider-specific. */
+	style?: number;
 	/** Provider-specific options. */
 	providerOptions?: Record<string, unknown>;
 }
@@ -165,6 +171,9 @@ export interface AudioProvider {
 
 	/** Generate music from a prompt (optional — not all providers support this) */
 	generateMusic?(prompt: string, options?: GenerateMusicOptions): Promise<GenerateMusicResult>;
+
+	/** List available voices (optional — not all providers support this) */
+	listVoices?(): Promise<Array<{ voiceId: string; name: string; labels?: Record<string, string> }>>;
 
 	/** Check if the provider is configured */
 	isConfigured(): boolean;

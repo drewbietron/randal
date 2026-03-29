@@ -115,3 +115,110 @@ video_compose_video(script_json, output_path)
 - The reference image handles the visual details
 - Good: "Slow dolly forward, mist swirling, gentle water ripples"
 - Bad: "A lake with mountains and trees" (already in the image)
+
+## Audio & Narration
+
+| Tool | What it does |
+|---|---|
+| `generate_speech` | Text-to-speech with ElevenLabs or OpenRouter TTS |
+| `list_voices` | List available voices (discover cloned voice IDs) |
+| `generate_music` | Generate background music from a text prompt (ElevenLabs) |
+| `mix_audio` | Mix multiple audio tracks with volume/delay control (ffmpeg) |
+| `attach_audio` | Attach an audio track to a video file (ffmpeg) |
+
+### Voice Cloning Workflow
+
+1. User clones their voice via the ElevenLabs dashboard (external — not in these tools)
+2. Use `list_voices` to discover the cloned voice ID
+3. Pass the voice ID to `generate_speech` with optional settings:
+   - `stability` (0.0–1.0): Higher = more consistent, lower = more expressive
+   - `similarity_boost` (0.0–1.0): Higher = closer to original voice
+   - `style` (0.0–1.0): Style exaggeration (adds latency)
+4. Example:
+   ```
+   list_voices(provider: "elevenlabs")
+   # Find: { voiceId: "abc123", name: "My Cloned Voice", labels: { ... } }
+   
+   generate_speech(
+     text: "Welcome to today's episode.",
+     voice: "abc123",
+     stability: 0.7,
+     similarity_boost: 0.8,
+     provider: "elevenlabs"
+   )
+   ```
+
+### Background Music
+
+Generate music with a text prompt (max 120 seconds per generation):
+```
+generate_music(
+  prompt: "Calm ambient background music, soft piano, no vocals",
+  duration: 60,
+  provider: "elevenlabs"
+)
+```
+
+For longer tracks, generate a 60-120s loop and use Remotion's `loop: true` on the `globalAudio` track.
+
+The user can also supply their own music files — just reference the file path directly in the Remotion script's `globalAudio` array.
+
+## Full Production Workflow
+
+The complete pipeline for a narrated video with background music:
+
+```
+# Phase 1: Visual Assets
+for each scene:
+  1. video_generate_asset(scene.image_prompt, style_prefix=style_guide)
+  2. video_generate_clip(scene.motion_prompt, reference_image_path=image)
+
+# Phase 2: Audio
+3. list_voices(provider: "elevenlabs")   # find cloned voice ID
+4. For each scene's narration text:
+     generate_speech(text, voice: cloned_voice_id, stability: 0.7, similarity_boost: 0.8)
+5. generate_music(prompt: "background music description", duration: 90)
+
+# Phase 3: Assembly (choose one)
+
+# Option A: Simple assembly with ffmpeg
+6. stitch_clips(all_clip_paths, transition="crossfade")
+7. mix_audio([narration_track, music_track], volumes=[1.0, 0.3])
+8. attach_audio(stitched_video, mixed_audio, output)
+
+# Option B: Rich assembly with Remotion (recommended)
+6. compose_video(script={
+     scenes: [
+       {
+         media: { type: "video", src: "clip1.mp4" },
+         audio: { src: "narration1.mp3", volume: 1.0 },  // per-scene narration
+         duration: 8
+       },
+       ...
+     ],
+     globalAudio: [
+       { src: "background_music.mp3", volume: 0.3, fadeIn: 2, fadeOut: 3, loop: true }
+     ]
+   })
+```
+
+**Remotion audio architecture:**
+- Per-scene audio (`scene.audio`): narration, sound effects — one track per scene
+- Global audio (`globalAudio[]`): background music — spans entire video, supports multiple simultaneous tracks
+- Each track has independent `volume`, `fadeIn`, `fadeOut`, `startOffset`, and `loop` controls
+
+## Environment Setup
+
+Required environment variables:
+
+| Variable | Used By | Purpose |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Image gen, OpenRouter TTS | OpenRouter API access |
+| `GOOGLE_AI_STUDIO_KEY` | Veo (AI Studio backend) | Video generation via AI Studio |
+| `GOOGLE_VERTEX_API_KEY` | Veo (Vertex AI backend) | Video generation via Vertex AI |
+| `GOOGLE_CLOUD_PROJECT` | Veo (Vertex AI backend) | GCP project for Vertex AI |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS + music | Voice synthesis and music generation |
+
+**Note on Vertex AI env vars:** The opencode.json config maps `GOOGLE_VERTEX_API_KEY` (your shell) → `VERTEX_AI_API_KEY` (the MCP server process). Set `GOOGLE_VERTEX_API_KEY` in your environment.
+
+**Veo backend fallback:** When both `GOOGLE_VERTEX_API_KEY` and `GOOGLE_AI_STUDIO_KEY` are set, Veo tries Vertex AI first. If Vertex AI returns an auth error (401/403), it automatically falls back to AI Studio. Set both keys for maximum reliability.

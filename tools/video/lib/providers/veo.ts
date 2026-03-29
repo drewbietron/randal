@@ -180,10 +180,27 @@ export class VeoProvider implements VideoProvider {
 	}
 
 	/**
-	 * Returns the API key for the active backend.
+	 * Returns the other backend if it's configured, or null.
+	 * Used for fallback when the primary backend returns auth errors.
 	 */
-	private getApiKey(): string {
-		if (this.requireBackend() === "vertex") {
+	private getAlternateBackend(): VeoBackend | null {
+		if (!this.backend) return null;
+
+		if (this.backend === "vertex") {
+			const aiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
+			return aiStudioKey?.trim() ? "ai-studio" : null;
+		}
+		// backend is "ai-studio" — check if Vertex is available
+		const vertexKey = process.env.VERTEX_AI_API_KEY;
+		const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+		return vertexKey?.trim() && projectId?.trim() ? "vertex" : null;
+	}
+
+	/**
+	 * Returns the API key for a specific backend.
+	 */
+	private getApiKeyForBackend(backend: VeoBackend): string {
+		if (backend === "vertex") {
 			const key = process.env.VERTEX_AI_API_KEY;
 			if (!key || key.trim() === "") {
 				throw new VideoProviderError(
@@ -206,19 +223,10 @@ export class VeoProvider implements VideoProvider {
 	}
 
 	/**
-	 * Returns the default timeout for the active backend.
+	 * Returns the API key for the active backend.
 	 */
-	private getDefaultTimeout(): number {
-		return this.requireBackend() === "vertex" ? VERTEX_AI_TIMEOUT_MS : AI_STUDIO_TIMEOUT_MS;
-	}
-
-	/**
-	 * Returns the default poll interval for the active backend.
-	 */
-	private getDefaultPollInterval(): number {
-		return this.requireBackend() === "vertex"
-			? VERTEX_AI_POLL_INTERVAL_MS
-			: AI_STUDIO_POLL_INTERVAL_MS;
+	private getApiKey(): string {
+		return this.getApiKeyForBackend(this.requireBackend());
 	}
 
 	// -------------------------------------------------------------------------
@@ -249,17 +257,64 @@ export class VeoProvider implements VideoProvider {
 			);
 		}
 
-		const apiKey = this.getApiKey();
+		const primaryBackend = this.requireBackend();
 		const model = (options.providerOptions?.model as VeoModel | undefined) ?? DEFAULT_MODEL;
 
-		// Step 1: Submit the generation request
-		const operationName = await this.submitGeneration(prompt, apiKey, model, options);
+		// Try primary backend
+		try {
+			return await this.executeOnBackend(prompt, model, options, primaryBackend);
+		} catch (error) {
+			// Only fallback on auth errors (401/403) from submit
+			if (
+				error instanceof VideoProviderError &&
+				error.statusCode != null &&
+				(error.statusCode === 401 || error.statusCode === 403)
+			) {
+				const alternate = this.getAlternateBackend();
+				if (alternate) {
+					// Check model compatibility with fallback backend
+					const alternateModels = alternate === "vertex" ? VERTEX_AI_MODELS : AI_STUDIO_MODELS;
+					if (!alternateModels.includes(model)) {
+						throw new VideoProviderError(
+							`Auth failed on ${primaryBackend} (${error.statusCode}), ` +
+								`but model "${model}" is not available on fallback backend ${alternate}. ` +
+								`Available models on ${alternate}: ${alternateModels.join(", ")}`,
+							"API_ERROR",
+							this.name,
+							error.statusCode,
+						);
+					}
 
-		// Step 2: Poll until done
-		const operation = await this.pollOperation(operationName, apiKey, model, options);
+					console.error(
+						`[veo] ${primaryBackend} auth failed (${error.statusCode}), ` +
+							`falling back to ${alternate}...`,
+					);
+					return await this.executeOnBackend(prompt, model, options, alternate);
+				}
+			}
+			throw error; // Not a fallback-worthy error, or no alternate available
+		}
+	}
 
-		// Step 3: Extract the video data
-		const { buffer, mimeType } = this.extractVideoFromOperation(operation);
+	/**
+	 * Execute the full submit → poll → extract flow on a specific backend.
+	 */
+	private async executeOnBackend(
+		prompt: string,
+		model: VeoModel,
+		options: GenerateClipOptions,
+		backend: VeoBackend,
+	): Promise<GenerateClipResult> {
+		const apiKey = this.getApiKeyForBackend(backend);
+
+		// Step 1: Submit
+		const operationName = await this.submitGeneration(prompt, apiKey, model, options, backend);
+
+		// Step 2: Poll
+		const operation = await this.pollOperation(operationName, apiKey, model, options, backend);
+
+		// Step 3: Extract
+		const { buffer, mimeType } = this.extractVideoFromOperation(operation, backend);
 
 		// Sanity check
 		if (buffer.length < 1000) {
@@ -277,8 +332,9 @@ export class VeoProvider implements VideoProvider {
 			prompt: prompt.trim(),
 			metadata: {
 				provider: this.name,
-				backend: this.requireBackend(),
+				backend,
 				operationName,
+				usedFallback: backend !== this.backend,
 			},
 		};
 	}
@@ -287,8 +343,8 @@ export class VeoProvider implements VideoProvider {
 	// Submit
 	// -------------------------------------------------------------------------
 
-	private buildSubmitUrl(model: VeoModel): string {
-		if (this.requireBackend() === "vertex") {
+	private buildSubmitUrl(model: VeoModel, backend: VeoBackend): string {
+		if (backend === "vertex") {
 			const projectId = process.env.GOOGLE_CLOUD_PROJECT?.trim();
 			return `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:predictLongRunning`;
 		}
@@ -300,8 +356,9 @@ export class VeoProvider implements VideoProvider {
 		apiKey: string,
 		model: VeoModel,
 		options: GenerateClipOptions,
+		backend: VeoBackend,
 	): Promise<string> {
-		const url = this.buildSubmitUrl(model);
+		const url = this.buildSubmitUrl(model, backend);
 
 		// Build the request body
 		const instance: Record<string, unknown> = { prompt };
@@ -322,7 +379,7 @@ export class VeoProvider implements VideoProvider {
 		};
 
 		// Vertex AI requires generateAudio for Veo 3+ models
-		if (this.requireBackend() === "vertex") {
+		if (backend === "vertex") {
 			parameters.generateAudio = true;
 		}
 
@@ -385,7 +442,7 @@ export class VeoProvider implements VideoProvider {
 					}
 
 					throw new VideoProviderError(
-						`Veo API error on submit (${this.requireBackend()}): ${errorMessage}`,
+						`Veo API error on submit (${backend}): ${errorMessage}`,
 						"API_ERROR",
 						this.name,
 						status,
@@ -415,7 +472,7 @@ export class VeoProvider implements VideoProvider {
 				}
 
 				throw new VideoProviderError(
-					`Network error submitting to Veo (${this.requireBackend()}) after ${SUBMIT_MAX_RETRIES + 1} attempts: ${
+					`Network error submitting to Veo (${backend}) after ${SUBMIT_MAX_RETRIES + 1} attempts: ${
 						error instanceof Error ? error.message : String(error)
 					}`,
 					"NETWORK_ERROR",
@@ -441,7 +498,7 @@ export class VeoProvider implements VideoProvider {
 	// -------------------------------------------------------------------------
 
 	/**
-	 * Build the poll URL and request options based on the active backend.
+	 * Build the poll URL and request options based on the specified backend.
 	 *
 	 * - AI Studio:  GET  `{base}/operations/{id}`
 	 * - Vertex AI:  POST `{base}/.../models/{model}:fetchPredictOperation`
@@ -451,8 +508,9 @@ export class VeoProvider implements VideoProvider {
 		operationName: string,
 		apiKey: string,
 		model: VeoModel,
+		backend: VeoBackend,
 	): { url: string; init: RequestInit } {
-		if (this.requireBackend() === "vertex") {
+		if (backend === "vertex") {
 			const projectId = process.env.GOOGLE_CLOUD_PROJECT?.trim();
 			const url = `https://${VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_AI_LOCATION}/publishers/google/models/${model}:fetchPredictOperation`;
 			return {
@@ -489,9 +547,13 @@ export class VeoProvider implements VideoProvider {
 		apiKey: string,
 		model: VeoModel,
 		options: GenerateClipOptions,
+		backend: VeoBackend,
 	): Promise<VeoOperationResponse> {
-		const timeoutMs = options.timeoutMs ?? this.getDefaultTimeout();
-		const pollIntervalMs = options.pollIntervalMs ?? this.getDefaultPollInterval();
+		const timeoutMs =
+			options.timeoutMs ?? (backend === "vertex" ? VERTEX_AI_TIMEOUT_MS : AI_STUDIO_TIMEOUT_MS);
+		const pollIntervalMs =
+			options.pollIntervalMs ??
+			(backend === "vertex" ? VERTEX_AI_POLL_INTERVAL_MS : AI_STUDIO_POLL_INTERVAL_MS);
 
 		const startTime = Date.now();
 		let consecutiveErrors = 0;
@@ -501,21 +563,21 @@ export class VeoProvider implements VideoProvider {
 			const elapsed = Date.now() - startTime;
 			if (elapsed >= timeoutMs) {
 				throw new VideoProviderError(
-					`Video generation timed out after ${Math.round(elapsed / 1000)}s (${this.requireBackend()}). Operation: ${operationName}`,
+					`Video generation timed out after ${Math.round(elapsed / 1000)}s (${backend}). Operation: ${operationName}`,
 					"TIMEOUT",
 					this.name,
 				);
 			}
 
 			try {
-				const { url, init } = this.buildPollRequest(operationName, apiKey, model);
+				const { url, init } = this.buildPollRequest(operationName, apiKey, model, backend);
 				const response = await fetch(url, init);
 
 				if (!response.ok) {
 					consecutiveErrors++;
 					if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 						throw new VideoProviderError(
-							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times (${this.requireBackend()}). Last status: ${response.status}`,
+							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times (${backend}). Last status: ${response.status}`,
 							"API_ERROR",
 							this.name,
 							response.status,
@@ -531,7 +593,7 @@ export class VeoProvider implements VideoProvider {
 				// Check for operation-level errors
 				if (body.error) {
 					throw new VideoProviderError(
-						`Veo operation failed (${this.requireBackend()}): [${body.error.code}] ${body.error.message}`,
+						`Veo operation failed (${backend}): [${body.error.code}] ${body.error.message}`,
 						"OPERATION_FAILED",
 						this.name,
 						body.error.code,
@@ -554,7 +616,7 @@ export class VeoProvider implements VideoProvider {
 				consecutiveErrors++;
 				if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 					throw new VideoProviderError(
-						`Polling failed due to ${MAX_CONSECUTIVE_ERRORS} consecutive network errors (${this.requireBackend()}): ${
+						`Polling failed due to ${MAX_CONSECUTIVE_ERRORS} consecutive network errors (${backend}): ${
 							error instanceof Error ? error.message : String(error)
 						}`,
 						"NETWORK_ERROR",
@@ -573,7 +635,10 @@ export class VeoProvider implements VideoProvider {
 	// Extract
 	// -------------------------------------------------------------------------
 
-	private extractVideoFromOperation(operation: VeoOperationResponse): {
+	private extractVideoFromOperation(
+		operation: VeoOperationResponse,
+		backend: VeoBackend,
+	): {
 		buffer: Buffer;
 		mimeType: string;
 	} {
@@ -587,7 +652,7 @@ export class VeoProvider implements VideoProvider {
 		}
 
 		// Vertex AI format: response.videos[]
-		if (this.requireBackend() === "vertex") {
+		if (backend === "vertex") {
 			return this.extractVertexVideo(response);
 		}
 

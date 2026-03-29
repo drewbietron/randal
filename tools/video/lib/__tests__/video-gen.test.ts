@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { getProvider, listProviders } from "../providers/registry";
 import { VideoProviderError } from "../providers/types";
 import { generateVideoClip } from "../video-gen";
+// VeoProvider is imported dynamically in fallback tests (constructor reads env vars)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -136,5 +137,146 @@ describe("generateVideoClip", () => {
 		expect(result.buffer[5]).toBe(0x74); // 't'
 		expect(result.buffer[6]).toBe(0x79); // 'y'
 		expect(result.buffer[7]).toBe(0x70); // 'p'
+	});
+});
+
+// ---------------------------------------------------------------------------
+// VeoProvider fallback tests
+// ---------------------------------------------------------------------------
+
+describe("VeoProvider fallback", () => {
+	let savedVertexKey: string | undefined;
+	let savedProjectId: string | undefined;
+	let savedAiStudioKey: string | undefined;
+	let savedFetch: typeof globalThis.fetch;
+
+	beforeEach(() => {
+		savedFetch = globalThis.fetch;
+		savedVertexKey = process.env.VERTEX_AI_API_KEY;
+		savedProjectId = process.env.GOOGLE_CLOUD_PROJECT;
+		savedAiStudioKey = process.env.GOOGLE_AI_STUDIO_KEY;
+	});
+
+	afterEach(() => {
+		globalThis.fetch = savedFetch;
+		process.env.VERTEX_AI_API_KEY = savedVertexKey;
+		process.env.GOOGLE_CLOUD_PROJECT = savedProjectId;
+		process.env.GOOGLE_AI_STUDIO_KEY = savedAiStudioKey;
+	});
+
+	test("falls back to AI Studio when Vertex returns 401", async () => {
+		process.env.VERTEX_AI_API_KEY = "expired-vertex-key";
+		process.env.GOOGLE_CLOUD_PROJECT = "test-project";
+		process.env.GOOGLE_AI_STUDIO_KEY = "valid-studio-key";
+
+		// Need to create a fresh provider after env change
+		const { VeoProvider } = await import("../providers/veo");
+		const provider = new VeoProvider();
+
+		let callCount = 0;
+		const urls: string[] = [];
+
+		// Build fake video data (ftyp box header)
+		const videoData = Buffer.alloc(2000, 0x00);
+		videoData.write("ftyp", 4);
+		const videoBase64 = videoData.toString("base64");
+
+		globalThis.fetch = async (input: string | URL | Request, _init?: RequestInit) => {
+			callCount++;
+			const url = typeof input === "string" ? input : input.toString();
+			urls.push(url);
+
+			// First call: Vertex AI submit → 401
+			if (callCount === 1) {
+				expect(url).toContain("aiplatform.googleapis.com");
+				return new Response(JSON.stringify({ error: { message: "Unauthorized", code: 401 } }), {
+					status: 401,
+				});
+			}
+
+			// Second call: AI Studio submit → success
+			if (callCount === 2) {
+				expect(url).toContain("generativelanguage.googleapis.com");
+				return new Response(JSON.stringify({ name: "operations/test-op-123" }), { status: 200 });
+			}
+
+			// Third call: AI Studio poll → done
+			if (callCount === 3) {
+				return new Response(
+					JSON.stringify({
+						name: "operations/test-op-123",
+						done: true,
+						response: {
+							generatedSamples: [
+								{
+									video: {
+										bytesBase64Encoded: videoBase64,
+										mimeType: "video/mp4",
+									},
+								},
+							],
+						},
+					}),
+					{ status: 200 },
+				);
+			}
+
+			throw new Error(`Unexpected call #${callCount}`);
+		};
+
+		const result = await provider.generateClip("a sunset over the ocean");
+
+		expect(result.buffer.length).toBeGreaterThan(1000);
+		expect(result.metadata?.backend).toBe("ai-studio");
+		expect(result.metadata?.usedFallback).toBe(true);
+		expect(callCount).toBe(3);
+	});
+
+	test("does NOT fall back on 400 content policy error", async () => {
+		process.env.VERTEX_AI_API_KEY = "valid-vertex-key";
+		process.env.GOOGLE_CLOUD_PROJECT = "test-project";
+		process.env.GOOGLE_AI_STUDIO_KEY = "valid-studio-key";
+
+		const { VeoProvider } = await import("../providers/veo");
+		const provider = new VeoProvider();
+
+		globalThis.fetch = async () =>
+			new Response(
+				JSON.stringify({ error: { message: "Content blocked by safety filter", code: 400 } }),
+				{ status: 400 },
+			);
+
+		try {
+			await provider.generateClip("blocked content");
+			expect.unreachable("should have thrown");
+		} catch (error) {
+			expect(error).toBeInstanceOf(VideoProviderError);
+			const err = error as VideoProviderError;
+			expect(err.code).toBe("CONTENT_POLICY");
+			// Should NOT have tried AI Studio
+		}
+	});
+
+	test("does NOT fall back when no alternate backend configured", async () => {
+		process.env.VERTEX_AI_API_KEY = "expired-vertex-key";
+		process.env.GOOGLE_CLOUD_PROJECT = "test-project";
+		process.env.GOOGLE_AI_STUDIO_KEY = undefined;
+
+		const { VeoProvider } = await import("../providers/veo");
+		const provider = new VeoProvider();
+
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ error: { message: "Unauthorized", code: 401 } }), {
+				status: 401,
+			});
+
+		try {
+			await provider.generateClip("a sunset");
+			expect.unreachable("should have thrown");
+		} catch (error) {
+			expect(error).toBeInstanceOf(VideoProviderError);
+			const err = error as VideoProviderError;
+			expect(err.statusCode).toBe(401);
+		}
 	});
 });

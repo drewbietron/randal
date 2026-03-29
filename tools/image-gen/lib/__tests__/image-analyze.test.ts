@@ -166,7 +166,7 @@ describe("analyzeImage", () => {
 
 		// Verify request body structure
 		const body = JSON.parse(capturedInit?.body as string);
-		expect(body.model).toBe("google/gemini-2.5-flash-preview");
+		expect(body.model).toBe("google/gemini-2.5-flash");
 
 		// System message + user message
 		expect(body.messages).toBeArrayOfSize(2);
@@ -200,7 +200,7 @@ describe("analyzeImage", () => {
 		expect(headers.Authorization).toBe("Bearer test-key-12345");
 
 		const body = JSON.parse(capturedInit?.body as string);
-		expect(body.model).toBe("google/gemini-2.5-flash-preview");
+		expect(body.model).toBe("google/gemini-2.5-flash");
 		expect(body.temperature).toBe(0.3);
 		expect(body.max_tokens).toBe(2000);
 	});
@@ -245,7 +245,7 @@ describe("analyzeImage", () => {
 		expect(result.colors).toEqual(["orange", "blue", "purple"]);
 		expect(result.style).toBe("photography");
 		expect(result.mood).toBe("serene");
-		expect(result.model).toBe("google/gemini-2.5-flash-preview");
+		expect(result.model).toBe("google/gemini-2.5-flash");
 		expect(result.rawResponse).toBeDefined();
 	});
 
@@ -393,7 +393,7 @@ describe("analyzeImage", () => {
 		const result = await analyzeImage(fakePngBuffer(), "what is this?");
 
 		expect(result.description).toBe("A beautiful sunset over the ocean");
-		expect(result.model).toBe("google/gemini-2.5-flash-preview");
+		expect(result.model).toBe("google/gemini-2.5-flash");
 	});
 
 	// -------------------------------------------------------------------------

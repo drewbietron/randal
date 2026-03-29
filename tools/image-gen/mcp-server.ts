@@ -150,10 +150,7 @@ server.tool(
 	{
 		image_path: z.string().describe("Path to the image file to analyze"),
 		prompt: z.string().describe("What you want to understand about the image"),
-		model: z
-			.string()
-			.optional()
-			.describe("Vision model to use (default: google/gemini-2.5-flash-preview)"),
+		model: z.string().optional().describe("Vision model to use (default: google/gemini-2.5-flash)"),
 	},
 	async ({ image_path, prompt, model }) => {
 		try {

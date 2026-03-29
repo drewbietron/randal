@@ -41,7 +41,7 @@ import {
 import type { CharacterPhysical, CharacterProfile } from "./lib/characters";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
-import { listAudioProviders } from "./lib/providers/audio-registry";
+import { getAudioProvider, listAudioProviders } from "./lib/providers/audio-registry";
 import { listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
@@ -378,13 +378,45 @@ server.tool(
 			.describe("Audio provider name. Uses first configured provider if omitted"),
 		speed: z.number().optional().describe("Speaking speed multiplier (1.0 = normal)"),
 		format: z.enum(["mp3", "wav"]).optional().describe("Output audio format (default: mp3)"),
+		stability: z
+			.number()
+			.min(0)
+			.max(1)
+			.optional()
+			.describe(
+				"Voice stability (0.0–1.0). Higher = more consistent, lower = more expressive. Default: 0.5",
+			),
+		similarity_boost: z
+			.number()
+			.min(0)
+			.max(1)
+			.optional()
+			.describe("Similarity to original voice (0.0–1.0). Higher = closer match. Default: 0.75"),
+		style: z
+			.number()
+			.min(0)
+			.max(1)
+			.optional()
+			.describe("Style exaggeration (0.0–1.0). Default: 0 (off). Adds latency."),
 		output_dir: z
 			.string()
 			.optional()
 			.describe(`Directory to save the audio (default: ${DEFAULT_AUDIO_DIR})`),
 		filename: z.string().optional().describe("Output filename (default: auto-generated UUID)"),
 	},
-	async ({ text, voice, model, provider, speed, format, output_dir, filename }) => {
+	async ({
+		text,
+		voice,
+		model,
+		provider,
+		speed,
+		format,
+		stability,
+		similarity_boost,
+		style,
+		output_dir,
+		filename,
+	}) => {
 		try {
 			const dir = output_dir ?? DEFAULT_AUDIO_DIR;
 			await ensureDir(dir);
@@ -395,6 +427,9 @@ server.tool(
 				provider,
 				speed,
 				format: format as "mp3" | "wav" | undefined,
+				stability,
+				similarityBoost: similarity_boost,
+				style,
 			});
 
 			const ext = format ?? "mp3";
@@ -409,6 +444,33 @@ server.tool(
 				sizeBytes: stat.size,
 				duration: result.duration,
 			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: list_voices
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"list_voices",
+	"List available voices from a TTS provider. Use this to discover voice IDs for cloned or pre-built voices.",
+	{
+		provider: z
+			.string()
+			.optional()
+			.describe("Audio provider name. Uses first configured provider if omitted"),
+	},
+	async ({ provider }) => {
+		try {
+			const audioProvider = getAudioProvider(provider);
+			if (!audioProvider.listVoices) {
+				return err(`Provider "${audioProvider.name}" does not support voice listing.`);
+			}
+			const voices = await audioProvider.listVoices();
+			return ok({ voices });
 		} catch (error) {
 			return err(error instanceof Error ? error.message : String(error));
 		}
@@ -624,7 +686,7 @@ server.tool(
 		model: z
 			.string()
 			.optional()
-			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash-preview)"),
+			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash)"),
 	},
 	async ({ video_path, prompt, frame_count, model }) => {
 		try {
@@ -658,7 +720,7 @@ server.tool(
 		analysis_model: z
 			.string()
 			.optional()
-			.describe("Vision model for analysis (default: google/gemini-2.5-flash-preview)"),
+			.describe("Vision model for analysis (default: google/gemini-2.5-flash)"),
 		target_provider: z
 			.string()
 			.optional()
