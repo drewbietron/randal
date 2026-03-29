@@ -196,7 +196,32 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 		config = loadConfig(ctx.configPath);
 	}
 
-	let gateway = await startGateway({ config, port });
+	// ── onUpdate callback — used by "update" channel command ───
+	const onUpdate = async (): Promise<string> => {
+		const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
+		if (isContainer()) return "Updates are not available in container mode. Rebuild your image.";
+
+		const update = await checkForUpdate(ctx.config.updates?.channel ?? "main");
+		if (!update.available) {
+			const { RANDAL_VERSION } = await import("@randal/core");
+			return `Already up to date (${RANDAL_VERSION}).`;
+		}
+
+		const result = await applyUpdate({ channel: ctx.config.updates?.channel ?? "main" });
+		if (!result.applied) return "Update check completed. Already up to date.";
+
+		// Notify all channels before restart
+		gateway.broadcast(
+			`🔄 Updating Randal: ${result.fromVersion} → ${result.toVersion}. Restarting...`,
+		);
+
+		// Schedule SIGHUP after a delay so the response can be sent first
+		setTimeout(() => process.kill(process.pid, "SIGHUP"), 2000);
+
+		return `Updated to ${result.toVersion}. Restarting...`;
+	};
+
+	let gateway = await startGateway({ config, port, onUpdate });
 
 	// ── Periodic auto-update timer ──────────────────────────────
 	const { parseDuration } = await import("@randal/scheduler");
@@ -242,6 +267,13 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 				if (result.applied) {
 					console.log(`\x1b[32mUpdated: ${result.fromVersion} -> ${result.toVersion}\x1b[0m`);
 
+					// Notify all channels before restart
+					if (currentUpdates?.notify !== false) {
+						gateway.broadcast(
+							`🔄 Updating Randal: ${result.fromVersion} → ${result.toVersion}. Restarting...`,
+						);
+					}
+
 					// Trigger graceful restart if configured
 					if (currentUpdates?.autoRestart) {
 						// Allow 2s for channel notifications to flush
@@ -285,7 +317,7 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 			const finalConfig = envChanged ? loadConfig(ctx.configPath) : freshConfig;
 			// Update ctx.config so timer uses fresh config
 			ctx.config = finalConfig;
-			gateway = await startGateway({ config: finalConfig, port });
+			gateway = await startGateway({ config: finalConfig, port, onUpdate });
 			// Restart the timer with potentially new config
 			startUpdateTimer();
 			console.log("\x1b[32mGateway restarted successfully.\x1b[0m");
