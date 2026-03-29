@@ -24,6 +24,7 @@ export interface ChannelDeps {
 	messageManager?: MessageManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
+	onUpdate?: () => Promise<string>;
 }
 
 // ── Shared command handler ──────────────────────────────────
@@ -179,6 +180,15 @@ export async function handleCommand(
 			});
 			resumeDone.catch(() => {});
 			return `Resuming job \`${args}\` as \`${resumeJobId}\`...`;
+		}
+
+		case "update": {
+			if (!deps.onUpdate) return "Update not available in this context.";
+			try {
+				return await deps.onUpdate();
+			} catch (err) {
+				return `Update failed: ${err instanceof Error ? err.message : String(err)}`;
+			}
 		}
 
 		case "help":

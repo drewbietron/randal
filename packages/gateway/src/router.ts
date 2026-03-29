@@ -8,7 +8,7 @@ export interface ParsedCommand {
 	args: string;
 }
 
-const COMMANDS = ["run", "status", "stop", "context", "jobs", "memory", "resume", "help"];
+const COMMANDS = ["run", "status", "stop", "context", "jobs", "memory", "resume", "update", "help"];
 
 /**
  * Parse a prefix command from a message string.
@@ -49,5 +49,6 @@ export function formatHelp(): string {
   jobs                - List all jobs
   memory: <query>     - Search memory
   resume: <id>        - Resume a failed job
+  update              - Check for and apply updates
   help                - Show this help`;
 }
