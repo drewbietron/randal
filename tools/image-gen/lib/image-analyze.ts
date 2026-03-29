@@ -38,7 +38,7 @@ export class ImageAnalysisError extends Error {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash-preview";
+const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const DEFAULT_SYSTEM_PROMPT = `You are an image analysis expert. Analyze the provided image and return a JSON object with this structure:

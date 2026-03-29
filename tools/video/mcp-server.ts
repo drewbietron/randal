@@ -624,7 +624,7 @@ server.tool(
 		model: z
 			.string()
 			.optional()
-			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash-preview)"),
+			.describe("Vision model to use via OpenRouter (default: google/gemini-2.5-flash)"),
 	},
 	async ({ video_path, prompt, frame_count, model }) => {
 		try {
@@ -658,7 +658,7 @@ server.tool(
 		analysis_model: z
 			.string()
 			.optional()
-			.describe("Vision model for analysis (default: google/gemini-2.5-flash-preview)"),
+			.describe("Vision model for analysis (default: google/gemini-2.5-flash)"),
 		target_provider: z
 			.string()
 			.optional()

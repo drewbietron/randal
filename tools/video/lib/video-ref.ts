@@ -42,7 +42,7 @@ export interface ExtractedFrame {
 export interface AnalyzeVideoOptions {
 	/** Number of frames to extract for analysis. Defaults to 4. */
 	frameCount?: number;
-	/** Vision model to use via OpenRouter. Defaults to "google/gemini-2.5-flash-preview". */
+	/** Vision model to use via OpenRouter. Defaults to "google/gemini-2.5-flash". */
 	model?: string;
 	/** OpenRouter API key override. */
 	apiKey?: string;
@@ -114,7 +114,7 @@ const DEFAULT_FRAME_COUNT = 5;
 const DEFAULT_ANALYSIS_FRAME_COUNT = 4;
 const DEFAULT_FRAME_FORMAT = "png";
 const DEFAULT_OUTPUT_DIR = "/tmp/video-gen/frames";
-const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash-preview";
+const DEFAULT_VISION_MODEL = "google/gemini-2.5-flash";
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // ---------------------------------------------------------------------------
