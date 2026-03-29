@@ -122,6 +122,33 @@ fi
 
 cd "$RANDAL_DIR"
 
+# ── 5b. Configure shell to load .env on startup ────────────
+echo ""
+echo "Configuring shell environment..."
+
+# Source .env for this session
+if [ -f "$RANDAL_DIR/.env" ]; then
+  set -a; source "$RANDAL_DIR/.env" 2>/dev/null; set +a
+  echo "  + .env loaded for current session"
+fi
+
+# Add to shell RC files for future sessions
+ENV_LINE="set -a; source \"$RANDAL_DIR/.env\" 2>/dev/null; set +a"
+ENV_COMMENT="# Randal env vars (secrets for OpenCode MCP servers)"
+
+for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  if [ -f "$rc" ] || [ "$(basename "$rc")" = ".$(basename "$SHELL")rc" ]; then
+    if ! grep -q "randal/.env" "$rc" 2>/dev/null; then
+      echo "" >> "$rc"
+      echo "$ENV_COMMENT" >> "$rc"
+      echo "$ENV_LINE" >> "$rc"
+      echo "  + Added .env sourcing to $(basename "$rc")"
+    else
+      echo "  + .env sourcing already in $(basename "$rc")"
+    fi
+  fi
+done
+
 # ── 6. Install Node/Bun dependencies ────────────────────────
 echo ""
 echo "Installing dependencies..."
