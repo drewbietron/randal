@@ -586,6 +586,12 @@ export class DiscordChannel implements ChannelAdapter {
 	}
 
 	private onRunnerEvent(event: RunnerEvent): void {
+		// System-wide broadcast events — send to all guilds
+		if (event.type === "system.update") {
+			this.broadcastToGuilds(formatEvent(event));
+			return;
+		}
+
 		const terminal = ["job.complete", "job.failed", "job.stuck"];
 		const intermediate = ["iteration.output", "job.plan_updated", "iteration.start"];
 
@@ -1518,6 +1524,33 @@ export class DiscordChannel implements ChannelAdapter {
 	/** Get all registered custom command names across all servers. */
 	getCustomCommandNames(): ReadonlySet<string> {
 		return this.customCommandNames;
+	}
+
+	/**
+	 * Broadcast a message to all guilds the bot is in.
+	 * Sends to the system channel or first writable text channel per guild.
+	 * Fire-and-forget — failures don't block other guilds.
+	 */
+	private broadcastToGuilds(message: string): void {
+		for (const guild of this.client.guilds.cache.values()) {
+			const me = guild.members.me;
+			if (!me) continue;
+
+			// Prefer system channel, fall back to first text channel the bot can send to
+			const target =
+				guild.systemChannel ??
+				guild.channels.cache.find(
+					(ch) => ch.isTextBased() && !ch.isThread() && ch.permissionsFor(me)?.has("SendMessages"),
+				);
+			if (target && "send" in target) {
+				(target as SendableChannel).send(message).catch((err) => {
+					this.logger.warn("Failed to broadcast to guild", {
+						guildId: guild.id,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
+			}
+		}
 	}
 
 	stop(): void {

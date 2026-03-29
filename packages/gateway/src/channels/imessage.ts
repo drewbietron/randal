@@ -257,6 +257,12 @@ export class IMessageChannel implements ChannelAdapter {
 	}
 
 	private onRunnerEvent(event: RunnerEvent): void {
+		// System-wide broadcast events — send to recent conversations
+		if (event.type === "system.update") {
+			this.broadcastToRecentChats(formatEvent(event));
+			return;
+		}
+
 		// Only send significant events
 		const significant = ["job.complete", "job.failed", "job.stuck"];
 		if (!significant.includes(event.type)) return;
@@ -272,6 +278,31 @@ export class IMessageChannel implements ChannelAdapter {
 				jobId: event.jobId,
 			});
 		});
+	}
+
+	/**
+	 * Broadcast a message to recent iMessage conversations.
+	 * Uses allowFrom list as the set of known contacts to notify.
+	 * Fire-and-forget — individual send failures don't block others.
+	 */
+	private broadcastToRecentChats(message: string): void {
+		const allowFrom = this.channelConfig.allowFrom;
+		if (!allowFrom || allowFrom.length === 0) {
+			this.logger.debug("No allowFrom configured — skipping iMessage broadcast");
+			return;
+		}
+
+		// Send to each allowed contact's individual chat
+		for (const handle of allowFrom) {
+			// BlueBubbles uses iMessage;-;{handle} format for individual chats
+			const chatGuid = `iMessage;-;${handle}`;
+			this.sendMessage(chatGuid, message).catch((err) => {
+				this.logger.warn("Failed to broadcast to iMessage contact", {
+					handle,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
+		}
 	}
 
 	stop(): void {

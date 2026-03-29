@@ -244,6 +244,8 @@ export function formatEvent(event: RunnerEvent): string {
 			return `Job \`${event.jobId}\` delegating: ${event.data.delegationTask ?? "unknown task"}`;
 		case "job.delegation.completed":
 			return `Job \`${event.jobId}\` delegation done: ${event.data.delegationTask ?? "unknown task"} (${event.data.delegationStatus ?? "unknown"})`;
+		case "system.update":
+			return event.data.message ?? "System update in progress...";
 		default:
 			return `Event: ${event.type} (job ${event.jobId})`;
 	}
