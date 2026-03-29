@@ -1,6 +1,6 @@
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { RandalConfig, RunnerEvent } from "@randal/core";
+import type { RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
 	MemoryManager,
@@ -24,11 +24,13 @@ export interface GatewayOptions {
 	config: RandalConfig;
 	port?: number;
 	configBasePath?: string;
+	onUpdate?: () => Promise<string>;
 }
 
 export interface Gateway {
 	stop: () => void;
 	port: number;
+	broadcast: (message: string) => void;
 }
 
 const logger = createLogger({ context: { component: "gateway" } });
@@ -225,6 +227,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		messageManager,
 		scheduler,
 		skillManager,
+		onUpdate: options.onUpdate,
 	};
 	const channelAdapters: ChannelAdapter[] = [];
 
@@ -400,5 +403,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 			logger.info("Gateway stopped");
 		},
 		port,
+		broadcast: (message: string) => {
+			eventBus.emit({
+				type: "system.update" as RunnerEventType,
+				jobId: "system",
+				timestamp: new Date().toISOString(),
+				data: { message },
+			});
+		},
 	};
 }

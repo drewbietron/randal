@@ -4,7 +4,7 @@ import type { CliContext } from "../cli.js";
 
 const PID_FILE = resolve(process.env.HOME ?? ".", ".randal/gateway.pid");
 
-function readPid(): number | null {
+export function readPid(): number | null {
 	try {
 		const pid = Number.parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
 		if (Number.isNaN(pid)) return null;

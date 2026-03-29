@@ -24,6 +24,7 @@ export interface ChannelDeps {
 	messageManager?: MessageManager;
 	scheduler?: Scheduler;
 	skillManager?: SkillManager;
+	onUpdate?: () => Promise<string>;
 }
 
 // ── Shared command handler ──────────────────────────────────
@@ -181,6 +182,15 @@ export async function handleCommand(
 			return `Resuming job \`${args}\` as \`${resumeJobId}\`...`;
 		}
 
+		case "update": {
+			if (!deps.onUpdate) return "Update not available in this context.";
+			try {
+				return await deps.onUpdate();
+			} catch (err) {
+				return `Update failed: ${err instanceof Error ? err.message : String(err)}`;
+			}
+		}
+
 		case "help":
 			return formatHelp();
 
@@ -234,6 +244,8 @@ export function formatEvent(event: RunnerEvent): string {
 			return `Job \`${event.jobId}\` delegating: ${event.data.delegationTask ?? "unknown task"}`;
 		case "job.delegation.completed":
 			return `Job \`${event.jobId}\` delegation done: ${event.data.delegationTask ?? "unknown task"} (${event.data.delegationStatus ?? "unknown"})`;
+		case "system.update":
+			return event.data.message ?? "System update in progress...";
 		default:
 			return `Event: ${event.type} (job ${event.jobId})`;
 	}

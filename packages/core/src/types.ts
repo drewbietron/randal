@@ -37,7 +37,9 @@ export type RunnerEventType =
 	| "cron.added"
 	| "cron.removed"
 	| "hook.received"
-	| "hook.queued";
+	| "hook.queued"
+	// System events:
+	| "system.update";
 
 export interface RunnerEvent {
 	type: RunnerEventType;
@@ -72,6 +74,10 @@ export interface RunnerEvent {
 		hookSource?: string;
 		wakeMode?: "now" | "next-heartbeat";
 		heartbeatTickNumber?: number;
+		// System event data:
+		message?: string;
+		fromVersion?: string;
+		toVersion?: string;
 	};
 }
 
