@@ -136,6 +136,86 @@ describe("ElevenLabsProvider", () => {
 		expect(result.metadata?.provider).toBe("elevenlabs");
 	});
 
+	test("passes custom voice settings to API", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+		const audioData = fakeAudioBuffer();
+		let capturedBody = "";
+
+		globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+			capturedBody = init?.body as string;
+			return new Response(audioData, {
+				status: 200,
+				headers: { "Content-Type": "audio/mpeg" },
+			});
+		};
+
+		await provider.generateSpeech("Hello world", {
+			voice: "cloned-voice-123",
+			stability: 0.8,
+			similarityBoost: 0.9,
+			style: 0.3,
+		});
+
+		const body = JSON.parse(capturedBody);
+		expect(body.voice_settings.stability).toBe(0.8);
+		expect(body.voice_settings.similarity_boost).toBe(0.9);
+		expect(body.voice_settings.style).toBe(0.3);
+	});
+
+	test("uses default voice settings when not specified", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+		const audioData = fakeAudioBuffer();
+		let capturedBody = "";
+
+		globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+			capturedBody = init?.body as string;
+			return new Response(audioData, {
+				status: 200,
+				headers: { "Content-Type": "audio/mpeg" },
+			});
+		};
+
+		await provider.generateSpeech("Hello world");
+
+		const body = JSON.parse(capturedBody);
+		expect(body.voice_settings.stability).toBe(0.5);
+		expect(body.voice_settings.similarity_boost).toBe(0.75);
+		expect(body.voice_settings.style).toBeUndefined();
+	});
+
+	test("listVoices returns mapped voice data", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+
+		globalThis.fetch = async () =>
+			new Response(
+				JSON.stringify({
+					voices: [
+						{
+							voice_id: "abc123",
+							name: "My Clone",
+							labels: { accent: "american", use_case: "narration" },
+						},
+						{
+							voice_id: "def456",
+							name: "Default Voice",
+							labels: {},
+						},
+					],
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+
+		const voices = await provider.listVoices();
+		expect(voices).toHaveLength(2);
+		expect(voices[0].voiceId).toBe("abc123");
+		expect(voices[0].name).toBe("My Clone");
+		expect(voices[0].labels?.accent).toBe("american");
+		expect(voices[1].voiceId).toBe("def456");
+	});
+
 	test("retries on 429 rate limit", async () => {
 		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
 		// Use a custom base URL to avoid delay differences
@@ -345,25 +425,149 @@ describe("generateSpeech", () => {
 
 describe("generateMusic", () => {
 	beforeEach(() => {
+		saveFetch();
 		saveEnv();
 	});
 
 	afterEach(() => {
+		restoreFetch();
 		restoreEnv();
 	});
 
-	test("throws MUSIC_NOT_SUPPORTED when provider has no generateMusic", async () => {
-		// ElevenLabs and OpenRouter TTS don't support music
+	test("generates music via elevenlabs provider", async () => {
 		process.env.ELEVENLABS_API_KEY = "test-key";
+		const audioData = fakeAudioBuffer();
+
+		globalThis.fetch = async () =>
+			new Response(audioData, {
+				status: 200,
+				headers: { "Content-Type": "audio/mpeg" },
+			});
+
+		const result = await generateMusic("epic cinematic music", {
+			provider: "elevenlabs",
+			duration: 30,
+		});
+
+		expect(result.buffer).toBeInstanceOf(Buffer);
+		expect(result.mimeType).toBe("audio/mpeg");
+		expect(result.metadata?.provider).toBe("elevenlabs");
+	});
+
+	test("throws MUSIC_NOT_SUPPORTED when provider has no generateMusic", async () => {
+		// OpenRouter TTS doesn't support music
+		process.env.OPENROUTER_API_KEY = "test-key";
 
 		try {
-			await generateMusic("epic cinematic music", { provider: "elevenlabs" });
+			await generateMusic("epic cinematic music", { provider: "openrouter-tts" });
 			expect.unreachable("should have thrown");
 		} catch (error) {
 			expect(error).toBeInstanceOf(AudioGenError);
 			const err = error as AudioGenError;
 			expect(err.code).toBe("MUSIC_NOT_SUPPORTED");
-			expect(err.message).toContain("elevenlabs");
+			expect(err.message).toContain("openrouter-tts");
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// ElevenLabsProvider.generateMusic tests
+// ---------------------------------------------------------------------------
+
+describe("ElevenLabsProvider.generateMusic", () => {
+	beforeEach(() => {
+		saveFetch();
+		saveEnv();
+	});
+
+	afterEach(() => {
+		restoreFetch();
+		restoreEnv();
+	});
+
+	test("sends correct request to music generation endpoint", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+		const audioData = fakeAudioBuffer();
+
+		let capturedUrl = "";
+		let capturedHeaders: Record<string, string> = {};
+		let capturedBody = "";
+
+		globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+			capturedUrl = typeof input === "string" ? input : input.toString();
+			capturedHeaders = Object.fromEntries(Object.entries(init?.headers as Record<string, string>));
+			capturedBody = init?.body as string;
+			return new Response(audioData, {
+				status: 200,
+				headers: { "Content-Type": "audio/mpeg" },
+			});
+		};
+
+		const result = await provider.generateMusic("epic cinematic music", {
+			duration: 60,
+		});
+
+		expect(capturedUrl).toContain("/music/generate");
+		expect(capturedHeaders["xi-api-key"]).toBe("test-key-11labs");
+
+		const body = JSON.parse(capturedBody);
+		expect(body.prompt).toBe("epic cinematic music");
+		expect(body.duration_seconds).toBe(60);
+
+		expect(result.buffer).toBeInstanceOf(Buffer);
+		expect(result.mimeType).toBe("audio/mpeg");
+		expect(result.model).toBe("elevenlabs-music-v1");
+		expect(result.duration).toBe(60);
+		expect(result.metadata?.provider).toBe("elevenlabs");
+	});
+
+	test("caps duration at 120 seconds", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+		const audioData = fakeAudioBuffer();
+		let capturedBody = "";
+
+		globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+			capturedBody = init?.body as string;
+			return new Response(audioData, {
+				status: 200,
+				headers: { "Content-Type": "audio/mpeg" },
+			});
+		};
+
+		await provider.generateMusic("music", { duration: 300 });
+
+		const body = JSON.parse(capturedBody);
+		expect(body.duration_seconds).toBe(120);
+	});
+
+	test("throws on empty prompt", async () => {
+		process.env.ELEVENLABS_API_KEY = "test-key-11labs";
+		const provider = new ElevenLabsProvider();
+
+		try {
+			await provider.generateMusic("");
+			expect.unreachable("should have thrown");
+		} catch (error) {
+			expect(error).toBeInstanceOf(VideoProviderError);
+			const err = error as VideoProviderError;
+			expect(err.code).toBe("API_ERROR");
+			expect(err.message).toContain("non-empty");
+		}
+	});
+
+	test("throws MISSING_API_KEY when ELEVENLABS_API_KEY not set", async () => {
+		process.env.ELEVENLABS_API_KEY = undefined;
+		const provider = new ElevenLabsProvider();
+
+		try {
+			await provider.generateMusic("epic music");
+			expect.unreachable("should have thrown");
+		} catch (error) {
+			expect(error).toBeInstanceOf(VideoProviderError);
+			const err = error as VideoProviderError;
+			expect(err.code).toBe("MISSING_API_KEY");
 		}
 	});
 });
