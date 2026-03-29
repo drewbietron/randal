@@ -28,6 +28,12 @@ set -euo pipefail
 
 # --- Configuration ---
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Load .env so setup has access to secrets (e.g., MEILI_MASTER_KEY)
+if [ -f "$REPO_DIR/.env" ]; then
+  set -a; source "$REPO_DIR/.env" 2>/dev/null; set +a
+fi
+
 AGENT_DIR="$REPO_DIR/agent"
 OC_CONFIG="$HOME/.config/opencode"
 OC_SOURCE="$AGENT_DIR/opencode-config"

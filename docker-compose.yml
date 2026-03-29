@@ -8,10 +8,10 @@ services:
       - ./.env:/app/.env:ro
       - ./workspace:/app/workspace
       - meili_data:/app/meili-data
+    env_file:
+      - .env
     environment:
-      - RANDAL_API_TOKEN=${RANDAL_API_TOKEN}
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-      - GH_TOKEN=${GH_TOKEN}
+      - GH_TOKEN=${GH_TOKEN:-}
 
 volumes:
   meili_data:

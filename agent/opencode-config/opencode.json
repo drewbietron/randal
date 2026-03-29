@@ -16,8 +16,6 @@
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory-server.ts"],
 			"environment": {
 				"MEILI_URL": "http://localhost:7701",
-				"MEILI_MASTER_KEY": "{env:MEILI_MASTER_KEY}",
-				"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}",
 				"SUMMARY_MODEL": "anthropic/claude-haiku-3"
 			},
 			"enabled": true
@@ -26,19 +24,13 @@
 			"type": "local",
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/video/mcp-server.ts"],
 			"environment": {
-				"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}",
-				"GOOGLE_AI_STUDIO_KEY": "{env:GOOGLE_AI_STUDIO_KEY}",
-				"VERTEX_AI_API_KEY": "{env:GOOGLE_VERTEX_API_KEY}",
-				"GOOGLE_CLOUD_PROJECT": "{env:GOOGLE_CLOUD_PROJECT}"
+				"VERTEX_AI_API_KEY": "{env:GOOGLE_VERTEX_API_KEY}"
 			},
 			"enabled": true
 		},
 		"image-gen": {
 			"type": "local",
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/image-gen/mcp-server.ts"],
-			"environment": {
-				"OPENROUTER_API_KEY": "{env:OPENROUTER_API_KEY}"
-			},
 			"enabled": true
 		}
 	},
