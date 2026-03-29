@@ -92,6 +92,9 @@ const store = new MeilisearchStore({
 /** Whether the store initialized successfully. */
 let storeAvailable = false;
 
+/** Last init failure reason for diagnostics (null = no error). */
+let storeInitError: string | null = null;
+
 // ---------------------------------------------------------------------------
 // MessageManager construction (chat history)
 // ---------------------------------------------------------------------------
@@ -125,14 +128,42 @@ const messageManager = new MessageManager({
 /** Whether the message manager initialized successfully. */
 let messagesAvailable = false;
 
+/** Last init failure reason for diagnostics (null = no error). */
+let messagesInitError: string | null = null;
+
 // ---------------------------------------------------------------------------
 // Init retry with exponential backoff & lazy re-init helpers
 // ---------------------------------------------------------------------------
 
 /**
+ * Classify an init error into a human-readable diagnostic message.
+ * Extracts the root cause from common failure patterns without leaking secrets.
+ */
+function classifyInitError(err: unknown): string {
+	const raw = err instanceof Error ? err.message : String(err);
+	const lower = raw.toLowerCase();
+
+	if (lower.includes("401") || lower.includes("unauthorized")) {
+		return `Authentication failed (401) at ${MEILI_URL} — check MEILI_MASTER_KEY`;
+	}
+	if (
+		lower.includes("econnrefused") ||
+		lower.includes("fetch failed") ||
+		lower.includes("connect")
+	) {
+		return `Connection refused at ${MEILI_URL} — is Meilisearch running?`;
+	}
+	if (lower.includes("timeout") || lower.includes("etimedout")) {
+		return `Connection timed out at ${MEILI_URL}`;
+	}
+	return raw;
+}
+
+/**
  * Retry store.init() and messageManager.init() with exponential backoff.
  * Each subsystem is retried independently so one failing doesn't block the other.
  * Never throws — sets availability flags on success, logs warnings on failure.
+ * Stores the last error reason for diagnostic reporting in tool responses.
  */
 async function retryInit(): Promise<void> {
 	const MAX_ATTEMPTS = 5;
@@ -140,13 +171,15 @@ async function retryInit(): Promise<void> {
 		try {
 			await store.init();
 			storeAvailable = true;
+			storeInitError = null;
 			log("info", `Store initialized at ${MEILI_URL} (attempt ${attempt})`);
 			break;
 		} catch (err) {
+			storeInitError = classifyInitError(err);
 			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
 			log(
 				"warn",
-				`Store init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`,
+				`Store init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${storeInitError}. Retry in ${delay}ms`,
 			);
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
@@ -155,13 +188,15 @@ async function retryInit(): Promise<void> {
 		try {
 			await messageManager.init();
 			messagesAvailable = true;
+			messagesInitError = null;
 			log("info", `MessageManager initialized (attempt ${attempt})`);
 			break;
 		} catch (err) {
+			messagesInitError = classifyInitError(err);
 			const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
 			log(
 				"warn",
-				`MessageManager init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${err instanceof Error ? err.message : String(err)}. Retry in ${delay}ms`,
+				`MessageManager init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${messagesInitError}. Retry in ${delay}ms`,
 			);
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
@@ -174,9 +209,11 @@ async function ensureStore(): Promise<boolean> {
 	try {
 		await store.init();
 		storeAvailable = true;
+		storeInitError = null;
 		log("info", "Store lazy re-init succeeded");
 		return true;
-	} catch {
+	} catch (err) {
+		storeInitError = classifyInitError(err);
 		return false;
 	}
 }
@@ -187,12 +224,27 @@ async function ensureMessages(): Promise<boolean> {
 	try {
 		await messageManager.init();
 		messagesAvailable = true;
+		messagesInitError = null;
 		log("info", "MessageManager lazy re-init succeeded");
 		return true;
-	} catch {
+	} catch (err) {
+		messagesInitError = classifyInitError(err);
 		return false;
 	}
 }
+
+/** Get a diagnostic error string for store unavailability. */
+function getStoreError(): string {
+	return storeInitError ?? "Meilisearch is not available (unknown reason)";
+}
+
+/** Get a diagnostic error string for messages unavailability. */
+function getMessagesError(): string {
+	return messagesInitError ?? "Chat history is not available (unknown reason)";
+}
+
+/** Standard hint for Meilisearch connectivity issues. */
+const MEILI_HINT = "Check MEILI_URL and MEILI_MASTER_KEY environment variables";
 
 // ---------------------------------------------------------------------------
 // Periodic dump scheduling
@@ -475,7 +527,8 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 	const scope = resolveSearchScope(params.scope as string | undefined);
 
 	if (!(await ensureStore())) {
-		return { results: [], message: "Meilisearch is not available" };
+		const error = getStoreError();
+		return { results: [], message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -512,7 +565,8 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 	}
 
 	if (!(await ensureStore())) {
-		return { stored: false, message: "Meilisearch is not available" };
+		const error = getStoreError();
+		return { stored: false, message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -552,7 +606,8 @@ async function handleMemoryRecent(params: Record<string, unknown>): Promise<unkn
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
 	if (!(await ensureStore())) {
-		return { results: [], message: "Meilisearch is not available" };
+		const error = getStoreError();
+		return { results: [], message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -589,7 +644,8 @@ async function handleChatSearch(params: Record<string, unknown>): Promise<unknow
 	const scope = params.scope as string | undefined;
 
 	if (!(await ensureMessages())) {
-		return { results: [], message: "Chat history is not available" };
+		const error = getMessagesError();
+		return { results: [], message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -643,7 +699,8 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 	const limit = typeof params.limit === "number" ? params.limit : 50;
 
 	if (!(await ensureMessages())) {
-		return { messages: [], message: "Chat history is not available" };
+		const error = getMessagesError();
+		return { messages: [], message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -670,7 +727,8 @@ async function handleChatRecent(params: Record<string, unknown>): Promise<unknow
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
 	if (!(await ensureMessages())) {
-		return { results: [], message: "Chat history is not available" };
+		const error = getMessagesError();
+		return { results: [], message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
@@ -706,7 +764,8 @@ async function handleChatLog(params: Record<string, unknown>): Promise<unknown> 
 	const channel = (params.channel as string) || "opencode";
 
 	if (!(await ensureMessages())) {
-		return { logged: false, message: "Chat history is not available" };
+		const error = getMessagesError();
+		return { logged: false, message: error, error, hint: MEILI_HINT };
 	}
 
 	try {
