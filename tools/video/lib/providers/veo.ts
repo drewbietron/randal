@@ -319,8 +319,7 @@ export class VeoProvider implements VideoProvider {
 		// Sanity check
 		if (buffer.length < 1000) {
 			throw new VideoProviderError(
-				`Generated video is suspiciously small (${buffer.length} bytes). ` +
-					`The model may have failed silently.`,
+				`Generated video is suspiciously small (${buffer.length} bytes). The model may have failed silently.`,
 				"INVALID_RESPONSE",
 				this.name,
 			);
