@@ -143,12 +143,19 @@ function classifyInitError(err: unknown): string {
 	const raw = err instanceof Error ? err.message : String(err);
 	const lower = raw.toLowerCase();
 
-	if (lower.includes("401") || lower.includes("unauthorized")) {
-		return `Authentication failed (401) at ${MEILI_URL} — check MEILI_MASTER_KEY`;
+	if (
+		lower.includes("401") ||
+		lower.includes("403") ||
+		lower.includes("unauthorized") ||
+		lower.includes("invalid api key") ||
+		lower.includes("invalid_api_key")
+	) {
+		return `Authentication failed at ${MEILI_URL} — check MEILI_MASTER_KEY`;
 	}
 	if (
 		lower.includes("econnrefused") ||
 		lower.includes("fetch failed") ||
+		lower.includes("has failed") ||
 		lower.includes("connect")
 	) {
 		return `Connection refused at ${MEILI_URL} — is Meilisearch running?`;
