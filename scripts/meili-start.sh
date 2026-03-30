@@ -3,6 +3,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "Starting Meilisearch (docker compose)..."
+mkdir -p meili-data
 MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-randal-local-key} \
   docker compose -f docker-compose.meili.yml up -d
 
