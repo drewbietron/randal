@@ -327,10 +327,10 @@ name: test
 runner:
   workdir: /tmp
 `);
-		// biome-ignore lint/suspicious/noExplicitAny: test-only config override
 		const badConfig = {
 			...config,
 			memory: { url: "http://localhost:19999", apiKey: MEILI_KEY },
+			// biome-ignore lint/suspicious/noExplicitAny: test-only config override
 		} as any;
 
 		const manager = new MessageManager({
