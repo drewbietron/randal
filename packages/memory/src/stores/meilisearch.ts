@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { MemoryDoc } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
+import type { EmbeddingService } from "../embedding.js";
 import type { MemorySearchOptions, MemoryStore } from "./index.js";
 
 export interface EmbedderConfig {
@@ -15,11 +16,14 @@ export interface MeilisearchStoreOptions {
 	url: string;
 	apiKey: string;
 	index: string;
+	/** @deprecated Use `embeddingService` instead. Kept for backward compatibility. */
 	embedder?: EmbedderConfig;
+	/** Application-managed embedding service. If provided, vectors are generated externally and attached to docs. */
+	embeddingService?: EmbeddingService;
 	semanticRatio?: number;
 }
 
-const EMBEDDER_NAME = "memory-embedder";
+const EMBEDDER_NAME = "default";
 const DEFAULT_SEMANTIC_RATIO = 0.7;
 
 /** Categories that default to global scope (cross-project). */
@@ -28,9 +32,8 @@ const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
 export class MeilisearchStore implements MemoryStore {
 	private client: MeiliSearch;
 	private indexName: string;
-	private semanticAvailable = false;
+	private embeddingService?: EmbeddingService;
 	private semanticRatio: number;
-	private embedderConfig?: EmbedderConfig;
 	private logger = createLogger({ context: { component: "meilisearch-store" } });
 
 	constructor(options: MeilisearchStoreOptions) {
@@ -39,7 +42,7 @@ export class MeilisearchStore implements MemoryStore {
 			apiKey: options.apiKey,
 		});
 		this.indexName = options.index;
-		this.embedderConfig = options.embedder;
+		this.embeddingService = options.embeddingService;
 		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
 	}
 
@@ -70,39 +73,25 @@ export class MeilisearchStore implements MemoryStore {
 			throw err;
 		}
 
-		// Configure semantic embedder (non-fatal — falls back to keyword search)
-		if (this.embedderConfig?.apiKey) {
+		// Register a userProvided embedder so Meilisearch accepts _vectors and supports hybrid search.
+		// This is non-fatal — if it fails, we still store docs (keyword-only).
+		if (this.embeddingService) {
 			try {
 				const index = this.client.index(this.indexName);
 				await index.updateEmbedders({
 					[EMBEDDER_NAME]: {
-						source: "rest",
-						url: this.embedderConfig.url || "https://openrouter.ai/api/v1/embeddings",
-						apiKey: this.embedderConfig.apiKey,
-						request: {
-							model: this.embedderConfig.model,
-							input: ["{{text}}", "{{..}}"],
-						},
-						response: {
-							data: [{ embedding: "{{embedding}}" }, "{{..}}"],
-						},
-						documentTemplate: "A memory entry: {{doc.content}}",
+						source: "userProvided",
+						dimensions: this.embeddingService.dimensions,
 					},
 				});
-				this.semanticAvailable = true;
-				this.logger.info("Semantic search enabled", {
+				this.logger.info("userProvided embedder registered for manual vectors", {
 					embedder: EMBEDDER_NAME,
-					model: this.embedderConfig.model,
-					semanticRatio: this.semanticRatio,
+					dimensions: this.embeddingService.dimensions,
 				});
 			} catch (err) {
-				this.semanticAvailable = false;
-				this.logger.warn(
-					"Failed to configure semantic embedder — falling back to keyword-only search",
-					{
-						error: err instanceof Error ? err.message : String(err),
-					},
-				);
+				this.logger.warn("Failed to register userProvided embedder — hybrid search may not work", {
+					error: err instanceof Error ? err.message : String(err),
+				});
 			}
 		}
 	}
@@ -112,18 +101,26 @@ export class MeilisearchStore implements MemoryStore {
 			const index = this.client.index(this.indexName);
 			const scopeFilter = this.buildScopeFilter(options?.scope);
 
-			if (this.semanticAvailable) {
-				// Hybrid search: Meilisearch uses its own relevance ranking,
-				// sort is not compatible with hybrid search
-				const results = await index.search(query, {
-					limit,
-					hybrid: {
-						embedder: EMBEDDER_NAME,
-						semanticRatio: this.semanticRatio,
-					},
-					...(scopeFilter ? { filter: scopeFilter } : {}),
-				});
-				return results.hits as unknown as MemoryDoc[];
+			// Try hybrid search: embed the query, then use vector + keyword
+			if (this.embeddingService) {
+				const queryVector = await this.embeddingService.embed(query);
+
+				if (queryVector) {
+					// Hybrid search with application-provided query vector
+					const results = await index.search(query, {
+						limit,
+						vector: queryVector,
+						hybrid: {
+							embedder: EMBEDDER_NAME,
+							semanticRatio: this.semanticRatio,
+						},
+						...(scopeFilter ? { filter: scopeFilter } : {}),
+					});
+					return results.hits as unknown as MemoryDoc[];
+				}
+
+				// Query embedding failed — fall through to keyword-only
+				this.logger.warn("Query embedding failed, falling back to keyword-only search");
 			}
 
 			// Keyword-only fallback
@@ -182,10 +179,20 @@ export class MeilisearchStore implements MemoryStore {
 			// Assign default scope if not explicitly set
 			const scope = doc.scope ?? this.defaultScopeForCategory(doc.category);
 
-			const fullDoc: MemoryDoc = {
+			// Try to generate an embedding for the document content
+			let vectors: Record<string, { value: number[] }> | undefined;
+			if (this.embeddingService) {
+				const embedding = await this.embeddingService.embed(doc.content);
+				if (embedding) {
+					vectors = { [EMBEDDER_NAME]: { value: embedding } };
+				}
+			}
+
+			const fullDoc = {
 				...doc,
 				scope,
 				id: randomUUID(),
+				...(vectors ? { _vectors: vectors } : {}),
 			};
 			await idx.addDocuments([fullDoc]);
 		} catch (err) {
