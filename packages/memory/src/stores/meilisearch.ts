@@ -180,11 +180,11 @@ export class MeilisearchStore implements MemoryStore {
 			const scope = doc.scope ?? this.defaultScopeForCategory(doc.category);
 
 			// Try to generate an embedding for the document content
-			let vectors: Record<string, { value: number[] }> | undefined;
+			let vectors: Record<string, number[]> | undefined;
 			if (this.embeddingService) {
 				const embedding = await this.embeddingService.embed(doc.content);
 				if (embedding) {
-					vectors = { [EMBEDDER_NAME]: { value: embedding } };
+					vectors = { [EMBEDDER_NAME]: embedding };
 				}
 			}
 
