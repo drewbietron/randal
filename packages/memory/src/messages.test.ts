@@ -370,10 +370,10 @@ describe("MessageManager.add()", () => {
 
 		const addCall = getCall(mockIdx._calls, "addDocuments");
 		const docs = addCall[0] as Record<string, unknown>[];
-		const vectors = docs[0]._vectors as Record<string, { value: number[] }>;
+		const vectors = docs[0]._vectors as Record<string, number[]>;
 		expect(vectors).toBeDefined();
 		expect(vectors.default).toBeDefined();
-		expect(vectors.default.value).toEqual([0.1, 0.2, 0.3]);
+		expect(vectors.default).toEqual([0.1, 0.2, 0.3]);
 	});
 
 	test("stores without _vectors when embeddingService returns null", async () => {

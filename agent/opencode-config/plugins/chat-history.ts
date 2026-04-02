@@ -65,7 +65,7 @@ async function logMessage(doc: {
 		};
 
 		if (embedding) {
-			body._vectors = { default: { value: embedding } };
+			body._vectors = { default: embedding };
 		}
 
 		const headers: Record<string, string> = {
