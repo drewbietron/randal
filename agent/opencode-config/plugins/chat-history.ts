@@ -1,51 +1,23 @@
-/**
- * Chat history plugin for OpenCode.
- *
- * Writes conversation messages directly to Meilisearch via fetch.
- * Generates embeddings inline (via OpenRouter) when OPENROUTER_API_KEY is set,
- * and attaches them as `_vectors: { default: { value: [...] } }` on the document.
- *
- * If embedding fails or no API key is configured, documents are stored
- * without vectors — keyword search still works.
- *
- * This plugin is self-contained: it does NOT import from @randal/memory
- * because it runs inside the OpenCode plugin runtime.
- *
- * Environment variables (read from process.env):
- *   MEILI_URL          — Meilisearch URL (default: http://localhost:7700)
- *   MEILI_MASTER_KEY   — Meilisearch API key (optional)
- *   OPENROUTER_API_KEY — enables embedding generation (optional)
- *   EMBEDDING_MODEL    — embedding model (default: openai/text-embedding-3-small)
- *   EMBEDDING_URL      — embedding endpoint (default: https://openrouter.ai/api/v1/embeddings)
- */
+import type { Plugin } from "@opencode-ai/plugin";
 
 // ---------------------------------------------------------------------------
-// Configuration
+// Configuration (from process.env, all optional)
 // ---------------------------------------------------------------------------
 
-const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
-const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
-const MEILI_INDEX = process.env.MEILI_CHAT_INDEX || "messages-randal";
+const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
+const MEILI_KEY = process.env.MEILI_MASTER_KEY || "";
+const INDEX = "messages-randal";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
 const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "openai/text-embedding-3-small";
 const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
 
-const EMBEDDING_TIMEOUT_MS = 5000;
-const EMBEDDER_NAME = "default";
-
 // ---------------------------------------------------------------------------
-// Inline embedding function (self-contained, never throws)
+// Inline embedding (never throws, returns null on failure)
 // ---------------------------------------------------------------------------
 
-/**
- * Generate an embedding vector for the given text via OpenRouter-compatible API.
- * Returns null on ANY failure — never throws.
- */
 async function generateEmbedding(text: string): Promise<number[] | null> {
-	if (!OPENROUTER_API_KEY) {
-		return null;
-	}
+	if (!OPENROUTER_API_KEY) return null;
 
 	try {
 		const response = await fetch(EMBEDDING_URL, {
@@ -54,89 +26,143 @@ async function generateEmbedding(text: string): Promise<number[] | null> {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${OPENROUTER_API_KEY}`,
 			},
-			body: JSON.stringify({
-				model: EMBEDDING_MODEL,
-				input: text,
-			}),
-			signal: AbortSignal.timeout(EMBEDDING_TIMEOUT_MS),
+			body: JSON.stringify({ model: EMBEDDING_MODEL, input: text }),
+			signal: AbortSignal.timeout(5000),
 		});
 
-		if (!response.ok) {
-			console.error(
-				`[chat-history] Embedding API error: ${response.status} ${response.statusText} (model: ${EMBEDDING_MODEL})`,
-			);
-			return null;
-		}
+		if (!response.ok) return null;
 
 		const json = await response.json();
 		const embedding = json?.data?.[0]?.embedding;
-
-		if (!Array.isArray(embedding) || embedding.length === 0) {
-			console.error(
-				`[chat-history] Embedding API returned malformed data (model: ${EMBEDDING_MODEL})`,
-			);
-			return null;
-		}
+		if (!Array.isArray(embedding) || embedding.length === 0) return null;
 
 		return embedding as number[];
-	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		console.error(`[chat-history] Embedding generation failed: ${msg}`);
+	} catch {
 		return null;
 	}
 }
 
 // ---------------------------------------------------------------------------
-// Meilisearch write (self-contained, fire-and-forget safe)
+// Meilisearch write (fire-and-forget, never throws)
 // ---------------------------------------------------------------------------
 
-interface ChatMessage {
-	id: string;
-	threadId: string;
-	speaker: string;
-	channel: string;
+async function logMessage(doc: {
 	content: string;
-	timestamp: string;
-	type?: string;
-	scope?: string;
-	_vectors?: Record<string, { value: number[] }>;
-}
-
-/**
- * Write a chat message document to Meilisearch.
- * Generates an embedding if possible and attaches it as `_vectors`.
- * Never throws — logs errors to stderr.
- */
-export async function writeChatMessage(message: Omit<ChatMessage, "_vectors">): Promise<void> {
+	speaker: string;
+	threadId: string;
+	scope: string;
+	channel: string;
+}): Promise<void> {
+	const id = crypto.randomUUID();
 	try {
-		// Generate embedding for the message content (fire-and-forget safe)
-		const embedding = await generateEmbedding(message.content);
+		const embedding = await generateEmbedding(doc.content);
 
-		const doc: ChatMessage = {
-			...message,
-			...(embedding ? { _vectors: { [EMBEDDER_NAME]: { value: embedding } } } : {}),
+		const body: Record<string, unknown> = {
+			id,
+			...doc,
+			timestamp: new Date().toISOString(),
+			type: "message",
 		};
+
+		if (embedding) {
+			body._vectors = { default: { value: embedding } };
+		}
 
 		const headers: Record<string, string> = {
 			"Content-Type": "application/json",
 		};
-		if (MEILI_MASTER_KEY) {
-			headers.Authorization = `Bearer ${MEILI_MASTER_KEY}`;
+		if (MEILI_KEY) {
+			headers.Authorization = `Bearer ${MEILI_KEY}`;
 		}
 
-		const response = await fetch(`${MEILI_URL}/indexes/${MEILI_INDEX}/documents`, {
+		await fetch(`${MEILI_URL}/indexes/${INDEX}/documents`, {
 			method: "POST",
 			headers,
-			body: JSON.stringify([doc]),
+			body: JSON.stringify([body]),
 		});
-
-		if (!response.ok) {
-			console.error(
-				`[chat-history] Meilisearch write failed: ${response.status} ${response.statusText}`,
-			);
-		}
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		console.error(`[chat-history] Failed to write chat message: ${msg}`);
+		console.error("[chat-history] Failed to log message:", err);
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Plugin export (required by OpenCode)
+// ---------------------------------------------------------------------------
+
+export const server: Plugin = async ({ directory }) => {
+	console.error("[chat-history] Plugin loaded");
+	const scope = `project:${directory}`;
+
+	// Track the last assistant messageID per session so we can flush on idle
+	const pendingAssistant = new Map<string, string>();
+
+	return {
+		"chat.message": async (input, output) => {
+			const textParts = output.parts.filter((p) => p.type === "text");
+			const content = textParts.map((p) => (p as { type: "text"; text: string }).text).join("\n");
+			if (!content.trim()) return;
+
+			await logMessage({
+				content,
+				speaker: "user",
+				threadId: input.sessionID,
+				scope,
+				channel: "opencode",
+			});
+		},
+
+		event: async ({ event }) => {
+			// Track assistant text parts as they stream in
+			if (event.type === "message.part.updated") {
+				const part = event.properties.part;
+				if (part.type === "text" && part.text) {
+					pendingAssistant.set(part.sessionID, part.messageID);
+				}
+			}
+
+			// On session idle, capture the assistant's final text
+			if (event.type === "session.idle") {
+				const sessionID = event.properties.sessionID;
+				const messageID = pendingAssistant.get(sessionID);
+				if (!messageID) return;
+				pendingAssistant.delete(sessionID);
+
+				try {
+					const result = await fetch(
+						`http://127.0.0.1:19432/session/${sessionID}/message/${messageID}`,
+					);
+					if (!result.ok) return;
+
+					const data = (await result.json()) as {
+						parts: Array<{ type: string; text?: string }>;
+					};
+
+					const textContent = data.parts
+						.filter((p: { type: string }) => p.type === "text")
+						.map((p: { text?: string }) => p.text ?? "")
+						.join("\n")
+						.trim();
+
+					if (!textContent) return;
+
+					// Truncate very long responses
+					const maxLen = 4000;
+					const content =
+						textContent.length > maxLen
+							? `${textContent.slice(0, maxLen)}\n\n[truncated]`
+							: textContent;
+
+					await logMessage({
+						content,
+						speaker: "randal",
+						threadId: sessionID,
+						scope,
+						channel: "opencode",
+					});
+				} catch {
+					// Fire-and-forget
+				}
+			}
+		},
+	};
+};
