@@ -27,7 +27,7 @@
 
 import { execSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { MeilisearchStore, MessageManager } from "@randal/memory";
+import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
 import type { SummaryGeneratorOptions } from "@randal/memory";
 
 // ---------------------------------------------------------------------------
