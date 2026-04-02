@@ -89,12 +89,50 @@ async function logMessage(doc: {
 // Plugin export (required by OpenCode)
 // ---------------------------------------------------------------------------
 
-export const server: Plugin = async ({ directory }) => {
+export const server: Plugin = async ({ client, directory }) => {
 	console.error("[chat-history] Plugin loaded");
 	const scope = `project:${directory}`;
 
 	// Track the last assistant messageID per session so we can flush on idle
 	const pendingAssistant = new Map<string, string>();
+
+	// Helper: flush a pending assistant message to Meilisearch
+	async function flushAssistant(sessionID: string) {
+		const messageID = pendingAssistant.get(sessionID);
+		if (!messageID) return;
+		pendingAssistant.delete(sessionID);
+
+		try {
+			const data = await client.session.message({
+				path: { id: sessionID, messageID },
+				throwOnError: true,
+			});
+
+			const textContent = data.data.parts
+				.filter((p) => p.type === "text")
+				.map((p) => ("text" in p ? (p as { text: string }).text : ""))
+				.join("\n")
+				.trim();
+
+			if (!textContent) return;
+
+			const maxLen = 4000;
+			const content =
+				textContent.length > maxLen
+					? `${textContent.slice(0, maxLen)}\n\n[truncated]`
+					: textContent;
+
+			await logMessage({
+				content,
+				speaker: "randal",
+				threadId: sessionID,
+				scope,
+				channel: "opencode",
+			});
+		} catch (err) {
+			console.error("[chat-history] Failed to capture assistant message:", err);
+		}
+	}
 
 	return {
 		"chat.message": async (input, output) => {
@@ -122,46 +160,7 @@ export const server: Plugin = async ({ directory }) => {
 
 			// On session idle, capture the assistant's final text
 			if (event.type === "session.idle") {
-				const sessionID = event.properties.sessionID;
-				const messageID = pendingAssistant.get(sessionID);
-				if (!messageID) return;
-				pendingAssistant.delete(sessionID);
-
-				try {
-					const result = await fetch(
-						`http://127.0.0.1:19432/session/${sessionID}/message/${messageID}`,
-					);
-					if (!result.ok) return;
-
-					const data = (await result.json()) as {
-						parts: Array<{ type: string; text?: string }>;
-					};
-
-					const textContent = data.parts
-						.filter((p: { type: string }) => p.type === "text")
-						.map((p: { text?: string }) => p.text ?? "")
-						.join("\n")
-						.trim();
-
-					if (!textContent) return;
-
-					// Truncate very long responses
-					const maxLen = 4000;
-					const content =
-						textContent.length > maxLen
-							? `${textContent.slice(0, maxLen)}\n\n[truncated]`
-							: textContent;
-
-					await logMessage({
-						content,
-						speaker: "randal",
-						threadId: sessionID,
-						scope,
-						channel: "opencode",
-					});
-				} catch {
-					// Fire-and-forget
-				}
+				await flushAssistant(event.properties.sessionID);
 			}
 		},
 	};
