@@ -28,7 +28,7 @@
 import { execSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { MeilisearchStore, MessageManager } from "@randal/memory";
-import type { EmbedderConfig, SummaryGeneratorOptions } from "@randal/memory";
+import type { SummaryGeneratorOptions } from "@randal/memory";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -72,20 +72,19 @@ try {
 // Store construction
 // ---------------------------------------------------------------------------
 
-const embedder: EmbedderConfig | undefined = OPENROUTER_API_KEY
-	? {
-			type: "openrouter",
+const embeddingService = OPENROUTER_API_KEY
+	? new EmbeddingService({
 			apiKey: OPENROUTER_API_KEY,
 			model: EMBEDDING_MODEL,
 			url: EMBEDDING_URL,
-		}
+		})
 	: undefined;
 
 const store = new MeilisearchStore({
 	url: MEILI_URL,
 	apiKey: MEILI_MASTER_KEY,
 	index: MEILI_INDEX,
-	embedder,
+	embeddingService,
 	semanticRatio: Number.isFinite(SEMANTIC_RATIO) ? SEMANTIC_RATIO : 0.7,
 });
 
@@ -120,7 +119,7 @@ const summaryGeneratorConfig: SummaryGeneratorOptions | undefined = OPENROUTER_A
 const messageManager = new MessageManager({
 	// biome-ignore lint/suspicious/noExplicitAny: Partial RandalConfig — only memory.url, memory.apiKey, name are read
 	config: messageManagerConfig as any,
-	embedder,
+	embeddingService,
 	semanticRatio: Number.isFinite(SEMANTIC_RATIO) ? SEMANTIC_RATIO : 0.7,
 	summaryGenerator: summaryGeneratorConfig,
 });
