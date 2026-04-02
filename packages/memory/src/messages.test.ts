@@ -74,6 +74,19 @@ function getLastCall(calls: Record<string, unknown[][]>, method: string): unknow
 	return list[list.length - 1];
 }
 
+/**
+ * Creates a mock EmbeddingService that returns configurable results.
+ */
+function createMockEmbeddingService(
+	embedFn: (text: string) => Promise<number[] | null> = async () => [0.1, 0.2, 0.3],
+): EmbeddingService {
+	return {
+		dimensions: 3,
+		embed: mock(embedFn),
+		embedBatch: mock(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3])),
+	} as unknown as EmbeddingService;
+}
+
 // ---------------------------------------------------------------------------
 // Helper: create a MessageManager wired to a mock Meilisearch
 // ---------------------------------------------------------------------------
@@ -137,15 +150,9 @@ describe("MessageManager.init()", () => {
 		expect(attrs).toContain("threadId");
 	});
 
-	test("configures embedder when provided with API key", async () => {
-		const { manager, mockIdx } = createManagerWithMock({
-			embedder: {
-				type: "openrouter",
-				apiKey: "sk-or-test-key",
-				model: "openai/text-embedding-3-small",
-				url: "https://openrouter.ai/api/v1/embeddings",
-			},
-		});
+	test("calls updateEmbedders with userProvided config when embeddingService is provided", async () => {
+		const embeddingService = createMockEmbeddingService();
+		const { manager, mockIdx } = createManagerWithMock({ embeddingService });
 
 		await manager.init();
 
@@ -153,13 +160,13 @@ describe("MessageManager.init()", () => {
 
 		const embedderCall = getCall(mockIdx._calls, "updateEmbedders");
 		const embeddersArg = embedderCall[0] as Record<string, unknown>;
-		const chatEmbedder = embeddersArg["chat-embedder"] as Record<string, unknown>;
-		expect(chatEmbedder).toBeDefined();
-		expect(chatEmbedder.source).toBe("rest");
-		expect(chatEmbedder.apiKey).toBe("sk-or-test-key");
+		const embedderConfig = embeddersArg.default as Record<string, unknown>;
+		expect(embedderConfig).toBeDefined();
+		expect(embedderConfig.source).toBe("userProvided");
+		expect(embedderConfig.dimensions).toBe(3);
 	});
 
-	test("skips embedder when not provided (backward compat)", async () => {
+	test("skips updateEmbedders when no embeddingService (backward compat)", async () => {
 		const { manager, mockIdx } = createManagerWithMock();
 
 		await manager.init();
@@ -167,28 +174,9 @@ describe("MessageManager.init()", () => {
 		expect(mockIdx.updateEmbedders).toHaveBeenCalledTimes(0);
 	});
 
-	test("skips embedder when API key is empty", async () => {
-		const { manager, mockIdx } = createManagerWithMock({
-			embedder: {
-				type: "openrouter",
-				apiKey: "",
-				model: "openai/text-embedding-3-small",
-			},
-		});
-
-		await manager.init();
-
-		expect(mockIdx.updateEmbedders).toHaveBeenCalledTimes(0);
-	});
-
 	test("falls back gracefully when updateEmbedders throws", async () => {
-		const { manager, mockIdx } = createManagerWithMock({
-			embedder: {
-				type: "openrouter",
-				apiKey: "sk-or-test-key",
-				model: "openai/text-embedding-3-small",
-			},
-		});
+		const embeddingService = createMockEmbeddingService();
+		const { manager, mockIdx } = createManagerWithMock({ embeddingService });
 
 		mockIdx.updateEmbedders.mockImplementation(async () => {
 			throw new Error("Embedder configuration failed");
@@ -206,17 +194,14 @@ describe("MessageManager.init()", () => {
 // ---------------------------------------------------------------------------
 
 describe("MessageManager.search()", () => {
-	test("uses hybrid mode when semantic is available", async () => {
+	test("uses hybrid mode with query vector when embeddingService returns a vector", async () => {
+		const embeddingService = createMockEmbeddingService(async () => [0.1, 0.2, 0.3]);
 		const { manager, mockIdx } = createManagerWithMock({
-			embedder: {
-				type: "openrouter",
-				apiKey: "sk-or-test-key",
-				model: "openai/text-embedding-3-small",
-			},
+			embeddingService,
 			semanticRatio: 0.8,
 		});
 
-		await manager.init(); // Enables semantic
+		await manager.init();
 
 		mockIdx._setSearchResults({ hits: [] });
 		await manager.search("authentication flow", 10);
@@ -229,15 +214,18 @@ describe("MessageManager.search()", () => {
 
 		const hybrid = searchOpts.hybrid as Record<string, unknown>;
 		expect(hybrid).toBeDefined();
-		expect(hybrid.embedder).toBe("chat-embedder");
+		expect(hybrid.embedder).toBe("default");
 		expect(hybrid.semanticRatio).toBe(0.8);
+
+		// Should include the query vector
+		expect(searchOpts.vector).toEqual([0.1, 0.2, 0.3]);
 
 		// Hybrid search should NOT have sort
 		expect(searchOpts.sort).toBeUndefined();
 	});
 
-	test("falls back to keyword+sort when semantic unavailable", async () => {
-		const { manager, mockIdx } = createManagerWithMock(); // No embedder
+	test("falls back to keyword+sort when no embeddingService", async () => {
+		const { manager, mockIdx } = createManagerWithMock(); // No embeddingService
 
 		await manager.init();
 
@@ -250,18 +238,9 @@ describe("MessageManager.search()", () => {
 		expect(searchOpts.sort).toEqual(["timestamp:desc"]);
 	});
 
-	test("falls back to keyword when embedder init failed", async () => {
-		const { manager, mockIdx } = createManagerWithMock({
-			embedder: {
-				type: "openrouter",
-				apiKey: "sk-or-test-key",
-				model: "openai/text-embedding-3-small",
-			},
-		});
-
-		mockIdx.updateEmbedders.mockImplementation(async () => {
-			throw new Error("Embedder unavailable");
-		});
+	test("falls back to keyword when query embedding returns null", async () => {
+		const embeddingService = createMockEmbeddingService(async () => null);
+		const { manager, mockIdx } = createManagerWithMock({ embeddingService });
 
 		await manager.init();
 
@@ -380,6 +359,44 @@ describe("MessageManager.add()", () => {
 		const docs = addCall[0] as Record<string, unknown>[];
 		expect(docs).toHaveLength(1);
 		expect(docs[0].content).toBe("Store this");
+	});
+
+	test("attaches _vectors when embeddingService returns a vector", async () => {
+		const embeddingService = createMockEmbeddingService(async () => [0.1, 0.2, 0.3]);
+		const { manager, mockIdx } = createManagerWithMock({ embeddingService });
+		await manager.init();
+
+		await manager.add(makeMessage({ content: "Message with embedding" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		const vectors = docs[0]._vectors as Record<string, { value: number[] }>;
+		expect(vectors).toBeDefined();
+		expect(vectors.default).toBeDefined();
+		expect(vectors.default.value).toEqual([0.1, 0.2, 0.3]);
+	});
+
+	test("stores without _vectors when embeddingService returns null", async () => {
+		const embeddingService = createMockEmbeddingService(async () => null);
+		const { manager, mockIdx } = createManagerWithMock({ embeddingService });
+		await manager.init();
+
+		await manager.add(makeMessage({ content: "Message without embedding" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0]._vectors).toBeUndefined();
+	});
+
+	test("stores without _vectors when no embeddingService", async () => {
+		const { manager, mockIdx } = createManagerWithMock(); // No embeddingService
+		await manager.init();
+
+		await manager.add(makeMessage({ content: "Keyword-only message" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0]._vectors).toBeUndefined();
 	});
 
 	test("increments thread counter and triggers summary at threshold", async () => {

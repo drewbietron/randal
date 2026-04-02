@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageDoc, RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
+import type { EmbeddingService } from "./embedding.js";
 import type { EmbedderConfig } from "./stores/meilisearch.js";
 import { ChatSummaryGenerator } from "./summaries.js";
 import type { SummaryGeneratorOptions } from "./summaries.js";
@@ -10,8 +11,10 @@ export interface MessageManagerOptions {
 	config: RandalConfig;
 	/** Override the Meilisearch index name. Defaults to `messages-{config.name}`. */
 	indexName?: string;
-	/** Embedder config for semantic search. If omitted, keyword-only search is used. */
+	/** @deprecated Use `embeddingService` instead. Kept for backward compatibility. */
 	embedder?: EmbedderConfig;
+	/** Application-managed embedding service. If provided, vectors are generated externally and attached to docs. */
+	embeddingService?: EmbeddingService;
 	/** Semantic ratio for hybrid search (0 = keyword only, 1 = semantic only). Default: 0.7 */
 	semanticRatio?: number;
 	/** Number of messages per thread before auto-generating a summary. Default: 20. */
@@ -27,7 +30,7 @@ export interface MessageSearchOptions {
 	type?: "message" | "summary";
 }
 
-const EMBEDDER_NAME = "chat-embedder";
+const EMBEDDER_NAME = "default";
 const DEFAULT_SEMANTIC_RATIO = 0.7;
 
 const DEFAULT_SUMMARY_THRESHOLD = 20;
@@ -35,9 +38,8 @@ const DEFAULT_SUMMARY_THRESHOLD = 20;
 export class MessageManager {
 	private client: MeiliSearch;
 	private indexName: string;
-	private embedderConfig?: EmbedderConfig;
+	private embeddingService?: EmbeddingService;
 	private semanticRatio: number;
-	private semanticAvailable = false;
 	private summaryThreshold: number;
 	private summaryGenerator: ChatSummaryGenerator | null;
 	/** Tracks messages added per thread since last summary (in-memory, resets on restart). */
@@ -50,7 +52,7 @@ export class MessageManager {
 			apiKey: options.config.memory.apiKey,
 		});
 		this.indexName = options.indexName ?? `messages-${options.config.name}`;
-		this.embedderConfig = options.embedder;
+		this.embeddingService = options.embeddingService;
 		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
 		this.summaryThreshold = options.summaryThreshold ?? DEFAULT_SUMMARY_THRESHOLD;
 		this.summaryGenerator = options.summaryGenerator
@@ -100,35 +102,24 @@ export class MessageManager {
 			throw err;
 		}
 
-		// Configure semantic embedder (non-fatal — falls back to keyword search)
-		if (this.embedderConfig?.apiKey) {
+		// Register a userProvided embedder so Meilisearch accepts _vectors and supports hybrid search.
+		// This is non-fatal — if it fails, we still store messages (keyword-only).
+		if (this.embeddingService) {
 			try {
 				const index = this.client.index(this.indexName);
 				await index.updateEmbedders({
 					[EMBEDDER_NAME]: {
-						source: "rest",
-						url: this.embedderConfig.url || "https://openrouter.ai/api/v1/embeddings",
-						apiKey: this.embedderConfig.apiKey,
-						request: {
-							model: this.embedderConfig.model,
-							input: ["{{text}}", "{{..}}"],
-						},
-						response: {
-							data: [{ embedding: "{{embedding}}" }, "{{..}}"],
-						},
-						documentTemplate: "A chat message: {{doc.content}}",
+						source: "userProvided",
+						dimensions: this.embeddingService.dimensions,
 					},
 				});
-				this.semanticAvailable = true;
-				this.logger.info("Chat semantic search enabled", {
+				this.logger.info("userProvided embedder registered for chat manual vectors", {
 					embedder: EMBEDDER_NAME,
-					model: this.embedderConfig.model,
-					semanticRatio: this.semanticRatio,
+					dimensions: this.embeddingService.dimensions,
 				});
 			} catch (err) {
-				this.semanticAvailable = false;
 				this.logger.warn(
-					"Failed to configure chat embedder — falling back to keyword-only search",
+					"Failed to register userProvided embedder for chat — hybrid search may not work",
 					{
 						error: err instanceof Error ? err.message : String(err),
 					},
@@ -140,7 +131,21 @@ export class MessageManager {
 	/** Add a message to the history. Waits for Meilisearch to finish indexing. */
 	async add(doc: Omit<MessageDoc, "id">): Promise<string> {
 		const id = randomUUID();
-		const fullDoc: MessageDoc = { ...doc, id };
+
+		// Try to generate an embedding for the message content
+		let vectors: Record<string, { value: number[] }> | undefined;
+		if (this.embeddingService) {
+			const embedding = await this.embeddingService.embed(doc.content);
+			if (embedding) {
+				vectors = { [EMBEDDER_NAME]: { value: embedding } };
+			}
+		}
+
+		const fullDoc = {
+			...doc,
+			id,
+			...(vectors ? { _vectors: vectors } : {}),
+		};
 
 		try {
 			const index = this.client.index(this.indexName);
@@ -152,6 +157,7 @@ export class MessageManager {
 				threadId: doc.threadId,
 				speaker: doc.speaker,
 				channel: doc.channel,
+				hasVector: !!vectors,
 			});
 		} catch (err) {
 			this.logger.error("Failed to save message", {
@@ -193,18 +199,26 @@ export class MessageManager {
 			const index = this.client.index(this.indexName);
 			const filters = this.buildFilters(options);
 
-			if (this.semanticAvailable) {
-				// Hybrid search: Meilisearch uses its own relevance ranking,
-				// sort is not compatible with hybrid search
-				const results = await index.search(query, {
-					limit,
-					hybrid: {
-						embedder: EMBEDDER_NAME,
-						semanticRatio: this.semanticRatio,
-					},
-					...(filters ? { filter: filters } : {}),
-				});
-				return results.hits as unknown as MessageDoc[];
+			// Try hybrid search: embed the query, then use vector + keyword
+			if (this.embeddingService) {
+				const queryVector = await this.embeddingService.embed(query);
+
+				if (queryVector) {
+					// Hybrid search with application-provided query vector
+					const results = await index.search(query, {
+						limit,
+						vector: queryVector,
+						hybrid: {
+							embedder: EMBEDDER_NAME,
+							semanticRatio: this.semanticRatio,
+						},
+						...(filters ? { filter: filters } : {}),
+					});
+					return results.hits as unknown as MessageDoc[];
+				}
+
+				// Query embedding failed — fall through to keyword-only
+				this.logger.warn("Chat query embedding failed, falling back to keyword-only search");
 			}
 
 			// Keyword-only fallback with timestamp sort

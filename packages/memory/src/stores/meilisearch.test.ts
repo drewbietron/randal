@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { EmbeddingService } from "../embedding.js";
 import { MeilisearchStore } from "./meilisearch.js";
-import type { EmbedderConfig } from "./meilisearch.js";
 
 // ---------------------------------------------------------------------------
 // Mock Meilisearch index
@@ -79,13 +79,27 @@ function getLastCall(calls: Record<string, unknown[][]>, method: string): unknow
 }
 
 /**
+ * Creates a mock EmbeddingService that returns configurable results.
+ * The `embed` function can be overridden per-test.
+ */
+function createMockEmbeddingService(
+	embedFn: (text: string) => Promise<number[] | null> = async () => [0.1, 0.2, 0.3],
+): EmbeddingService {
+	return {
+		dimensions: 3,
+		embed: mock(embedFn),
+		embedBatch: mock(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3])),
+	} as unknown as EmbeddingService;
+}
+
+/**
  * Creates a MeilisearchStore that uses our mock index instead of connecting
  * to a real Meilisearch instance. Achieves this by replacing the internal
  * client's `index()` method after construction.
  */
 function createStoreWithMock(
 	options: {
-		embedder?: EmbedderConfig;
+		embeddingService?: EmbeddingService;
 		semanticRatio?: number;
 	} = {},
 ) {
@@ -93,7 +107,7 @@ function createStoreWithMock(
 		url: "http://localhost:7700",
 		apiKey: "test-key",
 		index: "test-index",
-		embedder: options.embedder,
+		embeddingService: options.embeddingService,
 		semanticRatio: options.semanticRatio,
 	});
 
@@ -128,15 +142,9 @@ describe("MeilisearchStore.init()", () => {
 		expect(attrs).toContain("scope");
 	});
 
-	test("calls updateEmbedders with correct REST config when embedder is provided", async () => {
-		const embedder: EmbedderConfig = {
-			type: "openrouter",
-			apiKey: "sk-or-test-key",
-			model: "openai/text-embedding-3-small",
-			url: "https://openrouter.ai/api/v1/embeddings",
-		};
-
-		const { store, mockIdx } = createStoreWithMock({ embedder });
+	test("calls updateEmbedders with userProvided config when embeddingService is provided", async () => {
+		const embeddingService = createMockEmbeddingService();
+		const { store, mockIdx } = createStoreWithMock({ embeddingService });
 
 		await store.init();
 
@@ -146,18 +154,14 @@ describe("MeilisearchStore.init()", () => {
 		const embeddersArg = embedderCall[0] as Record<string, unknown>;
 		expect(embeddersArg).toBeDefined();
 
-		// Should have a "memory-embedder" key
-		const embedderConfig = embeddersArg["memory-embedder"] as Record<string, unknown>;
+		// Should have a "default" key with userProvided source
+		const embedderConfig = embeddersArg.default as Record<string, unknown>;
 		expect(embedderConfig).toBeDefined();
-		expect(embedderConfig.source).toBe("rest");
-		expect(embedderConfig.url).toBe("https://openrouter.ai/api/v1/embeddings");
-		expect(embedderConfig.apiKey).toBe("sk-or-test-key");
-
-		const request = embedderConfig.request as Record<string, unknown>;
-		expect(request.model).toBe("openai/text-embedding-3-small");
+		expect(embedderConfig.source).toBe("userProvided");
+		expect(embedderConfig.dimensions).toBe(3);
 	});
 
-	test("skips updateEmbedders when no embedder config", async () => {
+	test("skips updateEmbedders when no embeddingService", async () => {
 		const { store, mockIdx } = createStoreWithMock();
 
 		await store.init();
@@ -165,28 +169,9 @@ describe("MeilisearchStore.init()", () => {
 		expect(mockIdx.updateEmbedders).toHaveBeenCalledTimes(0);
 	});
 
-	test("skips updateEmbedders when embedder has no API key", async () => {
-		const embedder: EmbedderConfig = {
-			type: "openrouter",
-			apiKey: "",
-			model: "openai/text-embedding-3-small",
-		};
-
-		const { store, mockIdx } = createStoreWithMock({ embedder });
-
-		await store.init();
-
-		expect(mockIdx.updateEmbedders).toHaveBeenCalledTimes(0);
-	});
-
 	test("falls back gracefully when updateEmbedders throws", async () => {
-		const embedder: EmbedderConfig = {
-			type: "openrouter",
-			apiKey: "sk-or-test-key",
-			model: "openai/text-embedding-3-small",
-		};
-
-		const { store, mockIdx } = createStoreWithMock({ embedder });
+		const embeddingService = createMockEmbeddingService();
+		const { store, mockIdx } = createStoreWithMock({ embeddingService });
 
 		// Make updateEmbedders fail
 		mockIdx.updateEmbedders.mockImplementation(async () => {
@@ -205,16 +190,11 @@ describe("MeilisearchStore.init()", () => {
 // ---------------------------------------------------------------------------
 
 describe("MeilisearchStore.search()", () => {
-	test("passes hybrid option when semantic is available", async () => {
-		const embedder: EmbedderConfig = {
-			type: "openrouter",
-			apiKey: "sk-or-test-key",
-			model: "openai/text-embedding-3-small",
-		};
+	test("passes hybrid option with query vector when embeddingService returns a vector", async () => {
+		const embeddingService = createMockEmbeddingService(async () => [0.1, 0.2, 0.3]);
+		const { store, mockIdx } = createStoreWithMock({ embeddingService, semanticRatio: 0.8 });
 
-		const { store, mockIdx } = createStoreWithMock({ embedder, semanticRatio: 0.8 });
-
-		await store.init(); // Enables semantic
+		await store.init();
 
 		mockIdx._setSearchResults({ hits: [] });
 		await store.search("test query", 10);
@@ -227,15 +207,18 @@ describe("MeilisearchStore.search()", () => {
 
 		const hybrid = searchOpts.hybrid as Record<string, unknown>;
 		expect(hybrid).toBeDefined();
-		expect(hybrid.embedder).toBe("memory-embedder");
+		expect(hybrid.embedder).toBe("default");
 		expect(hybrid.semanticRatio).toBe(0.8);
+
+		// Should include the query vector
+		expect(searchOpts.vector).toEqual([0.1, 0.2, 0.3]);
 
 		// Hybrid search should NOT have sort
 		expect(searchOpts.sort).toBeUndefined();
 	});
 
-	test("falls back to keyword-only with sort when semantic unavailable", async () => {
-		const { store, mockIdx } = createStoreWithMock(); // No embedder
+	test("falls back to keyword-only with sort when no embeddingService", async () => {
+		const { store, mockIdx } = createStoreWithMock(); // No embeddingService
 
 		await store.init();
 
@@ -249,19 +232,9 @@ describe("MeilisearchStore.search()", () => {
 		expect(searchOpts.sort).toEqual(["timestamp:desc"]);
 	});
 
-	test("falls back to keyword-only when embedder init failed", async () => {
-		const embedder: EmbedderConfig = {
-			type: "openrouter",
-			apiKey: "sk-or-test-key",
-			model: "openai/text-embedding-3-small",
-		};
-
-		const { store, mockIdx } = createStoreWithMock({ embedder });
-
-		// Make embedder config fail
-		mockIdx.updateEmbedders.mockImplementation(async () => {
-			throw new Error("Embedder unavailable");
-		});
+	test("falls back to keyword-only when query embedding returns null", async () => {
+		const embeddingService = createMockEmbeddingService(async () => null);
+		const { store, mockIdx } = createStoreWithMock({ embeddingService });
 
 		await store.init();
 
@@ -482,6 +455,77 @@ describe("MeilisearchStore.index()", () => {
 		expect(typeof docs[0].id).toBe("string");
 		// UUID format: 8-4-4-4-12 hex characters
 		expect(docs[0].id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+	});
+
+	test("attaches _vectors when embeddingService returns a vector", async () => {
+		const embeddingService = createMockEmbeddingService(async () => [0.1, 0.2, 0.3]);
+		const { store, mockIdx } = createStoreWithMock({ embeddingService });
+
+		await store.init();
+
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index({
+			type: "learning",
+			file: "",
+			content: "Memory with embedding",
+			contentHash: "hash-vec-1",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		const vectors = docs[0]._vectors as Record<string, { value: number[] }>;
+		expect(vectors).toBeDefined();
+		expect(vectors.default).toBeDefined();
+		expect(vectors.default.value).toEqual([0.1, 0.2, 0.3]);
+	});
+
+	test("stores without _vectors when embeddingService returns null", async () => {
+		const embeddingService = createMockEmbeddingService(async () => null);
+		const { store, mockIdx } = createStoreWithMock({ embeddingService });
+
+		await store.init();
+
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index({
+			type: "learning",
+			file: "",
+			content: "Memory without embedding",
+			contentHash: "hash-novec-1",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0]._vectors).toBeUndefined();
+	});
+
+	test("stores without _vectors when no embeddingService", async () => {
+		const { store, mockIdx } = createStoreWithMock(); // No embeddingService
+
+		await store.init();
+
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index({
+			type: "learning",
+			file: "",
+			content: "Keyword-only memory",
+			contentHash: "hash-kw-1",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0]._vectors).toBeUndefined();
 	});
 });
 
