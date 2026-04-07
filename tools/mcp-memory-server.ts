@@ -11,6 +11,12 @@
  *   - chat_thread    — retrieve a specific conversation thread by ID
  *   - chat_recent    — list recent conversation threads
  *   - chat_log       — persist a message to chat history
+ *   - struggle_check  — detect stuck loops, no progress, high token burn
+ *   - context_check   — read injected context from context.md
+ *   - reliability_scores — query pass rates across dimensions (analytics)
+ *   - recommendations — get actionable improvement suggestions (analytics)
+ *   - get_feedback    — get empirical guidance for a task domain (analytics)
+ *   - annotate        — submit quality annotation for a completed task (analytics)
  *
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
@@ -24,15 +30,27 @@
  *   SEMANTIC_RATIO       — hybrid search ratio 0-1 (default: 0.7, higher = more semantic)
  *   SUMMARY_MODEL        — LLM model for chat summaries (default: anthropic/claude-haiku-3)
  *   RANDAL_SKIP_MEILISEARCH — skip Docker auto-start when "true" (default: unset)
+ *   ANALYTICS_ENABLED    — enable analytics tools (default: "true")
+ *   RANDAL_INSTANCE_NAME — instance name for annotation index (default: "randal")
  */
 
 import { execSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import {
+	MeilisearchAnnotationStore,
+	computeReliabilityScores,
+	computeTrends,
+	generateFeedback,
+	generateRecommendations,
+	getPrimaryDomain,
+} from "@randal/analytics";
+import type { Annotation, AnnotationVerdict } from "@randal/core";
 import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
 import type { SummaryGeneratorOptions } from "@randal/memory";
 import { checkStruggle } from "@randal/runner";
+import { MeiliSearch } from "meilisearch";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -135,6 +153,22 @@ let messagesAvailable = false;
 let messagesInitError: string | null = null;
 
 // ---------------------------------------------------------------------------
+// Analytics store construction
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_ENABLED = process.env.ANALYTICS_ENABLED !== "false";
+const INSTANCE_NAME = process.env.RANDAL_INSTANCE_NAME || "randal";
+
+const meiliClient = new MeiliSearch({ host: MEILI_URL, apiKey: MEILI_MASTER_KEY || undefined });
+const annotationStore = new MeilisearchAnnotationStore(meiliClient, INSTANCE_NAME);
+
+/** Whether the annotation store initialized successfully. */
+let analyticsAvailable = false;
+
+/** Last init failure reason for diagnostics (null = no error). */
+let analyticsInitError: string | null = null;
+
+// ---------------------------------------------------------------------------
 // Init retry with exponential backoff & lazy re-init helpers
 // ---------------------------------------------------------------------------
 
@@ -211,6 +245,25 @@ async function retryInit(): Promise<void> {
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
 	}
+	if (ANALYTICS_ENABLED) {
+		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+			try {
+				await annotationStore.init();
+				analyticsAvailable = true;
+				analyticsInitError = null;
+				log("info", `AnnotationStore initialized (attempt ${attempt})`);
+				break;
+			} catch (err) {
+				analyticsInitError = classifyInitError(err);
+				const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
+				log(
+					"warn",
+					`AnnotationStore init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${analyticsInitError}. Retry in ${delay}ms`,
+				);
+				if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
+			}
+		}
+	}
 }
 
 /** Lazy re-init: attempt store.init() if not yet available. Returns true if available. */
@@ -243,6 +296,22 @@ async function ensureMessages(): Promise<boolean> {
 	}
 }
 
+/** Lazy re-init: attempt annotationStore.init() if not yet available. Returns true if available. */
+async function ensureAnalytics(): Promise<boolean> {
+	if (!ANALYTICS_ENABLED) return false;
+	if (analyticsAvailable) return true;
+	try {
+		await annotationStore.init();
+		analyticsAvailable = true;
+		analyticsInitError = null;
+		log("info", "AnnotationStore lazy re-init succeeded");
+		return true;
+	} catch (err) {
+		analyticsInitError = classifyInitError(err);
+		return false;
+	}
+}
+
 /** Get a diagnostic error string for store unavailability. */
 function getStoreError(): string {
 	return storeInitError ?? "Meilisearch is not available (unknown reason)";
@@ -251,6 +320,12 @@ function getStoreError(): string {
 /** Get a diagnostic error string for messages unavailability. */
 function getMessagesError(): string {
 	return messagesInitError ?? "Chat history is not available (unknown reason)";
+}
+
+/** Get a diagnostic error string for analytics unavailability. */
+function getAnalyticsError(): string {
+	if (!ANALYTICS_ENABLED) return "Analytics not enabled (set ANALYTICS_ENABLED=true)";
+	return analyticsInitError ?? "Annotation store is not available (unknown reason)";
 }
 
 /** Standard hint for Meilisearch connectivity issues. */
@@ -604,6 +679,113 @@ const TOOL_DEFINITIONS = [
 				},
 			},
 			required: [],
+		},
+	},
+	// --- Analytics tools ---
+	{
+		name: "reliability_scores",
+		description:
+			"Query the brain's own pass rates across dimensions (overall, agent, model, domain, complexity). Returns scores + 7-day/30-day trends. Use this to understand your reliability before starting work.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				dimension: {
+					type: "string",
+					description:
+						'Optional dimension filter: "overall", "agent", "model", "domain", or "complexity". Returns all dimensions if omitted.',
+				},
+				agingHalfLife: {
+					type: "number",
+					description:
+						"Half-life for annotation aging in days (default: 30). Recent annotations weigh more.",
+				},
+			},
+			required: [],
+		},
+	},
+	{
+		name: "recommendations",
+		description:
+			'Ask "what should I improve?" Returns actionable recommendations: model switches, knowledge gaps, instance splitting, trend alerts.',
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "get_feedback",
+		description:
+			"Get empirical guidance text for a given task domain based on past annotation patterns. Returns a markdown block suitable for injection into build context.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				domain: {
+					type: "string",
+					description:
+						'Task domain to get feedback for (e.g., "frontend", "backend", "database", "infra", "docs", "testing").',
+				},
+			},
+			required: ["domain"],
+		},
+	},
+	{
+		name: "annotate",
+		description:
+			"Submit a quality annotation for a completed task. Used to track agent reliability and feed the self-learning analytics loop.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				jobId: {
+					type: "string",
+					description: "Job ID or plan slug to annotate",
+				},
+				verdict: {
+					type: "string",
+					description: 'Annotation verdict: "pass", "fail", or "partial"',
+				},
+				feedback: {
+					type: "string",
+					description: "Optional feedback text describing what went well or wrong",
+				},
+				categories: {
+					type: "array",
+					description: "Optional category tags for the annotation",
+				},
+				agent: {
+					type: "string",
+					description: 'Agent name (default: "opencode")',
+				},
+				model: {
+					type: "string",
+					description: 'Model used (default: "unknown")',
+				},
+				prompt: {
+					type: "string",
+					description: "Original task prompt (used for domain auto-detection)",
+				},
+				domain: {
+					type: "string",
+					description: "Task domain. Auto-detected from prompt if omitted.",
+				},
+				iterationCount: {
+					type: "number",
+					description: "Number of iterations/attempts (default: 1)",
+				},
+				tokenCost: {
+					type: "number",
+					description: "Estimated token cost (default: 0)",
+				},
+				duration: {
+					type: "number",
+					description: "Wall time in seconds (default: 0)",
+				},
+				filesChanged: {
+					type: "array",
+					description: "List of files changed during the task",
+				},
+			},
+			required: ["jobId", "verdict"],
 		},
 	},
 ];
@@ -967,6 +1149,168 @@ async function handleContextCheck(params: Record<string, unknown>): Promise<unkn
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Analytics tool handlers
+// ---------------------------------------------------------------------------
+
+/** Shared helper: fetch annotations and compute scores to avoid redundant work. */
+async function getAnnotationsAndScores(agingHalfLife?: number) {
+	const annotations = await annotationStore.list();
+	const { scores, insufficientData } = computeReliabilityScores(annotations, {
+		agingHalfLife,
+	});
+	return { annotations, scores, insufficientData };
+}
+
+async function handleReliabilityScores(params: Record<string, unknown>): Promise<unknown> {
+	if (!ANALYTICS_ENABLED) {
+		return {
+			message: "Analytics not enabled",
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+		};
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return {
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+			message: error,
+			error,
+			hint: MEILI_HINT,
+		};
+	}
+
+	try {
+		const dimension = params.dimension as string | undefined;
+		const agingHalfLife =
+			typeof params.agingHalfLife === "number" ? params.agingHalfLife : undefined;
+
+		const { annotations, scores, insufficientData } = await getAnnotationsAndScores(agingHalfLife);
+		const trends = computeTrends(annotations);
+
+		const filteredScores = dimension ? scores.filter((s) => s.dimension === dimension) : scores;
+
+		return {
+			scores: filteredScores,
+			trends,
+			insufficientData,
+			totalAnnotations: annotations.length,
+		};
+	} catch (err) {
+		log("error", `reliability_scores failed: ${err instanceof Error ? err.message : String(err)}`);
+		return {
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+			message: "Failed to compute scores",
+		};
+	}
+}
+
+async function handleRecommendations(_params: Record<string, unknown>): Promise<unknown> {
+	if (!ANALYTICS_ENABLED) {
+		return { message: "Analytics not enabled", recommendations: [] };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { recommendations: [], message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const { annotations, scores } = await getAnnotationsAndScores();
+		const recommendations = generateRecommendations(scores, annotations);
+
+		return { recommendations };
+	} catch (err) {
+		log("error", `recommendations failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { recommendations: [], message: "Failed to generate recommendations" };
+	}
+}
+
+async function handleGetFeedback(params: Record<string, unknown>): Promise<unknown> {
+	const domain = params.domain as string;
+	if (!domain) {
+		throw new ToolError("Missing required parameter: domain");
+	}
+
+	if (!ANALYTICS_ENABLED) {
+		return { message: "Analytics not enabled", feedback: "", domain };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { feedback: "", domain, message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const { annotations, scores } = await getAnnotationsAndScores();
+		const feedback = generateFeedback(scores, annotations, domain);
+
+		return { feedback, domain };
+	} catch (err) {
+		log("error", `get_feedback failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { feedback: "", domain, message: "Failed to generate feedback" };
+	}
+}
+
+async function handleAnnotate(params: Record<string, unknown>): Promise<unknown> {
+	const jobId = params.jobId as string;
+	const verdict = params.verdict as string;
+
+	if (!jobId) {
+		throw new ToolError("Missing required parameter: jobId");
+	}
+	if (!verdict || !["pass", "fail", "partial"].includes(verdict)) {
+		throw new ToolError(
+			'Missing or invalid parameter: verdict (must be "pass", "fail", or "partial")',
+		);
+	}
+
+	if (!ANALYTICS_ENABLED) {
+		return { success: false, message: "Analytics not enabled" };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { success: false, message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const prompt = (params.prompt as string) || "";
+		const domain = (params.domain as string) || (prompt ? getPrimaryDomain(prompt) : "general");
+
+		const annotation: Annotation = {
+			id: randomUUID(),
+			jobId,
+			verdict: verdict as AnnotationVerdict,
+			feedback: (params.feedback as string) || undefined,
+			categories: (params.categories as string[]) || undefined,
+			agent: (params.agent as string) || "opencode",
+			model: (params.model as string) || "unknown",
+			domain,
+			iterationCount: typeof params.iterationCount === "number" ? params.iterationCount : 1,
+			tokenCost: typeof params.tokenCost === "number" ? params.tokenCost : 0,
+			duration: typeof params.duration === "number" ? params.duration : 0,
+			filesChanged: (params.filesChanged as string[]) || [],
+			prompt,
+			timestamp: new Date().toISOString(),
+		};
+
+		await annotationStore.save(annotation);
+
+		return {
+			success: true,
+			annotationId: annotation.id,
+			domain,
+			message: "Annotation saved successfully",
+		};
+	} catch (err) {
+		log("error", `annotate failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { success: false, message: "Failed to save annotation" };
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -978,6 +1322,10 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	chat_log: handleChatLog,
 	struggle_check: handleStruggleCheck,
 	context_check: handleContextCheck,
+	reliability_scores: handleReliabilityScores,
+	recommendations: handleRecommendations,
+	get_feedback: handleGetFeedback,
+	annotate: handleAnnotate,
 };
 
 // ---------------------------------------------------------------------------
