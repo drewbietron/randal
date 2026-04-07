@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseConfig } from "@randal/core";
+import { type RunnerEvent, parseConfig } from "@randal/core";
 import { Runner } from "@randal/runner";
 import { createHttpApp } from "./channels/http.js";
 import { EventBus } from "./events.js";
@@ -265,5 +265,156 @@ describe("Posse HTTP API", () => {
 			const res = await app.request(ep);
 			expect(res.status).toBe(401);
 		}
+	});
+});
+
+// ---- Internal Events API tests ----
+
+describe("Internal Events API", () => {
+	test("POST /_internal/events emits brain event to EventBus", async () => {
+		const { app, eventBus } = makeTestApp();
+		const events: RunnerEvent[] = [];
+		eventBus.subscribe((e) => events.push(e));
+
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "test-job",
+				message: "Build complete",
+			}),
+		});
+
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.emitted).toBe(true);
+		expect(data.type).toBe("brain.notification");
+
+		expect(events).toHaveLength(1);
+		expect(events[0].type).toBe("brain.notification");
+		expect(events[0].jobId).toBe("test-job");
+		expect(events[0].data.message).toBe("Build complete");
+	});
+
+	test("POST /_internal/events requires type, jobId, message", async () => {
+		const { app } = makeTestApp();
+
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ type: "notification" }),
+		});
+
+		expect(res.status).toBe(400);
+	});
+
+	test("POST /_internal/events rejects invalid type", async () => {
+		const { app } = makeTestApp();
+
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "invalid",
+				jobId: "test-job",
+				message: "hello",
+			}),
+		});
+
+		expect(res.status).toBe(400);
+	});
+
+	test("POST /_internal/events rate limits repeated calls", async () => {
+		const { app } = makeTestApp();
+
+		// First call succeeds
+		const res1 = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "rate-test",
+				message: "first",
+			}),
+		});
+		expect(res1.status).toBe(200);
+
+		// Second call within 10s is rate limited
+		const res2 = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "rate-test",
+				message: "second",
+			}),
+		});
+		expect(res2.status).toBe(429);
+		const data = await res2.json();
+		expect(data.retryAfterSeconds).toBeGreaterThan(0);
+	});
+
+	test("POST /_internal/events allows different types for same job", async () => {
+		const { app } = makeTestApp();
+
+		const res1 = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "multi-type",
+				message: "notif",
+			}),
+		});
+		expect(res1.status).toBe(200);
+
+		// Different type for same job should succeed
+		const res2 = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "alert",
+				jobId: "multi-type",
+				message: "alert",
+			}),
+		});
+		expect(res2.status).toBe(200);
+	});
+
+	test("POST /_internal/events does not require auth token", async () => {
+		const { app } = makeTestApp();
+
+		// No Authorization header — should still work (internal endpoint)
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "no-auth",
+				message: "no auth needed",
+			}),
+		});
+		expect(res.status).toBe(200);
+	});
+
+	test("POST /_internal/events includes severity in emitted event", async () => {
+		const { app, eventBus } = makeTestApp();
+		const events: RunnerEvent[] = [];
+		eventBus.subscribe((e) => events.push(e));
+
+		await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "alert",
+				jobId: "sev-test",
+				message: "critical issue",
+				severity: "critical",
+			}),
+		});
+
+		expect(events).toHaveLength(1);
+		expect(events[0].data.severity).toBe("critical");
 	});
 });
