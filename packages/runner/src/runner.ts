@@ -625,7 +625,253 @@ export class Runner {
 		}
 	}
 
+	/**
+	 * Brain-managed session: spawn a single long-lived OpenCode session.
+	 * The brain (randal.md + skills) manages the full plan→build lifecycle
+	 * internally. The Runner just watches stdout for structured tags,
+	 * manages the job envelope, and emits events.
+	 */
+	private async runBrainSession(job: Job): Promise<Job> {
+		job.status = "running";
+		job.startedAt = new Date().toISOString();
+		const loopStart = Date.now();
+
+		this.emit("job.started", job);
+
+		const adapter = getAdapter(job.agent);
+		const { env, tempHome, auditLog } = await buildProcessEnv(this.config, this.configBasePath);
+
+		if (auditLog.length > 0) {
+			this.logger.info("Service credentials resolved", {
+				services: auditLog.map((e) => `${e.service} (${e.type})`),
+			});
+		}
+
+		try {
+			const entry = this.activeJobs.get(job.id);
+			if (!entry || entry.aborted) {
+				job.status = "stopped";
+				return job;
+			}
+
+			// Check for injected context (channel input written before job start)
+			const injectedContext = readAndClearContext(job.workdir);
+			if (injectedContext) {
+				this.emit("job.context_injected", job, { contextText: injectedContext });
+			}
+
+			// Build minimal prompt — brain has its own persona/rules/knowledge.
+			// Only channel context is injected (if any).
+			const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
+				injectedContext: injectedContext ?? undefined,
+				brainManaged: true,
+			});
+
+			const prompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${job.prompt}` : job.prompt;
+
+			const args = adapter.buildCommand({
+				prompt,
+				model: job.model,
+				systemPrompt: undefined,
+				workdir: job.workdir,
+				agentName: (this.config.runner as Record<string, unknown>).agentName as
+					| string
+					| undefined,
+			});
+
+			// Add adapter-specific env overrides
+			const adapterEnv = adapter.envOverrides?.({
+				prompt,
+				model: job.model,
+				workdir: job.workdir,
+			});
+
+			const finalEnv = {
+				...env,
+				...adapterEnv,
+				RANDAL_JOB_ID: job.id,
+				RANDAL_BRAIN_SESSION: "true",
+			};
+
+			const token = generateToken();
+			const { shell } = wrapCommand(token, adapter.binary, args);
+
+			const proc = Bun.spawn(["bash", "-c", shell], {
+				cwd: job.workdir,
+				env: finalEnv,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+
+			// Store proc reference for stop/cancel
+			if (entry) {
+				entry.proc = proc;
+			}
+
+			// Build streaming callback for real-time tag detection
+			const onStreamEvent: StreamEventCallback = (streamEvt) => {
+				if (streamEvt.type === "progress" && streamEvt.progress) {
+					this.emit("iteration.output", job, {
+						iteration: 1,
+						outputLine: streamEvt.progress,
+					});
+				} else if (streamEvt.type === "plan_updated" && streamEvt.plan) {
+					this.emit("job.plan_updated", job, {
+						plan: streamEvt.plan as RunnerEvent["data"]["plan"],
+						iteration: 1,
+					});
+				} else if (streamEvt.type === "tool_use") {
+					this.emit("iteration.tool_use", job, {
+						toolName: streamEvt.toolName,
+						toolArgs: streamEvt.toolArgs,
+						iteration: 1,
+					});
+				}
+			};
+
+			// Start reading stdout (streaming with real-time event detection) and stderr (batch)
+			const stdoutPromise = readStreamLines(proc.stdout, {
+				onLine: buildStreamLineHandler(onStreamEvent),
+				onToolUse: (event) =>
+					onStreamEvent({ type: "tool_use", toolName: event.tool, toolArgs: event.args }),
+				parseToolUse: adapter.parseToolUse,
+				maxEventsPerSecond: 0,
+			});
+			const stderrPromise = readStream(proc.stderr);
+
+			// Wait for process exit with session timeout
+			const sessionTimeoutSecs =
+				(this.config.runner as Record<string, unknown>).sessionTimeout as number ?? 3600;
+			const timeoutMs = sessionTimeoutSecs * 1000;
+			let timedOut = false;
+
+			const exitCode = await Promise.race([
+				proc.exited,
+				new Promise<number>((resolve) =>
+					setTimeout(() => {
+						timedOut = true;
+						try {
+							proc.kill("SIGKILL");
+						} catch {
+							// Process already exited
+						}
+						resolve(124);
+					}, timeoutMs),
+				),
+			]);
+
+			if (timedOut) {
+				this.logger.warn("Brain session timed out", {
+					jobId: job.id,
+					timeoutSecs: sessionTimeoutSecs,
+				});
+			}
+
+			// Collect output with a short timeout for stream cleanup
+			const [stdoutResult, stderr] = await Promise.race([
+				Promise.all([stdoutPromise, stderrPromise]),
+				new Promise<[StreamingResult, string]>((resolve) =>
+					setTimeout(() => resolve([{ output: "", toolUses: [], lineCount: 0 }, ""]), 1000),
+				),
+			]);
+			const stdout = stdoutResult.output;
+
+			const duration = Math.round((Date.now() - loopStart) / 1000);
+
+			// Parse sentinel markers for clean agent output
+			const parsed = parseOutput(stdout, token);
+			const agentOutput = parsed?.output ?? stdout;
+			const sentinelExitCode = parsed?.exitCode ?? exitCode;
+
+			// Parse token usage
+			const tokens = adapter.parseUsage?.(agentOutput) ?? { input: 0, output: 0 };
+			job.cost.totalTokens.input += tokens.input;
+			job.cost.totalTokens.output += tokens.output;
+			job.cost.wallTime = duration;
+
+			// Clear proc reference
+			if (entry) {
+				entry.proc = undefined;
+			}
+
+			// Check if job was stopped during execution
+			if (entry.aborted) {
+				job.status = "stopped";
+				job.completedAt = new Date().toISOString();
+				job.duration = duration;
+				return job;
+			}
+
+			// Check for fatal errors
+			const fatalCheck = detectFatalError(agentOutput, stderr);
+			if (fatalCheck.isFatal) {
+				job.status = "failed";
+				job.error = `Fatal: ${fatalCheck.error}`;
+				job.exitCode = sentinelExitCode;
+				job.completedAt = new Date().toISOString();
+				job.duration = duration;
+				this.emit("job.failed", job, { error: job.error });
+				return job;
+			}
+
+			// Check for completion promise
+			const promiseFound = findCompletionPromise(
+				agentOutput,
+				this.config.runner.completionPromise,
+			);
+
+			if (promiseFound) {
+				job.status = "complete";
+				job.exitCode = sentinelExitCode;
+				job.completedAt = new Date().toISOString();
+				job.duration = duration;
+				this.emit("job.complete", job, { duration, output: agentOutput });
+				return job;
+			}
+
+			// Edge case: empty output with exit code 0 = failure (likely TUI mode or binary not found)
+			if (!agentOutput.trim() && sentinelExitCode === 0) {
+				job.status = "failed";
+				job.error = "Brain session produced no output (possible misconfiguration)";
+				job.exitCode = sentinelExitCode;
+				job.completedAt = new Date().toISOString();
+				job.duration = duration;
+				this.emit("job.failed", job, { error: job.error });
+				return job;
+			}
+
+			// Clean exit (code 0) without promise = brain decided it was done
+			if (sentinelExitCode === 0) {
+				job.status = "complete";
+				job.exitCode = 0;
+				job.completedAt = new Date().toISOString();
+				job.duration = duration;
+				this.emit("job.complete", job, { duration, output: agentOutput });
+				return job;
+			}
+
+			// Non-zero exit without promise = failure
+			job.status = "failed";
+			job.error = timedOut
+				? `Brain session timed out after ${sessionTimeoutSecs}s`
+				: `Brain session exited with code ${sentinelExitCode}`;
+			job.exitCode = sentinelExitCode;
+			job.completedAt = new Date().toISOString();
+			job.duration = duration;
+			this.emit("job.failed", job, { error: job.error });
+			return job;
+		} finally {
+			cleanupTempHome(tempHome);
+		}
+	}
+
 	private async runLoop(job: Job): Promise<Job> {
+		// Dispatch to brain-managed session when brainManaged=true
+		const brainManaged = this.config.runner.brainManaged === true;
+		if (brainManaged) {
+			return this.runBrainSession(job);
+		}
+
 		const isResume = job.iterations.current > 0;
 		if (!isResume) {
 			job.status = "running";
