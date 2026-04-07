@@ -329,8 +329,15 @@ async function tryStartMeilisearch(): Promise<void> {
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		if (msg.includes("No such container")) {
-			log("warn", "Container randal-meili does not exist — skipping auto-start. Run scripts/meili-start.sh to create it.");
-		} else if (msg.includes("ENOENT") || msg.includes("not found") || msg.includes("command not found")) {
+			log(
+				"warn",
+				"Container randal-meili does not exist — skipping auto-start. Run scripts/meili-start.sh to create it.",
+			);
+		} else if (
+			msg.includes("ENOENT") ||
+			msg.includes("not found") ||
+			msg.includes("command not found")
+		) {
 			log("warn", "Docker not available — skipping Meilisearch auto-start");
 		} else {
 			log("warn", `docker start failed: ${msg} — skipping auto-start`);
@@ -355,7 +362,10 @@ async function tryStartMeilisearch(): Promise<void> {
 		}
 	}
 
-	log("warn", "Meilisearch did not become healthy within 10s after docker start — retryInit will handle backoff");
+	log(
+		"warn",
+		"Meilisearch did not become healthy within 10s after docker start — retryInit will handle backoff",
+	);
 }
 
 // ---------------------------------------------------------------------------
