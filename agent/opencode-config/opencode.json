@@ -32,6 +32,15 @@
 			"type": "local",
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/image-gen/mcp-server.ts"],
 			"enabled": true
+		},
+		"scheduler": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-scheduler-server.ts"],
+			"environment": {
+				"RANDAL_GATEWAY_URL": "http://localhost:7600",
+				"RANDAL_GATEWAY_TOKEN": "{env:RANDAL_GATEWAY_TOKEN}"
+			},
+			"enabled": true
 		}
 	},
 	"tools": {
