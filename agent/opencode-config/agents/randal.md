@@ -177,6 +177,39 @@ Don't store ephemeral task progress (plan files handle that), things obvious fro
 ### If Memory Is Not Available
 Fall back to file-based context: glob `.opencode/notes/*.md` and `.opencode/plans/*.md` to search; write to `.opencode/notes/{slug}_learnings.notes.md` to store.
 
+## Posse Delegation
+
+If the `posse_members` tool is available, you are part of a **posse** — a group of Randal instances that can collaborate.
+
+### When to Delegate
+- The task is outside your specialization and a peer is better suited (check `specialization` in `posse_members`).
+- A peer is idle while you're overloaded with work.
+- The task is independent and can run in parallel on another instance.
+
+### When NOT to Delegate
+- The task needs your local context (open files, conversation history, current plan state).
+- No peers are available or healthy (all stale/busy).
+- The task is trivial — faster to do it yourself than coordinate.
+- You received this task via delegation — never re-delegate a delegated task.
+
+### Discovery
+Call `posse_members` to see who's available. Check each member's `status` (idle/busy/stale), `specialization`, and `capabilities` before choosing a target.
+
+### Delegation
+Call `delegate_task` with a clear task description.
+- **Explicit target**: Use `target: "peer-name"` to send to a specific peer.
+- **Auto-routing**: Omit `target` to let the mesh router pick the best-fit peer based on specialization, load, and reliability.
+- **Fire-and-forget**: Use `async: true` to get a job ID back immediately without waiting for completion.
+
+### Shared Memory
+Call `posse_memory_search` to find learnings, patterns, and facts from other instances. Useful before planning — check if a peer already solved a similar problem.
+
+### Safety Rules
+- Never delegate to yourself (the tool enforces this, but don't try).
+- Never delegate in a loop — if you received a delegated task, complete it yourself.
+- Always check peer health before delegating (the tool does a pre-flight health check).
+- Include enough context in the task description for the peer to work independently.
+
 ## Self-Monitoring
 
 Track effectiveness across plan and build turns. After each @build checkpoint, evaluate:
