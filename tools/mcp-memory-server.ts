@@ -31,8 +31,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
-import { checkStruggle } from "@randal/runner";
 import type { SummaryGeneratorOptions } from "@randal/memory";
+import { checkStruggle } from "@randal/runner";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -574,8 +574,7 @@ const TOOL_DEFINITIONS = [
 				},
 				recent_errors: {
 					type: "number",
-					description:
-						"Number of consecutive errors or non-zero exit codes in recent attempts",
+					description: "Number of consecutive errors or non-zero exit codes in recent attempts",
 				},
 				identical_output_count: {
 					type: "number",
@@ -601,8 +600,7 @@ const TOOL_DEFINITIONS = [
 			properties: {
 				workdir: {
 					type: "string",
-					description:
-						"Working directory to check. Defaults to the current working directory.",
+					description: "Working directory to check. Defaults to the current working directory.",
 				},
 			},
 			required: [],

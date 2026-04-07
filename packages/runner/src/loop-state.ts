@@ -66,13 +66,9 @@ export function syncJobToLoopState(job: Job): void {
 		status: buildStatus,
 		phase: job.status === "running" ? "building" : undefined,
 		currentStep:
-			job.plan.length > 0
-				? job.plan.find((t) => t.status === "in_progress")?.task
-				: undefined,
+			job.plan.length > 0 ? job.plan.find((t) => t.status === "in_progress")?.task : undefined,
 		steps:
-			job.plan.length > 0
-				? job.plan.map((t) => ({ name: t.task, status: t.status }))
-				: undefined,
+			job.plan.length > 0 ? job.plan.map((t) => ({ name: t.task, status: t.status })) : undefined,
 		error: job.error ?? undefined,
 		startedAt: job.startedAt ?? undefined,
 		completedAt: job.completedAt ?? undefined,

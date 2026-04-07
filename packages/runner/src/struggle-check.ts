@@ -35,9 +35,7 @@ export function checkStruggle(input: StruggleCheckInput): StruggleCheckResult {
 
 	// No progress detection (mirrors detectStruggle from struggle.ts)
 	if (iterations_without_progress >= 3) {
-		indicators.push(
-			`No meaningful file changes for ${iterations_without_progress} iterations`,
-		);
+		indicators.push(`No meaningful file changes for ${iterations_without_progress} iterations`);
 		severity = "warning";
 	}
 	if (iterations_without_progress >= 5) {
@@ -55,9 +53,7 @@ export function checkStruggle(input: StruggleCheckInput): StruggleCheckResult {
 
 	// Identical output (stale loop)
 	if (identical_output_count >= 3) {
-		indicators.push(
-			`${identical_output_count} identical outputs — likely stuck in a loop`,
-		);
+		indicators.push(`${identical_output_count} identical outputs — likely stuck in a loop`);
 		severity = "critical";
 	}
 

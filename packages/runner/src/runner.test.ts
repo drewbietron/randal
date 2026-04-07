@@ -59,11 +59,9 @@ describe("Runner", () => {
 		const config = makeConfig(workdir);
 
 		const scriptPath = join(workdir, "fail.sh");
-		writeFileSync(
-			scriptPath,
-			'#!/bin/bash\necho "Something went wrong"\nexit 1\n',
-			{ mode: 0o755 },
-		);
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Something went wrong"\nexit 1\n', {
+			mode: 0o755,
+		});
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });
@@ -76,11 +74,9 @@ describe("Runner", () => {
 		const config = makeConfig(workdir);
 
 		const scriptPath = join(workdir, "clean.sh");
-		writeFileSync(
-			scriptPath,
-			'#!/bin/bash\necho "All done, nothing more to do"\n',
-			{ mode: 0o755 },
-		);
+		writeFileSync(scriptPath, '#!/bin/bash\necho "All done, nothing more to do"\n', {
+			mode: 0o755,
+		});
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });
@@ -186,11 +182,9 @@ credentials:
 		const config = makeConfig(workdir);
 
 		const scriptPath = join(workdir, "fatal.sh");
-		writeFileSync(
-			scriptPath,
-			'#!/bin/bash\necho "Error: API key is invalid"\nexit 1\n',
-			{ mode: 0o755 },
-		);
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Error: API key is invalid"\nexit 1\n', {
+			mode: 0o755,
+		});
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });
@@ -204,11 +198,7 @@ credentials:
 		const config = makeConfig(workdir);
 
 		const scriptPath = join(workdir, "brain.sh");
-		writeFileSync(
-			scriptPath,
-			'#!/bin/bash\necho "<promise>DONE</promise>"\n',
-			{ mode: 0o755 },
-		);
+		writeFileSync(scriptPath, '#!/bin/bash\necho "<promise>DONE</promise>"\n', { mode: 0o755 });
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });
@@ -231,11 +221,7 @@ credentials:
 		const config = makeConfig(workdir);
 
 		const scriptPath = join(workdir, "fail.sh");
-		writeFileSync(
-			scriptPath,
-			'#!/bin/bash\necho "Something broke"\nexit 1\n',
-			{ mode: 0o755 },
-		);
+		writeFileSync(scriptPath, '#!/bin/bash\necho "Something broke"\nexit 1\n', { mode: 0o755 });
 
 		const runner = new Runner({ config });
 		const job = await runner.execute({ prompt: scriptPath });

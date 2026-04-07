@@ -14,10 +14,10 @@ import { type RandalConfig, createLogger } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
+import { syncJobToLoopState } from "./loop-state.js";
 import { buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
-import { syncJobToLoopState } from "./loop-state.js";
 import { detectFatalError } from "./struggle.js";
 
 export type EventHandler = (event: RunnerEvent) => void;
@@ -481,9 +481,7 @@ export class Runner {
 				model: job.model,
 				systemPrompt: undefined,
 				workdir: job.workdir,
-				agentName: (this.config.runner as Record<string, unknown>).agentName as
-					| string
-					| undefined,
+				agentName: (this.config.runner as Record<string, unknown>).agentName as string | undefined,
 			});
 
 			// Add adapter-specific env overrides
@@ -548,7 +546,7 @@ export class Runner {
 
 			// Wait for process exit with session timeout
 			const sessionTimeoutSecs =
-				(this.config.runner as Record<string, unknown>).sessionTimeout as number ?? 3600;
+				((this.config.runner as Record<string, unknown>).sessionTimeout as number) ?? 3600;
 			const timeoutMs = sessionTimeoutSecs * 1000;
 			let timedOut = false;
 
@@ -624,10 +622,7 @@ export class Runner {
 			}
 
 			// Check for completion promise
-			const promiseFound = findCompletionPromise(
-				agentOutput,
-				this.config.runner.completionPromise,
-			);
+			const promiseFound = findCompletionPromise(agentOutput, this.config.runner.completionPromise);
 
 			if (promiseFound) {
 				job.status = "complete";

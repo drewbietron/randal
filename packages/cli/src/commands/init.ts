@@ -614,7 +614,7 @@ async function detectEnvironment(): Promise<EnvDetection> {
 
 // ── QuickStart Flow ─────────────────────────────────────────────────────
 
-async function quickStartFlow(env: EnvDetection): Promise<void> {
+async function quickStartFlow(_env: EnvDetection): Promise<void> {
 	log.info("⚡ QuickStart — smart defaults, minimal questions.\n");
 
 	const results = await group(
