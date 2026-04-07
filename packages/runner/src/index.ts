@@ -16,6 +16,9 @@ export {
 export { detectStruggle } from "./struggle.js";
 export type { StruggleConfig, StruggleResult } from "./struggle.js";
 
+export { checkStruggle } from "./struggle-check.js";
+export type { StruggleCheckInput, StruggleCheckResult } from "./struggle-check.js";
+
 export {
 	readAndClearContext,
 	writeContext,
