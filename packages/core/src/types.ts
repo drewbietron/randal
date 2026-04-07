@@ -226,6 +226,7 @@ export interface JobOrigin {
 	channel: string; // "http" | "discord" | "imessage"
 	replyTo: string; // Discord channelId, iMessage chatGuid, or "http"
 	from: string; // Discord userId, phone number, or "api"
+	triggerType?: "user" | "heartbeat" | "cron" | "hook";
 }
 
 // ---- Memory ----

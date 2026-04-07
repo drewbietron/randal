@@ -347,6 +347,19 @@ export class Runner {
 		const adapter = getAdapter(job.agent);
 		const { env, tempHome, auditLog } = await buildProcessEnv(this.config, this.configBasePath);
 
+		// Inject origin metadata so the brain knows its channel context
+		if (job.origin?.channel) env.RANDAL_CHANNEL = job.origin.channel;
+		if (job.origin?.from) env.RANDAL_FROM = job.origin.from;
+		if (job.origin?.replyTo) env.RANDAL_REPLY_TO = job.origin.replyTo;
+		if (job.origin?.triggerType) env.RANDAL_TRIGGER = job.origin.triggerType;
+
+		// Derive gateway URL for MCP tool callbacks (channel_send, channel_list)
+		const httpCh = this.config.gateway?.channels?.find((c) => c.type === "http");
+		if (httpCh?.type === "http") {
+			env.RANDAL_GATEWAY_URL = `http://localhost:${httpCh.port}`;
+			if (httpCh.auth) env.RANDAL_GATEWAY_AUTH = httpCh.auth;
+		}
+
 		if (auditLog.length > 0) {
 			this.logger.info("Service credentials resolved", {
 				services: auditLog.map((e) => `${e.service} (${e.type})`),
