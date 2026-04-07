@@ -459,6 +459,11 @@ export class CronScheduler {
 					prompt: resolvedPrompt,
 					model: config.model,
 					maxIterations: 5,
+					origin: {
+						channel: "scheduler",
+						replyTo: `cron:${name}`,
+						from: "system",
+					},
 				});
 			} catch (err) {
 				logger.warn("Cron isolated job failed", {

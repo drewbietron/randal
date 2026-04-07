@@ -355,6 +355,12 @@ export class Heartbeat {
 				prompt,
 				model: this.config.model,
 				maxIterations: 3, // Heartbeat jobs should be quick
+				origin: {
+					channel: "scheduler",
+					replyTo: "heartbeat",
+					from: "system",
+				},
+				metadata: { RANDAL_HEARTBEAT_TICK: String(this.state.tickCount) },
 			});
 		} catch (err) {
 			logger.warn("Heartbeat job failed", {
