@@ -350,9 +350,9 @@ describe("buildProtocolSection", () => {
 	});
 });
 
-// ── buildSystemPrompt — brainManaged ────────────────────────
+// ── buildSystemPrompt ────────────────────────────────────────
 
-describe("buildSystemPrompt — brainManaged", () => {
+describe("buildSystemPrompt", () => {
 	// Minimal config for testing (no file refs to resolve)
 	const minimalConfig = {
 		name: "test",
@@ -373,7 +373,6 @@ describe("buildSystemPrompt — brainManaged", () => {
 			iterationTimeout: 600,
 			maxDelegationDepth: 2,
 			maxDelegationsPerIteration: 3,
-			brainManaged: true,
 			sessionTimeout: 3600,
 			struggle: { noChangeThreshold: 3, maxRepeatedErrors: 3, action: "warn" as const },
 			mcpServer: { enabled: false, port: 7601, tools: [] },
@@ -457,46 +456,36 @@ describe("buildSystemPrompt — brainManaged", () => {
 		},
 	};
 
-	test("returns empty string when brainManaged with no channel context", async () => {
+	test("returns empty string with no channel context", async () => {
 		const result = await buildSystemPrompt(
 			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
 			"/tmp",
-			{ brainManaged: true },
 		);
 		expect(result).toBe("");
 	});
 
-	test("returns only channel context when brainManaged", async () => {
+	test("returns only channel context when injected", async () => {
 		const result = await buildSystemPrompt(
 			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
 			"/tmp",
 			{
-				brainManaged: true,
 				injectedContext: "Focus on the auth module",
 			},
 		);
 		expect(result).toBe("## Channel Context\nFocus on the auth module");
 	});
 
-	test("does not include persona, rules, or protocol when brainManaged", async () => {
+	test("does not include persona, rules, or protocol", async () => {
 		const result = await buildSystemPrompt(
 			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
 			"/tmp",
 			{
-				brainManaged: true,
-				memoryContext: ["Some memory"],
-				skillContext: ["Some skill"],
-				currentPlan: [{ task: "Test", status: "pending" }],
-				progressHistory: ["Did stuff"],
 				injectedContext: "Context here",
 			},
 		);
 		expect(result).not.toContain("You are a test agent");
 		expect(result).not.toContain("Never delete data");
 		expect(result).not.toContain("## Randal Execution Protocol");
-		expect(result).not.toContain("## Relevant Memory");
-		expect(result).not.toContain("## Available Tools");
-		expect(result).not.toContain("## Current Task Plan");
 		expect(result).toContain("## Channel Context");
 		expect(result).toContain("Context here");
 	});

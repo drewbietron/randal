@@ -147,26 +147,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		}
 	};
 
-	// Create runner with event forwarding to event bus
-	// When brainManaged=true (default), the brain handles memory and skills
-	// via MCP tools — skip harness injection to avoid redundant work.
-	const brainManaged = config.runner.brainManaged === true;
+	// Create runner with event forwarding to event bus.
+	// Brain session handles memory and skills internally via MCP tools.
 	const runner = new Runner({
 		config,
 		configBasePath,
 		onEvent,
-		memorySearch:
-			brainManaged
-				? undefined
-				: memoryManager
-					? (query: string) => memoryManager?.searchForContext(query)
-					: undefined,
-		skillSearch:
-			brainManaged
-				? undefined
-				: skillManager
-					? (query: string) => skillManager?.searchWithOutcomes(query)
-					: undefined,
 	});
 
 	// Create scheduler

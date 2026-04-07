@@ -22,7 +22,6 @@ name: integration-test
 runner:
   workdir: ${workdir}
   defaultAgent: mock
-  brainManaged: true
   completionPromise: DONE
   sessionTimeout: 30
 credentials:
@@ -94,7 +93,6 @@ name: no-callbacks-test
 runner:
   workdir: ${workdir}
   defaultAgent: mock
-  brainManaged: true
   completionPromise: DONE
 credentials:
   allow: []
@@ -120,7 +118,6 @@ name: context-test
 runner:
   workdir: ${workdir}
   defaultAgent: mock
-  brainManaged: true
   completionPromise: DONE
 credentials:
   allow: []
@@ -153,46 +150,6 @@ credentials:
 		expect(existsSync(join(workdir, "context.md"))).toBe(false);
 	});
 
-	test("backward compat: brainManaged=false still uses iteration loop", async () => {
-		const workdir = makeTmpDir();
-		const config = parseConfig(`
-name: legacy-test
-runner:
-  workdir: ${workdir}
-  defaultAgent: mock
-  defaultMaxIterations: 2
-  brainManaged: false
-  completionPromise: DONE
-credentials:
-  allow: []
-  inherit: [PATH, HOME, SHELL]
-`);
-
-		const events: RunnerEvent[] = [];
-
-		// Script that never produces promise — should hit max iterations
-		const scriptPath = join(workdir, "legacy.sh");
-		writeFileSync(scriptPath, '#!/bin/bash\necho "Modified src/main.ts"\n', {
-			mode: 0o755,
-		});
-
-		const runner = new Runner({
-			config,
-			onEvent: (e) => events.push(e),
-		});
-
-		const job = await runner.execute({ prompt: scriptPath });
-
-		// Legacy path: hits max iterations
-		expect(job.status).toBe("failed");
-		expect(job.error).toContain("Max iterations");
-		expect(job.iterations.current).toBe(2);
-
-		// Iteration events should exist (proof we used the loop, not brain session)
-		expect(events.filter((e) => e.type === "iteration.start").length).toBe(2);
-		expect(events.filter((e) => e.type === "iteration.end").length).toBe(2);
-	});
-
 	test("brain session sets RANDAL_BRAIN_SESSION env var", async () => {
 		const workdir = makeTmpDir();
 		const config = parseConfig(`
@@ -200,7 +157,6 @@ name: env-test
 runner:
   workdir: ${workdir}
   defaultAgent: mock
-  brainManaged: true
   completionPromise: DONE
 credentials:
   allow: []

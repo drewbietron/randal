@@ -262,7 +262,6 @@ export const configSchema = z.object({
 		maxDelegationDepth: z.number().default(2),
 		maxDelegationsPerIteration: z.number().default(3),
 		agentName: z.string().optional(),
-		brainManaged: z.boolean().default(true),
 		sessionTimeout: z.number().positive().default(3600),
 		struggle: z
 			.object({

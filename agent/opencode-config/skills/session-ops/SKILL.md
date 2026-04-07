@@ -7,7 +7,7 @@ description: loop-state.json schema, recovery dashboard format, abort behavior, 
 
 ## Dual Output Protocol
 
-When running inside the harness (`randal run` / `randal serve`), emit machine-readable tags alongside pretty UX output. The Runner parses these tags from stdout for event emission to channels and the dashboard. **This is the primary integration path between the brain and the Runner when brainManaged=true.**
+When running inside the harness (`randal run` / `randal serve`), emit machine-readable tags alongside pretty UX output. The Runner parses these tags from stdout for event emission to channels and the dashboard. **This is the primary integration path between the brain and the Runner.**
 
 Tags to emit:
 - After plan checkpoint: `<progress>Planning: Phase {phase}, Turn {n}. {details}</progress>`
