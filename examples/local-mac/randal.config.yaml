@@ -20,7 +20,7 @@ identity:
 
 # Runner: how the agent executes tasks
 runner:
-  defaultAgent: opencode         # or claude-code, codex
+  defaultAgent: opencode
   defaultModel: anthropic/claude-sonnet-4
   defaultMaxIterations: 20
   workdir: ~/dev

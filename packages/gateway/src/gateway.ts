@@ -147,17 +147,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		}
 	};
 
-	// Create runner with event forwarding to event bus
+	// Create runner with event forwarding to event bus.
+	// Brain session handles memory and skills internally via MCP tools.
 	const runner = new Runner({
 		config,
 		configBasePath,
 		onEvent,
-		memorySearch: memoryManager
-			? (query: string) => memoryManager?.searchForContext(query)
-			: undefined,
-		skillSearch: skillManager
-			? (query: string) => skillManager?.searchWithOutcomes(query)
-			: undefined,
 	});
 
 	// Create scheduler

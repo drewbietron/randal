@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { DelegationResult, JobPlanTask, PromptContext, RandalConfig } from "@randal/core";
-import { createLogger, resolvePromptArray, resolvePromptValue } from "@randal/core";
+import { createLogger, resolvePromptValue } from "@randal/core";
 
 const logger = createLogger({ context: { component: "prompt-assembly" } });
 
@@ -229,105 +229,25 @@ export function assemblePrompt(parts: PromptParts): string {
 }
 
 /**
- * Check if a string contains glob characters.
- */
-function isGlobPattern(value: string): boolean {
-	return value.includes("*") || value.includes("?") || value.includes("[");
-}
-
-/**
- * Build the full system prompt from a config and optional runtime context.
+ * Build the system prompt for a brain session.
  *
- * Constructs a PromptContext and resolves all prompt-bearing config fields
- * through the layered resolver (code module → file ref → inline passthrough).
+ * The brain owns its own identity, rules, knowledge, and skills.
+ * This function only injects channel context (if any).
  */
 export async function buildSystemPrompt(
-	config: RandalConfig,
-	basePath: string,
+	_config: RandalConfig,
+	_basePath: string,
 	options: {
-		memoryContext?: string[];
 		injectedContext?: string;
-		skillContext?: string[];
-		currentPlan?: JobPlanTask[];
-		progressHistory?: string[];
-		delegationResults?: DelegationResult[];
-		includeProtocol?: boolean;
-		brainManaged?: boolean;
 	} = {},
 ): Promise<string> {
-	// Construct PromptContext with auto-populated vars
-	const ctx: PromptContext = {
-		basePath,
-		vars: {
-			name: config.name,
-			version: config.version,
-			date: new Date().toISOString().split("T")[0],
-			...((config.identity as { vars?: Record<string, string> }).vars ?? {}),
-		},
-		configName: config.name,
-	};
-
-	// Resolve persona through the prompt resolver
-	let resolvedPersona = config.identity.persona;
-	if (resolvedPersona) {
-		resolvedPersona = await resolvePromptValue(resolvedPersona, ctx);
+	// Brain session is the only execution path. The brain owns its own
+	// identity, rules, knowledge, and skills. Runner only passes channel
+	// context (if any). The job prompt itself is prepended by
+	// runBrainSession separately.
+	const sections: string[] = [];
+	if (options.injectedContext) {
+		sections.push(`## Channel Context\n${options.injectedContext.trim()}`);
 	}
-
-	// Resolve systemPrompt through the prompt resolver
-	let resolvedSystemPrompt = config.identity.systemPrompt;
-	if (resolvedSystemPrompt) {
-		resolvedSystemPrompt = await resolvePromptValue(resolvedSystemPrompt, ctx);
-	}
-
-	// Resolve rules through the array resolver (handles inline + file + module)
-	const resolvedRules =
-		config.identity.rules.length > 0
-			? await resolvePromptArray(config.identity.rules, ctx, { mode: "rules" })
-			: [];
-
-	// Resolve knowledge: split into glob patterns vs file/module refs
-	const knowledgePatterns = config.identity.knowledge;
-	const globPatterns: string[] = [];
-	const resolvedKnowledgeEntries: string[] = [];
-
-	for (const pattern of knowledgePatterns) {
-		if (isGlobPattern(pattern)) {
-			globPatterns.push(pattern);
-		} else {
-			// Resolve file/module ref and wrap with header
-			try {
-				const content = await resolvePromptValue(pattern, ctx);
-				resolvedKnowledgeEntries.push(`--- ${pattern} ---\n${content}`);
-			} catch (err) {
-				logger.debug("Failed to resolve knowledge entry", {
-					pattern,
-					error: err instanceof Error ? err.message : String(err),
-				});
-			}
-		}
-	}
-
-	// Load glob-based knowledge files (existing behavior)
-	const globKnowledge =
-		globPatterns.length > 0 ? await loadKnowledgeFiles(globPatterns, basePath) : [];
-
-	const knowledge = [...globKnowledge, ...resolvedKnowledgeEntries];
-
-	// Load skill docs through the resolver (skip when brain handles its own skills)
-	const skills = options.brainManaged ? [] : await loadSkillDocs(config.tools, basePath, ctx);
-
-	return assemblePrompt({
-		persona: resolvedPersona,
-		systemPrompt: resolvedSystemPrompt,
-		rules: resolvedRules,
-		knowledge,
-		skills,
-		discoveredSkills: options.brainManaged ? [] : (options.skillContext ?? []),
-		memory: options.brainManaged ? [] : (options.memoryContext ?? []),
-		injectedContext: options.injectedContext, // always pass — external input from channels
-		currentPlan: options.brainManaged ? undefined : options.currentPlan,
-		progressHistory: options.brainManaged ? undefined : options.progressHistory,
-		delegationResults: options.brainManaged ? undefined : options.delegationResults,
-		includeProtocol: options.includeProtocol,
-	});
+	return sections.join("\n\n");
 }

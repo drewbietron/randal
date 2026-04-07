@@ -7,13 +7,22 @@ description: loop-state.json schema, recovery dashboard format, abort behavior, 
 
 ## Dual Output Protocol
 
-When running inside the harness (non-interactive), also emit machine-readable tags:
+When running inside the harness (`randal run` / `randal serve`), emit machine-readable tags alongside pretty UX output. The Runner parses these tags from stdout for event emission to channels and the dashboard. **This is the primary integration path between the brain and the Runner.**
+
+Tags to emit:
 - After plan checkpoint: `<progress>Planning: Phase {phase}, Turn {n}. {details}</progress>`
 - After plan update: `<plan-update>[{"task":"...","status":"..."},...]</plan-update>`
 - After build checkpoint: `<progress>Building: {done}/{total} steps. Step {next} next. Est ~{time}.</progress>`
-- On completion: `<promise>COMPLETE</promise>`
+- On completion: `<promise>DONE</promise>`
 
-Always emit BOTH the pretty UX box AND the tags. The TUI user sees the boxes, the harness parses the tags.
+Always emit BOTH the pretty UX box AND the tags. The TUI user sees the boxes; the Runner parses the tags.
+
+**How it works**: The Runner spawns `opencode run "<prompt>"` as a subprocess and reads stdout line-by-line. Tags that appear in the output are detected in real-time and converted to RunnerEvents (`iteration.output`, `job.plan_updated`, `job.complete`). These events flow to:
+- The SSE `/events` endpoint (for the web dashboard)
+- Channel adapters (Discord, iMessage, etc.)
+- Job persistence (YAML and loop-state.json)
+
+**Key**: Tags must appear on stdout, not in TUI rendering artifacts. OpenCode's `run` subcommand outputs to stdout by default.
 
 ## loop-state.json Schema
 

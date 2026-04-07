@@ -184,11 +184,36 @@ Track effectiveness across plan and build turns. After each @build checkpoint, e
 2. Is the same step failing repeatedly? (check Build Notes in plan)
 3. Are commits showing real progress, or thrashing?
 
-If you detect struggle:
+### Automated Struggle Detection
+
+If `struggle_check` tool is available (via MCP memory server), call it after each build iteration with your recent stats:
+```
+struggle_check({
+  iterations_without_progress: <number of recent builds with 0 steps completed>,
+  recent_errors: <consecutive build failures>,
+  identical_output_count: <times the same error repeated>,
+  token_burn_ratio: 1.0
+})
+```
+
+If `severity` is "warning" or "critical", follow the recommendation. Typical responses:
+- **warning**: Change approach — try different strategy, simplify, break into smaller pieces.
+- **critical**: STOP and ask the user for help. Don't silently loop.
+
+### Manual Checks (fallback if tool unavailable)
+If `struggle_check` is not available:
 - 2 consecutive @build turns with 0 steps completed → ask the user for help
 - Same step failing 2+ times → escalate: "Step N is stuck: {reason}. Options: skip, retry differently, or I need help."
 - @plan producing shallow steps → re-do discovery with more files
+
 Don't silently loop. Surface problems early.
+
+### Context Check
+
+If `context_check` tool is available, call it periodically during long-running builds to check for mid-session context injections from channels (e.g., user sends follow-up message via Discord while build is running). Call at natural breakpoints: between build steps, after plan phase changes.
+```
+context_check({ workdir: "." })
+```
 
 ## Capability Discovery
 

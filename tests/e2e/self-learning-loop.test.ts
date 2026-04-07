@@ -49,7 +49,7 @@ describe("self-learning loop E2E", () => {
 				id: `ann-${i}`,
 				jobId: `job-${i}`,
 				verdict: verdicts[i],
-				agent: i % 2 === 0 ? "opencode" : "claude-code",
+				agent: i % 2 === 0 ? "opencode" : "mock",
 				model: i % 3 === 0 ? "anthropic/claude-sonnet-4" : "anthropic/claude-haiku-3.5",
 				domain: i < 4 ? "frontend" : i < 7 ? "backend" : "testing",
 				iterationCount: i + 1,

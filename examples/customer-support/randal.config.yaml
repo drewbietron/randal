@@ -22,9 +22,9 @@ identity:
     - "ALWAYS escalate payment-related issues to a human"
     - "Be concise and helpful in responses"
 
-# Runner: claude-code with moderate iteration limit
+# Runner: opencode with moderate iteration limit
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: /workspace
 

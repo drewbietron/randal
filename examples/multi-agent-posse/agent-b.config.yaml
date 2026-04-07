@@ -6,9 +6,9 @@
 name: agent-beta
 posse: research-team
 
-# Runner: uses claude-code (different from Agent A)
+# Runner: uses opencode (different model from Agent A)
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: ~/dev/project-b
 

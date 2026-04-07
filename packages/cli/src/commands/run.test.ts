@@ -10,8 +10,8 @@ describe("run command", () => {
 
 describe("parseRunArgs", () => {
 	test("parses --agent flag correctly", () => {
-		const result = parseRunArgs(["fix the bug", "--agent", "claude-code"]);
-		expect(result.agent).toBe("claude-code");
+		const result = parseRunArgs(["fix the bug", "--agent", "opencode"]);
+		expect(result.agent).toBe("opencode");
 		expect(result.prompt).toBe("fix the bug");
 	});
 

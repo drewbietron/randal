@@ -24,19 +24,6 @@ interface ModelOption {
 	hint?: string;
 }
 
-const CLAUDE_CODE_MODELS: ModelOption[] = [
-	{ value: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", hint: "most capable" },
-	{ value: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", hint: "fast + capable" },
-	{ value: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5", hint: "fastest + cheapest" },
-];
-
-const CODEX_MODELS: ModelOption[] = [
-	{ value: "openai/o3", label: "o3", hint: "most capable reasoning" },
-	{ value: "openai/o4-mini", label: "o4-mini", hint: "fast reasoning" },
-	{ value: "openai/gpt-4.1", label: "GPT-4.1", hint: "balanced" },
-	{ value: "openai/gpt-4.1-mini", label: "GPT-4.1 Mini", hint: "fast + cheap" },
-];
-
 const OPENCODE_MODELS: ModelOption[] = [
 	{
 		value: "anthropic/claude-opus-4-6",
@@ -54,17 +41,8 @@ const OPENCODE_MODELS: ModelOption[] = [
 	{ value: "deepseek/deepseek-r1", label: "DeepSeek R1", hint: "DeepSeek — via OpenRouter" },
 ];
 
-function getModelsForAgent(agent: string): ModelOption[] {
-	switch (agent) {
-		case "claude-code":
-			return CLAUDE_CODE_MODELS;
-		case "codex":
-			return CODEX_MODELS;
-		case "opencode":
-			return OPENCODE_MODELS;
-		default:
-			return OPENCODE_MODELS;
-	}
+function getModelsForAgent(_agent: string): ModelOption[] {
+	return OPENCODE_MODELS;
 }
 
 function getDefaultModel(agent: string): string {
@@ -82,13 +60,13 @@ function handleCancel(value: unknown): void {
 }
 
 function detectAgentCLIs(): { name: string; found: boolean }[] {
-	const clis = ["opencode", "claude", "codex"];
+	const clis = ["opencode"];
 	return clis.map((name) => {
 		try {
 			const proc = Bun.spawnSync(["which", name]);
-			return { name: name === "claude" ? "claude-code" : name, found: proc.exitCode === 0 };
+			return { name, found: proc.exitCode === 0 };
 		} catch {
-			return { name: name === "claude" ? "claude-code" : name, found: false };
+			return { name, found: false };
 		}
 	});
 }
@@ -223,27 +201,6 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 	}
 
 	return { started: false };
-}
-
-async function ensureClaudeCode(): Promise<boolean> {
-	// Check if already installed
-	const check = Bun.spawnSync(["which", "claude"]);
-	if (check.exitCode === 0) return true;
-
-	// Try installing via npm (most reliable for global CLIs)
-	const npmCheck = Bun.spawnSync(["which", "npm"]);
-	if (npmCheck.exitCode === 0) {
-		const install = Bun.spawnSync(["npm", "install", "-g", "@anthropic-ai/claude-code"], {
-			timeout: 120_000,
-		});
-		return install.exitCode === 0;
-	}
-
-	// Fallback to bun
-	const install = Bun.spawnSync(["bun", "add", "-g", "@anthropic-ai/claude-code"], {
-		timeout: 120_000,
-	});
-	return install.exitCode === 0;
 }
 
 /**
@@ -657,22 +614,8 @@ async function detectEnvironment(): Promise<EnvDetection> {
 
 // ── QuickStart Flow ─────────────────────────────────────────────────────
 
-async function quickStartFlow(env: EnvDetection): Promise<void> {
+async function quickStartFlow(_env: EnvDetection): Promise<void> {
 	log.info("⚡ QuickStart — smart defaults, minimal questions.\n");
-
-	const foundClis = env.clis.filter((c) => c.found);
-	const agentOptions =
-		foundClis.length > 0
-			? foundClis.map((c) => ({
-					value: c.name,
-					label: c.name,
-					hint: "detected",
-				}))
-			: [
-					{ value: "opencode", label: "opencode" },
-					{ value: "claude-code", label: "claude-code" },
-					{ value: "codex", label: "codex" },
-				];
 
 	const results = await group(
 		{
@@ -693,12 +636,6 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 					placeholder: ".",
 					defaultValue: ".",
 				}),
-			agent: () =>
-				select({
-					message: "Which agent CLI should Randal use?",
-					options: agentOptions,
-					initialValue: agentOptions[0].value,
-				}),
 		},
 		{
 			onCancel: () => {
@@ -708,7 +645,7 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 		},
 	);
 
-	const agentName = results.agent as string;
+	const agentName = "opencode";
 	const modelOptions = getModelsForAgent(agentName);
 	const modelChoice = await select({
 		message: "Default model",
@@ -731,19 +668,8 @@ async function quickStartFlow(env: EnvDetection): Promise<void> {
 async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 	log.info("🔧 Advanced Setup — full control over every section.\n");
 
-	const foundClis = env.clis.filter((c) => c.found);
-	const agentOptions =
-		foundClis.length > 0
-			? foundClis.map((c) => ({
-					value: c.name,
-					label: c.name,
-					hint: "detected",
-				}))
-			: [
-					{ value: "opencode", label: "opencode" },
-					{ value: "claude-code", label: "claude-code" },
-					{ value: "codex", label: "codex" },
-				];
+	// Agent is always opencode
+	const agentName = "opencode";
 
 	// ── Identity ──
 
@@ -792,14 +718,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		"🎯 Runner",
 	);
 
-	const agentChoice = await select({
-		message: "Agent CLI",
-		options: agentOptions,
-		initialValue: agentOptions[0].value,
-	});
-	handleCancel(agentChoice);
-
-	const modelOptions = getModelsForAgent(agentChoice as string);
+	const modelOptions = getModelsForAgent(agentName);
 	const runner = await group(
 		{
 			model: () =>
@@ -832,77 +751,6 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 			},
 		},
 	);
-	(runner as Record<string, unknown>).agent = agentChoice;
-
-	// ── Claude Code Setup ──
-
-	let anthropicApiKey = "";
-	if (runner.agent === "claude-code") {
-		const claudeInstalled = env.clis.find((c) => c.name === "claude-code")?.found ?? false;
-
-		if (!claudeInstalled) {
-			note(
-				"Claude Code CLI is not installed. It's needed to run your agent.",
-				"Claude Code Not Found",
-			);
-
-			const installClaude = await confirm({
-				message: "Install Claude Code now?",
-				initialValue: true,
-			});
-			handleCancel(installClaude);
-
-			if (installClaude) {
-				const cs = spinner();
-				cs.start("Installing Claude Code (this may take a minute)...");
-				const ok = await ensureClaudeCode();
-				if (ok) {
-					cs.stop("Claude Code installed");
-				} else {
-					cs.stop("Installation failed");
-					log.warn("Install manually: npm i -g @anthropic-ai/claude-code");
-				}
-			}
-		}
-
-		note("Claude Code needs authentication to call the Anthropic API.", "Claude Code Auth");
-
-		const authMethod = await select({
-			message: "How would you like to authenticate?",
-			options: [
-				{ value: "api-key", label: "API Key", hint: "paste your Anthropic API key" },
-				{ value: "oauth", label: "Max Plan (OAuth)", hint: "opens browser to sign in" },
-				{ value: "skip", label: "Skip", hint: "configure later in .env" },
-			],
-			initialValue: "api-key",
-		});
-		handleCancel(authMethod);
-
-		if (authMethod === "api-key") {
-			const keyInput = await text({
-				message: "Anthropic API key",
-				placeholder: "sk-ant-...",
-				validate: (value) => {
-					if (!value.trim()) return "API key is required";
-				},
-			});
-			handleCancel(keyInput);
-			anthropicApiKey = (keyInput as string).trim();
-		} else if (authMethod === "oauth") {
-			note("Launching 'claude login' — follow the browser prompts to authenticate.", "OAuth");
-			const proc = Bun.spawnSync(["claude", "login"], {
-				stdin: "inherit",
-				stdout: "inherit",
-				stderr: "inherit",
-				timeout: 120_000,
-			});
-			if (proc.exitCode === 0) {
-				log.success("OAuth authentication complete");
-			} else {
-				log.warn("OAuth may not have completed. You can retry later with: claude login");
-			}
-		}
-	}
 
 	// ── GitHub Setup ──
 
@@ -1223,7 +1071,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 	await writeConfig({
 		name: identity.name as string,
 		workdir: runner.workdir as string,
-		agent: runner.agent as string,
+		agent: agentName,
 		model: runner.model as string,
 		persona: identity.persona as string,
 		useMeilisearch: true,
@@ -1240,7 +1088,6 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 		blueBubblesUrl,
 		blueBubblesPassword,
 		useTypeScriptIdentity: identity.useTypeScriptIdentity as boolean,
-		anthropicApiKey,
 	});
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	assemblePrompt,
 	buildProtocolSection,
+	buildSystemPrompt,
 	formatDelegationResults,
 	formatPlan,
 	formatProgressHistory,
@@ -346,5 +347,146 @@ describe("buildProtocolSection", () => {
 		expect(result).toContain("<progress>");
 		expect(result).toContain("<delegate>");
 		expect(result).toContain("<promise>DONE</promise>");
+	});
+});
+
+// ── buildSystemPrompt ────────────────────────────────────────
+
+describe("buildSystemPrompt", () => {
+	// Minimal config for testing (no file refs to resolve)
+	const minimalConfig = {
+		name: "test",
+		version: "0.1",
+		identity: {
+			persona: "You are a test agent",
+			systemPrompt: "Do things",
+			knowledge: [] as string[],
+			rules: ["Never delete data"],
+			vars: {},
+		},
+		runner: {
+			defaultAgent: "mock" as const,
+			defaultModel: "test-model",
+			defaultMaxIterations: 5,
+			workdir: "/tmp",
+			completionPromise: "DONE",
+			iterationTimeout: 600,
+			maxDelegationDepth: 2,
+			maxDelegationsPerIteration: 3,
+			sessionTimeout: 3600,
+			struggle: { noChangeThreshold: 3, maxRepeatedErrors: 3, action: "warn" as const },
+			mcpServer: { enabled: false, port: 7601, tools: [] },
+			compaction: { enabled: false, threshold: 0.8, model: "test", maxSummaryTokens: 2000 },
+		},
+		credentials: { envFile: "./.env", allow: [] as string[], inherit: [] as string[] },
+		services: {},
+		sandbox: {
+			enforcement: "none" as const,
+			pathFilter: { mode: "inherit" as const, allow: [] as string[], block: [] as string[] },
+			homeAccess: { ssh: true, gitconfig: true, docker: true, aws: true },
+		},
+		updates: {
+			autoCheck: false,
+			autoApply: false,
+			autoRestart: false,
+			channel: "main" as const,
+			interval: "6h" as string | null,
+			notify: true,
+		},
+		gateway: { channels: [] as unknown[] },
+		memory: {
+			store: "meilisearch" as const,
+			url: "http://localhost:7700",
+			apiKey: "",
+			embedder: { type: "builtin" as const },
+			semanticRatio: 0.7,
+			sharing: { readFrom: [] as string[] },
+			autoInject: { enabled: false, maxResults: 5 },
+		},
+		tools: [] as unknown[],
+		skills: {
+			dir: "./skills",
+			autoDiscover: true,
+			maxPerPrompt: 5,
+			sharing: { readFrom: [] as string[] },
+		},
+		heartbeat: {
+			enabled: false,
+			every: "30m",
+			prompt: "./HEARTBEAT.md",
+			activeHours: { timezone: "UTC" },
+			target: "none",
+		},
+		cron: { jobs: {} },
+		hooks: { enabled: false, path: "/hooks" },
+		tracking: { tokenPricing: {} },
+		voice: {
+			enabled: false,
+			livekit: { url: "", apiKey: "", apiSecret: "" },
+			twilio: { accountSid: "", authToken: "", phoneNumber: "" },
+			stt: { provider: "deepgram" as const, apiKey: "" },
+			tts: { provider: "elevenlabs" as const, apiKey: "" },
+			turnDetection: { mode: "auto" as const },
+			video: {
+				enabled: false,
+				visionModel: "gpt-4o",
+				publishScreen: false,
+				recordSessions: false,
+				recordPath: "./recordings",
+			},
+		},
+		mesh: {
+			enabled: false,
+			routingWeights: { specialization: 0.4, reliability: 0.3, load: 0.2, modelMatch: 0.1 },
+		},
+		analytics: {
+			enabled: false,
+			autoAnnotationPrompt: true,
+			feedbackInjection: true,
+			recommendationFrequency: "on-demand" as const,
+			domainKeywords: {},
+			agingHalfLife: 30,
+		},
+		browser: {
+			enabled: false,
+			headless: true,
+			sandbox: false,
+			viewport: { width: 1280, height: 720 },
+			timeout: 30000,
+		},
+	};
+
+	test("returns empty string with no channel context", async () => {
+		const result = await buildSystemPrompt(
+			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
+			"/tmp",
+		);
+		expect(result).toBe("");
+	});
+
+	test("returns only channel context when injected", async () => {
+		const result = await buildSystemPrompt(
+			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
+			"/tmp",
+			{
+				injectedContext: "Focus on the auth module",
+			},
+		);
+		expect(result).toBe("## Channel Context\nFocus on the auth module");
+	});
+
+	test("does not include persona, rules, or protocol", async () => {
+		const result = await buildSystemPrompt(
+			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
+			"/tmp",
+			{
+				injectedContext: "Context here",
+			},
+		);
+		expect(result).not.toContain("You are a test agent");
+		expect(result).not.toContain("Never delete data");
+		expect(result).not.toContain("## Randal Execution Protocol");
+		expect(result).toContain("## Channel Context");
+		expect(result).toContain("Context here");
 	});
 });

@@ -252,7 +252,7 @@ export const configSchema = z.object({
 		.default({}),
 
 	runner: z.object({
-		defaultAgent: z.enum(["opencode", "claude-code", "codex", "mock"]).default("opencode"),
+		defaultAgent: z.enum(["opencode", "mock"]).default("opencode"),
 		defaultModel: z.string().default("anthropic/claude-sonnet-4"),
 		defaultMaxIterations: z.number().default(20),
 		workdir: z.string(),
@@ -262,7 +262,7 @@ export const configSchema = z.object({
 		maxDelegationDepth: z.number().default(2),
 		maxDelegationsPerIteration: z.number().default(3),
 		agentName: z.string().optional(),
-		brainManaged: z.boolean().default(false),
+		sessionTimeout: z.number().positive().default(3600),
 		struggle: z
 			.object({
 				noChangeThreshold: z.number().default(3),

@@ -20,9 +20,9 @@ export interface AgentAdapter {
 	/** Additional env overrides for this agent */
 	envOverrides?(opts: RunOpts): Record<string, string>;
 
-	/** Deploy skills to the agent CLI's native skill directory */
+	/** Deploy skills to the agent CLI's native skill directory. */
 	deploySkills?(skills: SkillDeployment[], workdir: string): Promise<SkillCleanup>;
-	/** The directory where this agent CLI expects skills */
+	/** The directory where this agent CLI expects skills. */
 	skillDir?: string;
 
 	/** Whether this adapter supports the Randal execution protocol tags. Defaults to true. */
