@@ -1,4 +1,4 @@
-import type { RandalConfig } from "@randal/core";
+import type { MeshInstance, RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
 
 const logger = createLogger({ context: { component: "posse-registry" } });
@@ -26,6 +26,10 @@ export interface RegistryDoc {
 	version: string;
 	lastHeartbeat: string;
 	registeredAt: string;
+	/** HTTP endpoint URL for this agent's gateway (e.g. "http://localhost:3100"). */
+	endpoint?: string;
+	/** Agent's domain specialization (e.g. "frontend", "backend", "devops"). */
+	specialization?: string;
 }
 
 /** Stale threshold: agents with lastHeartbeat older than this are considered stale. */
@@ -49,6 +53,8 @@ export function buildRegistryDoc(
 		version: config.version,
 		lastHeartbeat: now,
 		registeredAt: now,
+		endpoint: config.mesh.endpoint,
+		specialization: config.mesh.specialization,
 	};
 }
 
@@ -185,4 +191,34 @@ export async function deregisterAgent(config: RandalConfig, client: RegistryClie
 			error: err instanceof Error ? err.message : String(err),
 		});
 	}
+}
+
+/**
+ * Convert a RegistryDoc to a MeshInstance for use with the mesh router.
+ * Fills defaults for fields that RegistryDoc does not track.
+ */
+export function registryDocToMeshInstance(doc: RegistryDoc): MeshInstance {
+	const statusMap: Record<RegistryDoc["status"], MeshInstance["status"]> = {
+		idle: "idle",
+		busy: "busy",
+		stale: "unhealthy",
+	};
+
+	return {
+		instanceId: doc.id,
+		name: doc.name,
+		posse: doc.posse || undefined,
+		capabilities: doc.capabilities,
+		specialization: doc.specialization,
+		status: statusMap[doc.status],
+		lastHeartbeat: doc.lastHeartbeat,
+		endpoint: doc.endpoint ?? "",
+		models: [],
+		activeJobs: 0,
+		completedJobs: 0,
+		health: {
+			uptime: 0,
+			missedPings: doc.status === "stale" ? 3 : 0,
+		},
+	};
 }
