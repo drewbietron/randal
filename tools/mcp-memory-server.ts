@@ -23,6 +23,7 @@
  *   EMBEDDING_URL        — embedding endpoint (default: https://openrouter.ai/api/v1/embeddings)
  *   SEMANTIC_RATIO       — hybrid search ratio 0-1 (default: 0.7, higher = more semantic)
  *   SUMMARY_MODEL        — LLM model for chat summaries (default: anthropic/claude-haiku-3)
+ *   RANDAL_SKIP_MEILISEARCH — skip Docker auto-start when "true" (default: unset)
  */
 
 import { execSync } from "node:child_process";
@@ -287,6 +288,74 @@ function startDumpScheduler(): void {
 			log("warn", `Dump request error: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}, MEILI_DUMP_INTERVAL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Meilisearch auto-start (Docker container)
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to auto-start the Meilisearch Docker container if it isn't running.
+ * Called before retryInit() to handle the common case of a stopped container.
+ * Never throws — logs warnings and returns on any failure.
+ */
+async function tryStartMeilisearch(): Promise<void> {
+	// 1. Check RANDAL_SKIP_MEILISEARCH env var
+	if (process.env.RANDAL_SKIP_MEILISEARCH === "true") {
+		log("info", "Meilisearch auto-start skipped (RANDAL_SKIP_MEILISEARCH=true)");
+		return;
+	}
+
+	// 2. Health check — if already healthy, return immediately
+	try {
+		const resp = await fetch(`${MEILI_URL}/health`, { signal: AbortSignal.timeout(3000) });
+		if (resp.ok) {
+			log("info", "Meilisearch already healthy — skipping auto-start");
+			return;
+		}
+	} catch {
+		// Not reachable — continue to auto-start attempt
+	}
+
+	// 3. Attempt docker start
+	log("info", "Meilisearch not reachable — attempting docker start randal-meili");
+	try {
+		execSync("docker start randal-meili", {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 10000,
+		});
+		log("info", "docker start randal-meili succeeded — waiting for healthy");
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (msg.includes("No such container")) {
+			log("warn", "Container randal-meili does not exist — skipping auto-start. Run scripts/meili-start.sh to create it.");
+		} else if (msg.includes("ENOENT") || msg.includes("not found") || msg.includes("command not found")) {
+			log("warn", "Docker not available — skipping Meilisearch auto-start");
+		} else {
+			log("warn", `docker start failed: ${msg} — skipping auto-start`);
+		}
+		return;
+	}
+
+	// 4. Poll health endpoint up to 10 times (1s apart)
+	for (let i = 1; i <= 10; i++) {
+		await Bun.sleep(1000);
+		try {
+			const resp = await fetch(`${MEILI_URL}/health`, { signal: AbortSignal.timeout(2000) });
+			if (resp.ok) {
+				log("info", `Meilisearch healthy after ${i}s`);
+				return;
+			}
+		} catch {
+			// Not yet ready — continue polling
+		}
+		if (i < 10) {
+			log("info", `Waiting for Meilisearch... (${i}/10)`);
+		}
+	}
+
+	log("warn", "Meilisearch did not become healthy within 10s after docker start — retryInit will handle backoff");
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,6 +1088,9 @@ async function processLine(line: string): Promise<void> {
 
 async function main(): Promise<void> {
 	log("info", `randal-memory MCP server starting (index: ${MEILI_INDEX}, scope: ${defaultScope})`);
+
+	// Attempt to auto-start Meilisearch Docker container if not running
+	await tryStartMeilisearch();
 
 	// Fire-and-forget: retry init in background so MCP server is immediately responsive
 	retryInit();
