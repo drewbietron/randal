@@ -20,9 +20,16 @@ export interface AgentAdapter {
 	/** Additional env overrides for this agent */
 	envOverrides?(opts: RunOpts): Record<string, string>;
 
-	/** Deploy skills to the agent CLI's native skill directory */
+	/**
+	 * Deploy skills to the agent CLI's native skill directory.
+	 * @deprecated When brainManaged=true (default), the brain loads skills on demand
+	 * via the skill() MCP tool. This method is only used in the legacy per-iteration loop.
+	 */
 	deploySkills?(skills: SkillDeployment[], workdir: string): Promise<SkillCleanup>;
-	/** The directory where this agent CLI expects skills */
+	/**
+	 * The directory where this agent CLI expects skills.
+	 * @deprecated See deploySkills — unused when brainManaged=true.
+	 */
 	skillDir?: string;
 
 	/** Whether this adapter supports the Randal execution protocol tags. Defaults to true. */

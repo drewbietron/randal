@@ -4,6 +4,17 @@ import type { SkillCleanup, SkillDeployment, ToolUseEvent } from "@randal/core";
 import { stringify as stringifyYaml } from "yaml";
 import type { AgentAdapter } from "./adapter.js";
 
+/**
+ * OpenCode agent adapter.
+ *
+ * In brainManaged=true mode (default), buildCommand() is called once per job.
+ * The brain (randal.md) manages the full plan→build lifecycle internally.
+ * deploySkills() and skillDir are unused — skills are loaded on demand by the
+ * brain via the skill() MCP tool.
+ *
+ * In brainManaged=false mode (legacy), buildCommand() is called per iteration
+ * and deploySkills() writes SKILL.md files to the workdir.
+ */
 export const opencode: AgentAdapter = {
 	binary: "opencode",
 	skillDir: ".opencode/skills",
