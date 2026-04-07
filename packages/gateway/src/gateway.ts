@@ -326,6 +326,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		}
 	}
 
+	// Mutable adapter registry — populated after channel start, accessed at request time
+	const channelAdapters: ChannelAdapter[] = [];
+
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
@@ -339,6 +342,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		analyticsEngine,
 		channelAdapters,
 		meshCoordinator,
+		channelAdapters,
 	});
 
 	// Mount hooks router if enabled
