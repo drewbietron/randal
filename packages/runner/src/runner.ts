@@ -199,7 +199,6 @@ function buildStreamLineHandler(callback: StreamEventCallback): (line: string) =
 	};
 }
 
-
 export class Runner {
 	private config: RandalConfig;
 	private configBasePath: string;
