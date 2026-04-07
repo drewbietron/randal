@@ -210,6 +210,43 @@ Call `posse_memory_search` to find learnings, patterns, and facts from other ins
 - Always check peer health before delegating (the tool does a pre-flight health check).
 - Include enough context in the task description for the peer to work independently.
 
+## Channel Awareness
+
+If `job_info`, `channel_list`, and `channel_send` tools are available, you are channel-aware — you know where a request came from and can send messages to connected channels.
+
+### On Startup (lazy — only when adapting behavior)
+Call `job_info` once at the start of a task to determine context:
+```
+job_info()
+-> { channel: "discord", from: "123456", replyTo: "789012", triggerType: "user", isInteractive: false }
+```
+
+### Adapt Behavior by Channel
+- **Discord** (`channel: "discord"`): Keep responses under 1800 chars when possible. Use markdown sparingly (Discord renders it differently). Avoid code blocks longer than 20 lines — summarize instead.
+- **iMessage** (`channel: "imessage"`): Very short responses. No markdown. No code blocks. Plain text only, conversational tone.
+- **Interactive / No channel** (`isInteractive: true`): Full verbose output. Markdown, code blocks, detailed explanations — all fine.
+- **Scheduled task** (`triggerType: "heartbeat"` or `"cron"`): No conversational preamble. Report results directly. If there's nothing to report, say so briefly.
+
+### Sending Messages
+Use `channel_send` to proactively notify a channel — for example, alerting Discord when a long build completes:
+```
+channel_send({ channel: "discord", target: "<replyTo from job_info>", message: "Build complete! 5/5 steps passed." })
+```
+
+Only send proactive messages when there's a meaningful update. Do NOT spam channels with progress — the channel adapter already handles progress display.
+
+### Discovering Channels
+Use `channel_list` to see what's connected:
+```
+channel_list()
+-> { channels: [{ name: "discord", canSend: true }, { name: "imessage", canSend: true }] }
+```
+
+### When NOT to Use Channel Awareness
+- Don't call `job_info` on every single interaction — call it once at the start if you need to adapt.
+- Don't use `channel_send` to respond to the current conversation — the normal response flow handles that. Use it only for cross-channel or proactive notifications.
+- If `isInteractive` is true, skip all channel adaptation — behave normally.
+
 ## Self-Monitoring
 
 Track effectiveness across plan and build turns. After each @build checkpoint, evaluate:
