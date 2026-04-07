@@ -38,6 +38,10 @@ export type RunnerEventType =
 	| "cron.removed"
 	| "hook.received"
 	| "hook.queued"
+	// Brain-emitted events:
+	| "brain.notification"
+	| "brain.alert"
+	| "brain.progress"
 	// System events:
 	| "system.update";
 
@@ -78,6 +82,9 @@ export interface RunnerEvent {
 		message?: string;
 		fromVersion?: string;
 		toVersion?: string;
+		// Brain event data:
+		severity?: "info" | "warning" | "critical";
+		targetChannel?: string;
 	};
 }
 
@@ -200,6 +207,7 @@ export interface Job {
 	error: string | null;
 	exitCode: number | null;
 	origin?: JobOrigin;
+	metadata?: Record<string, string>;
 }
 
 // ---- Delegation ----

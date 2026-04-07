@@ -72,7 +72,7 @@ export interface HeartbeatState {
 
 export interface WakeItem {
 	text: string;
-	source: "hook" | "cron";
+	source: "hook" | "cron" | "brain";
 	timestamp: string;
 }
 
