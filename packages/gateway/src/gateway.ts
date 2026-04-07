@@ -260,11 +260,20 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		fetch: app.fetch,
 	});
 
+	// Ensure config.mesh.endpoint is set so the posse registry doc includes
+	// a reachable URL for this agent's gateway (used by delegate_task).
+	if (!config.mesh.endpoint) {
+		config.mesh.endpoint = `http://localhost:${server.port}`;
+	}
+
 	// Register in posse registry (R3.3)
 	if (posseClient && config.posse) {
 		try {
 			await registerAgent(config, posseClient);
-			logger.info("Registered in posse registry", { posse: config.posse });
+			logger.info("Registered in posse registry", {
+				posse: config.posse,
+				endpoint: config.mesh.endpoint,
+			});
 		} catch (err) {
 			logger.warn("Posse registration failed, continuing", {
 				error: err instanceof Error ? err.message : String(err),
