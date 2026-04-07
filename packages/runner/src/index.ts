@@ -19,6 +19,9 @@ export type { StruggleConfig, StruggleResult } from "./struggle.js";
 export { checkStruggle } from "./struggle-check.js";
 export type { StruggleCheckInput, StruggleCheckResult } from "./struggle-check.js";
 
+export { readLoopState, writeLoopState, syncJobToLoopState } from "./loop-state.js";
+export type { BuildState, LoopState } from "./loop-state.js";
+
 export {
 	readAndClearContext,
 	writeContext,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunnerEvent } from "@randal/core";
@@ -408,5 +408,55 @@ credentials:
 
 		expect(job.status).toBe("failed");
 		expect(job.error).toContain("Fatal");
+	});
+
+	test("writes loop-state.json on completion", async () => {
+		const workdir = makeTmpDir();
+		const config = makeBrainConfig(workdir);
+
+		const scriptPath = join(workdir, "brain.sh");
+		writeFileSync(
+			scriptPath,
+			'#!/bin/bash\necho "<promise>DONE</promise>"\n',
+			{ mode: 0o755 },
+		);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({ prompt: scriptPath });
+
+		expect(job.status).toBe("complete");
+
+		// Verify loop-state.json was written
+		const loopStatePath = join(workdir, ".opencode", "loop-state.json");
+		expect(existsSync(loopStatePath)).toBe(true);
+
+		const loopState = JSON.parse(readFileSync(loopStatePath, "utf-8"));
+		expect(loopState.version).toBe(1);
+		expect(loopState.builds[job.id]).toBeDefined();
+		expect(loopState.builds[job.id].status).toBe("completed");
+		expect(loopState.builds[job.id].jobId).toBe(job.id);
+	});
+
+	test("writes loop-state.json on failure", async () => {
+		const workdir = makeTmpDir();
+		const config = makeBrainConfig(workdir);
+
+		const scriptPath = join(workdir, "fail.sh");
+		writeFileSync(
+			scriptPath,
+			'#!/bin/bash\necho "Something broke"\nexit 1\n',
+			{ mode: 0o755 },
+		);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({ prompt: scriptPath });
+
+		expect(job.status).toBe("failed");
+
+		const loopStatePath = join(workdir, ".opencode", "loop-state.json");
+		expect(existsSync(loopStatePath)).toBe(true);
+
+		const loopState = JSON.parse(readFileSync(loopStatePath, "utf-8"));
+		expect(loopState.builds[job.id].status).toBe("errored");
 	});
 });

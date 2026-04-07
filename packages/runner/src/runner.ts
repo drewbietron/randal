@@ -20,6 +20,7 @@ import { parseDelegationRequests, parsePlanUpdate, parseProgress } from "./plan-
 import { buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
+import { syncJobToLoopState } from "./loop-state.js";
 import { type StruggleConfig, detectFatalError, detectStruggle } from "./struggle.js";
 
 export type EventHandler = (event: RunnerEvent) => void;
@@ -635,6 +636,7 @@ export class Runner {
 		job.status = "running";
 		job.startedAt = new Date().toISOString();
 		const loopStart = Date.now();
+		syncJobToLoopState(job);
 
 		this.emit("job.started", job);
 
@@ -651,6 +653,7 @@ export class Runner {
 			const entry = this.activeJobs.get(job.id);
 			if (!entry || entry.aborted) {
 				job.status = "stopped";
+				syncJobToLoopState(job);
 				return job;
 			}
 
@@ -799,6 +802,7 @@ export class Runner {
 				job.status = "stopped";
 				job.completedAt = new Date().toISOString();
 				job.duration = duration;
+				syncJobToLoopState(job);
 				return job;
 			}
 
@@ -810,6 +814,7 @@ export class Runner {
 				job.exitCode = sentinelExitCode;
 				job.completedAt = new Date().toISOString();
 				job.duration = duration;
+				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
 				return job;
 			}
@@ -825,6 +830,7 @@ export class Runner {
 				job.exitCode = sentinelExitCode;
 				job.completedAt = new Date().toISOString();
 				job.duration = duration;
+				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
 				return job;
 			}
@@ -836,6 +842,7 @@ export class Runner {
 				job.exitCode = sentinelExitCode;
 				job.completedAt = new Date().toISOString();
 				job.duration = duration;
+				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
 				return job;
 			}
@@ -846,6 +853,7 @@ export class Runner {
 				job.exitCode = 0;
 				job.completedAt = new Date().toISOString();
 				job.duration = duration;
+				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
 				return job;
 			}
@@ -858,6 +866,7 @@ export class Runner {
 			job.exitCode = sentinelExitCode;
 			job.completedAt = new Date().toISOString();
 			job.duration = duration;
+			syncJobToLoopState(job);
 			this.emit("job.failed", job, { error: job.error });
 			return job;
 		} finally {
@@ -878,6 +887,7 @@ export class Runner {
 			job.startedAt = new Date().toISOString();
 		}
 		const loopStart = Date.now();
+		syncJobToLoopState(job);
 
 		this.emit("job.started", job);
 
@@ -1089,6 +1099,7 @@ export class Runner {
 					job.error = `Fatal: ${iteration.fatalError}`;
 					job.completedAt = new Date().toISOString();
 					job.duration = Math.round((Date.now() - loopStart) / 1000);
+					syncJobToLoopState(job);
 					this.emit("job.failed", job, {
 						error: job.error,
 						iteration: iteration.number,
@@ -1101,6 +1112,7 @@ export class Runner {
 					job.status = "complete";
 					job.completedAt = new Date().toISOString();
 					job.duration = Math.round((Date.now() - loopStart) / 1000);
+					syncJobToLoopState(job);
 					this.emit("job.complete", job, {
 						iteration: iteration.number,
 						duration: job.duration,
@@ -1125,6 +1137,7 @@ export class Runner {
 					job.status = "complete";
 					job.completedAt = new Date().toISOString();
 					job.duration = Math.round((Date.now() - loopStart) / 1000);
+					syncJobToLoopState(job);
 					this.emit("job.complete", job, {
 						iteration: iteration.number,
 						duration: job.duration,
@@ -1148,6 +1161,7 @@ export class Runner {
 						job.error = `Stopped due to struggle: ${struggle.indicators.join(", ")}`;
 						job.completedAt = new Date().toISOString();
 						job.duration = Math.round((Date.now() - loopStart) / 1000);
+						syncJobToLoopState(job);
 						this.emit("job.failed", job, { error: job.error });
 						return job;
 					}
@@ -1172,6 +1186,7 @@ export class Runner {
 				job.error = "Max iterations reached without completion promise";
 				job.completedAt = new Date().toISOString();
 				job.duration = Math.round((Date.now() - loopStart) / 1000);
+				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
 			}
 		} finally {
