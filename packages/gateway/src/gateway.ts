@@ -1,7 +1,7 @@
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MeilisearchAnnotationStore } from "@randal/analytics";
-import type { RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
+import type { MeshInstance, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
 	MemoryManager,
@@ -11,6 +11,12 @@ import {
 	registerAgent,
 	updateHeartbeat,
 } from "@randal/memory";
+import {
+	HealthMonitor,
+	MeilisearchMeshRegistry,
+	createInstanceFromConfig,
+	dryRunRoute,
+} from "@randal/mesh";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
 import { MeiliSearch } from "meilisearch";
@@ -222,6 +228,104 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	// Mutable adapter registry — populated after channel start, accessed at request time
 	const channelAdapters: ChannelAdapter[] = [];
 
+	// ── Wire mesh coordinator (optional, non-fatal) ──
+	let meshRegistry: MeilisearchMeshRegistry | undefined;
+	let healthMonitor: HealthMonitor | undefined;
+	let selfInstance: MeshInstance | undefined;
+	// biome-ignore lint/suspicious/noExplicitAny: meshCoordinator shape is defined by HttpChannelOptions
+	let meshCoordinator: any;
+
+	if (config.mesh.enabled && posseClient) {
+		try {
+			meshRegistry = new MeilisearchMeshRegistry(posseClient, config.posse ?? config.name);
+			await meshRegistry.init();
+
+			selfInstance = createInstanceFromConfig(config);
+			await meshRegistry.register(selfInstance);
+
+			healthMonitor = new HealthMonitor();
+			const registry = meshRegistry;
+			healthMonitor.start(
+				() => registry.discover(),
+				(result) => {
+					if (!result.healthy) {
+						logger.debug("Peer health check failed", {
+							instanceId: result.instanceId,
+							error: result.error,
+						});
+					}
+				},
+			);
+
+			// Build meshCoordinator adapter expected by HTTP app
+			meshCoordinator = {
+				getInstances: () => {
+					// Return cached instances (sync) — discover is async, so
+					// we'll populate on first call and cache briefly
+					return [];
+				},
+				routeDryRun: (_prompt: string) => {
+					// Synchronous routing not feasible without cached instances;
+					// use the /mesh/route endpoint directly for async routing
+					return {
+						selectedInstance: { id: "", name: "", score: 0 },
+						scores: [],
+					};
+				},
+			};
+
+			// Warm the mesh coordinator with a discover call
+			meshRegistry
+				.discover()
+				.then((instances) => {
+					meshCoordinator.getInstances = () =>
+						instances.map((inst: MeshInstance) => ({
+							id: inst.instanceId,
+							name: inst.name,
+							status: inst.status,
+							health: inst.health.missedPings > 0 ? "degraded" : "healthy",
+							load: inst.activeJobs,
+							specialization: inst.specialization ?? "",
+							lastSeen: inst.lastHeartbeat,
+						}));
+
+					meshCoordinator.routeDryRun = (prompt: string) => {
+						const decisions = dryRunRoute(instances, { prompt });
+						const best = decisions[0];
+						return {
+							selectedInstance: best
+								? { id: best.instance.instanceId, name: best.instance.name, score: best.score }
+								: { id: "", name: "", score: 0 },
+							scores: decisions.map((d) => ({
+								id: d.instance.instanceId,
+								name: d.instance.name,
+								score: d.score,
+								breakdown: d.breakdown,
+							})),
+						};
+					};
+				})
+				.catch((err) => {
+					logger.warn("Initial mesh discover failed", {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
+
+			logger.info("Mesh coordinator initialized", {
+				posse: config.posse ?? config.name,
+				instanceId: selfInstance.instanceId,
+			});
+		} catch (err) {
+			logger.warn("Mesh coordinator initialization failed, continuing without mesh", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			meshRegistry = undefined;
+			healthMonitor = undefined;
+			selfInstance = undefined;
+			meshCoordinator = undefined;
+		}
+	}
+
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
@@ -234,6 +338,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		posseClient,
 		analyticsEngine,
 		channelAdapters,
+		meshCoordinator,
 	});
 
 	// Mount hooks router if enabled
@@ -422,6 +527,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 			}
 			if (posseHeartbeatInterval) {
 				clearInterval(posseHeartbeatInterval);
+			}
+			// Stop mesh coordinator
+			if (healthMonitor) {
+				healthMonitor.stop();
+			}
+			if (meshRegistry && selfInstance) {
+				meshRegistry.deregister(selfInstance.instanceId).catch(() => {});
 			}
 
 			for (const ch of channelAdapters) {
