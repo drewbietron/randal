@@ -251,6 +251,7 @@ to see if there are actionable improvements: model switches, knowledge gaps, or 
 - Don't call analytics tools on every single turn — only at natural checkpoints
 - Don't annotate Q&A or exploration workflows — only builds with clear pass/fail outcomes
 - If tools return "analytics not enabled" or empty results, continue normally
+
 ## Capability Discovery
 
 When dispatching subagents, include capability info in the prompt: `Available skills: steer (GUI) ✅ · drive (terminal) ❌ · memory ✅`. This tells @plan whether to include visual verification steps and tells @build what tools it can use.
