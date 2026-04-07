@@ -394,6 +394,23 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		return c.json({ ok: true });
 	});
 
+	// Queue wake item for next heartbeat
+	app.post("/heartbeat/wake", async (c) => {
+		if (!scheduler) {
+			return c.json({ error: "Scheduler not available" }, 400);
+		}
+		const body = await c.req.json<{ text: string }>();
+		if (!body.text) {
+			return c.json({ error: "text required" }, 400);
+		}
+		scheduler.getHeartbeat().queueWakeItem({
+			text: body.text,
+			source: "brain" as const,
+			timestamp: new Date().toISOString(),
+		});
+		return c.json({ ok: true });
+	});
+
 	// List cron jobs
 	app.get("/cron", (c) => {
 		if (!scheduler) {
