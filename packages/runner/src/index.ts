@@ -42,11 +42,10 @@ export {
 } from "./prompt-assembly.js";
 export type { PromptParts } from "./prompt-assembly.js";
 
-export {
-	parsePlanUpdate,
-	parseProgress,
-	parseDelegationRequests,
-} from "./plan-parser.js";
+export { parsePlanUpdate, parseProgress } from "./plan-parser.js";
+
+/** @deprecated Use the `delegate_task` MCP tool instead. Will be removed in a future version. */
+export { parseDelegationRequests } from "./plan-parser.js";
 
 export { readStreamLines, readStream } from "./streaming.js";
 export type { StreamingReaderOptions, StreamingResult } from "./streaming.js";
@@ -57,7 +56,9 @@ export type { CallRequest } from "./call-parser.js";
 export { parseJoinCallRequests, joinCallRequestSchema } from "./join-call-parser.js";
 export type { JoinCallRequest } from "./join-call-parser.js";
 
+/** @deprecated Use the `delegate_task` MCP tool with auto-routing instead. Will be removed in a future version. */
 export { parseRouteRequests, routeRequestSchema } from "./route-parser.js";
+/** @deprecated */
 export type { RouteRequest } from "./route-parser.js";
 
 export { McpServer } from "./mcp-server.js";

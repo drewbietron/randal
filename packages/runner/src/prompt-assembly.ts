@@ -161,11 +161,6 @@ Output your full task plan when you create or update it:
 At the end of your work, summarize what you accomplished:
 <progress>What you did, what's next, any blockers.</progress>
 
-### Delegation (optional)
-To delegate a subtask to a separate agent run:
-<delegate>{"task":"...","context":"...","maxIterations":5}</delegate>
-The results will be available in your next iteration.
-
 ### Completion
 When ALL tasks are complete: <promise>DONE</promise>`;
 }
