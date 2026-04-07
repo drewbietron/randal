@@ -7,7 +7,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
 		id: `ann-${Math.random().toString(36).slice(2, 8)}`,
 		jobId: `job-${Math.random().toString(36).slice(2, 8)}`,
 		verdict: "pass",
-		agent: "claude-code",
+		agent: "opencode",
 		model: "anthropic/claude-sonnet-4",
 		domain: "backend",
 		iterationCount: 3,
@@ -71,13 +71,13 @@ describe("MemoryAnnotationStore", () => {
 	});
 
 	test("list filters by agent", async () => {
-		await store.save(makeAnnotation({ agent: "claude-code" }));
 		await store.save(makeAnnotation({ agent: "opencode" }));
-		await store.save(makeAnnotation({ agent: "claude-code" }));
+		await store.save(makeAnnotation({ agent: "mock" }));
+		await store.save(makeAnnotation({ agent: "opencode" }));
 
-		const results = await store.list({ agent: "opencode" });
+		const results = await store.list({ agent: "mock" });
 		expect(results).toHaveLength(1);
-		expect(results[0].agent).toBe("opencode");
+		expect(results[0].agent).toBe("mock");
 	});
 
 	test("list filters by model", async () => {

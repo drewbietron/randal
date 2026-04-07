@@ -19,9 +19,9 @@ identity:
     - "NEVER expose PII in logs or responses"
     - "ALWAYS escalate payment-related issues"
 
-# Runner: uses claude-code in a Docker container
+# Runner: uses opencode in a Docker container
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: /home/bun/workspace
 

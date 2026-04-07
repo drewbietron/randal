@@ -59,7 +59,7 @@ describe("configSchema", () => {
 				rules: ["NEVER delete data", "ALWAYS verify"],
 			},
 			runner: {
-				defaultAgent: "claude-code",
+				defaultAgent: "opencode",
 				defaultModel: "claude-sonnet-4",
 				defaultMaxIterations: 10,
 				workdir: "/home/node/workspace",
@@ -111,7 +111,7 @@ describe("configSchema", () => {
 		expect(result.name).toBe("support-agent");
 		expect(result.posse).toBe("support-team");
 		expect(result.identity.rules).toHaveLength(2);
-		expect(result.runner.defaultAgent).toBe("claude-code");
+		expect(result.runner.defaultAgent).toBe("opencode");
 		expect(result.gateway.channels).toHaveLength(1);
 		expect(result.tools).toHaveLength(1);
 	});
@@ -505,11 +505,11 @@ describe("mergePartialConfig", () => {
 	test("preserves provided values", () => {
 		const result = mergePartialConfig({
 			name: "custom",
-			runner: { workdir: "/opt/work", defaultAgent: "claude-code" },
+			runner: { workdir: "/opt/work", defaultAgent: "opencode" },
 			heartbeat: { enabled: true, every: "15m" },
 		});
 		expect(result.name).toBe("custom");
-		expect(result.runner.defaultAgent).toBe("claude-code");
+		expect(result.runner.defaultAgent).toBe("opencode");
 		expect(result.heartbeat.enabled).toBe(true);
 		expect(result.heartbeat.every).toBe("15m");
 	});

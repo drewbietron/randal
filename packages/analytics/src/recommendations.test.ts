@@ -7,7 +7,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
 		id: `ann-${Math.random().toString(36).slice(2, 8)}`,
 		jobId: `job-${Math.random().toString(36).slice(2, 8)}`,
 		verdict: "pass",
-		agent: "claude-code",
+		agent: "opencode",
 		model: "anthropic/claude-sonnet-4",
 		domain: "backend",
 		iterationCount: 3,

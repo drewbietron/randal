@@ -12,7 +12,7 @@ function makeAnnotation(overrides: Partial<Annotation> = {}): Annotation {
 		id: `ann-${Math.random().toString(36).slice(2, 8)}`,
 		jobId: `job-${Math.random().toString(36).slice(2, 8)}`,
 		verdict: "pass",
-		agent: "claude-code",
+		agent: "opencode",
 		model: "anthropic/claude-sonnet-4",
 		domain: "backend",
 		iterationCount: 3,
@@ -81,19 +81,19 @@ describe("computeReliabilityScores", () => {
 	});
 
 	test("per-agent breakdown separates agents", () => {
-		const claudeAnnotations = makeAnnotations(6, { agent: "claude-code", verdict: "pass" });
-		const opencodeAnnotations = makeAnnotations(6, { agent: "opencode", verdict: "fail" });
-		const annotations = [...claudeAnnotations, ...opencodeAnnotations];
+		const opencodeAnnotations = makeAnnotations(6, { agent: "opencode", verdict: "pass" });
+		const mockAnnotations = makeAnnotations(6, { agent: "mock", verdict: "fail" });
+		const annotations = [...opencodeAnnotations, ...mockAnnotations];
 
 		const result = computeReliabilityScores(annotations);
 		const agentScores = result.scores.filter((s) => s.dimension === "agent");
 		expect(agentScores.length).toBe(2);
 
-		const claude = agentScores.find((s) => s.value === "claude-code");
 		const opencode = agentScores.find((s) => s.value === "opencode");
-		expect(claude).toBeDefined();
+		const mock = agentScores.find((s) => s.value === "mock");
 		expect(opencode).toBeDefined();
-		expect(claude?.passRate).toBeGreaterThan(opencode?.passRate ?? 1);
+		expect(mock).toBeDefined();
+		expect(opencode?.passRate).toBeGreaterThan(mock?.passRate ?? 1);
 	});
 
 	test("per-model breakdown separates models", () => {

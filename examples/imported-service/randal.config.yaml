@@ -23,7 +23,7 @@ identity:
     - "ALWAYS verify your work before marking complete"
 
 runner:
-  defaultAgent: claude-code
+  defaultAgent: opencode
   defaultModel: claude-sonnet-4
   workdir: /app/workspace
   allowedWorkdirs:
