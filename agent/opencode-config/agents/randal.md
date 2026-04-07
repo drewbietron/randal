@@ -215,6 +215,42 @@ If `context_check` tool is available, call it periodically during long-running b
 context_check({ workdir: "." })
 ```
 
+## Analytics & Self-Learning
+
+If `reliability_scores`, `recommendations`, `get_feedback`, and `annotate` tools are available (via MCP memory server), use them to track and improve your performance over time.
+
+### After Every Build
+Call `annotate` with the build outcome:
+```
+annotate({
+  jobId: "<job-id or plan slug>",
+  verdict: "pass" | "fail" | "partial",
+  feedback: "<what went well or wrong>",
+  agent: "opencode",
+  model: "<model used>",
+  prompt: "<original task prompt>",
+  iterationCount: <number>,
+  tokenCost: <estimated cost>,
+  duration: <wall time seconds>,
+  filesChanged: [<list>]
+})
+```
+
+### Before Starting Work in Weak Domains
+Before entering the build pipeline, call `reliability_scores()` to check your current pass rates.
+If any domain shows < 50% pass rate and the current task falls in that domain:
+1. Call `get_feedback({ domain: "<domain>" })` to get empirical guidance
+2. Include the guidance in your @build dispatch prompt
+3. Take extra care with verification steps
+
+### Periodic Self-Check
+Call `recommendations()` periodically (e.g., at session start if memory suggests past failures)
+to see if there are actionable improvements: model switches, knowledge gaps, or declining trends.
+
+### When NOT to Use Analytics
+- Don't call analytics tools on every single turn — only at natural checkpoints
+- Don't annotate Q&A or exploration workflows — only builds with clear pass/fail outcomes
+- If tools return "analytics not enabled" or empty results, continue normally
 ## Capability Discovery
 
 When dispatching subagents, include capability info in the prompt: `Available skills: steer (GUI) ✅ · drive (terminal) ❌ · memory ✅`. This tells @plan whether to include visual verification steps and tells @build what tools it can use.
