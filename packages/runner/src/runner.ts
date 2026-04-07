@@ -359,6 +359,7 @@ export class Runner {
 			if (httpCh.auth) env.RANDAL_GATEWAY_AUTH = httpCh.auth;
 		}
 
+		// Log service audit entries
 		if (auditLog.length > 0) {
 			this.logger.info("Service credentials resolved", {
 				services: auditLog.map((e) => `${e.service} (${e.type})`),
