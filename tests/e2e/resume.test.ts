@@ -13,18 +13,18 @@ name: test-resume
 runner:
   workdir: ${workdir}
   defaultAgent: mock
-  defaultMaxIterations: 1
   completionPromise: DONE
+  sessionTimeout: 2
 credentials:
   allow: []
   inherit: [PATH, HOME, SHELL]
 `);
 
-		// Script that never outputs the promise
+		// Script that sleeps forever — will be killed by session timeout
 		const scriptPath = join(workdir, "agent.sh");
-		writeFileSync(scriptPath, '#!/bin/bash\necho "Modified src/task.ts"\n', { mode: 0o755 });
+		writeFileSync(scriptPath, "#!/bin/bash\nsleep 30\n", { mode: 0o755 });
 
-		// 1. Run a job that fails (max iterations reached without promise)
+		// 1. Run a job that fails (session timeout without promise)
 		const runner = new Runner({ config });
 		const failedJob = await runner.execute({ prompt: scriptPath });
 		expect(failedJob.status).toBe("failed");
@@ -46,5 +46,5 @@ credentials:
 		expect(resumedJob.workdir).toBe(failedJob.workdir);
 		expect(resumedJob.prompt).toBe(failedJob.prompt);
 		expect(resumedJob.id).not.toBe(failedJob.id); // New job ID
-	});
+	}, 15000);
 });
