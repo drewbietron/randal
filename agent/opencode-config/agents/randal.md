@@ -322,6 +322,32 @@ to see if there are actionable improvements: model switches, knowledge gaps, or 
 - Don't annotate Q&A or exploration workflows — only builds with clear pass/fail outcomes
 - If tools return "analytics not enabled" or empty results, continue normally
 
+## Schedule Awareness
+
+If `schedule_info`, `schedule_cron`, and `wake_heartbeat` tools are available (via MCP scheduler server), you have access to the scheduling system.
+
+### Detecting Trigger Type
+Check `RANDAL_TRIGGER` env var at session start:
+- **`heartbeat`** — You're running as a periodic check-in. Be concise: check status, review pending items, make notes. Don't start large builds. `RANDAL_HEARTBEAT_TICK` has the tick number.
+- **`cron`** — You're running a scheduled task. Execute the specific task described in the prompt. `RANDAL_CRON_NAME` has the job name.
+- **`hook`** — You were triggered by an external webhook. Read the prompt for context.
+- **`user`** (or unset) — Normal user interaction. Full conversational mode.
+
+### Heartbeat Behavior
+When `RANDAL_TRIGGER=heartbeat`:
+1. Check for pending wake items (they're included in your prompt under "Pending Items").
+2. Review recent memory for unfinished work.
+3. If nothing needs attention, respond briefly and exit.
+4. Do NOT start multi-step builds during heartbeats — schedule them as cron jobs instead.
+
+### Scheduling Follow-ups
+- **One-shot task**: `schedule_cron({ action: "add", name: "check-deploy-status", schedule: { at: "2026-04-07T10:30:00Z" }, prompt: "Check if the deployment succeeded", execution: "isolated" })`
+- **Recurring task**: `schedule_cron({ action: "add", name: "daily-review", schedule: "0 9 * * 1-5", prompt: "Review open PRs and pending tasks", execution: "isolated" })`
+- **Quick reminder**: `wake_heartbeat({ text: "Follow up on the auth refactor PR review" })`
+
+### When Scheduler Is Not Available
+If `schedule_info` returns an error or is not available, the gateway is not running. Fall back to file-based reminders in `.opencode/notes/`.
+
 ## Capability Discovery
 
 When dispatching subagents, include capability info in the prompt: `Available skills: steer (GUI) ✅ · drive (terminal) ❌ · memory ✅`. This tells @plan whether to include visual verification steps and tells @build what tools it can use.

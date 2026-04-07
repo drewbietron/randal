@@ -352,7 +352,19 @@ export class Runner {
 		if (job.origin?.channel) env.RANDAL_CHANNEL = job.origin.channel;
 		if (job.origin?.from) env.RANDAL_FROM = job.origin.from;
 		if (job.origin?.replyTo) env.RANDAL_REPLY_TO = job.origin.replyTo;
-		if (job.origin?.triggerType) env.RANDAL_TRIGGER = job.origin.triggerType;
+		env.RANDAL_TRIGGER = job.origin?.triggerType ?? "user";
+
+		// Inject scheduler-specific env vars (cron name from replyTo)
+		if (job.origin?.replyTo?.startsWith("cron:")) {
+			env.RANDAL_CRON_NAME = job.origin.replyTo.replace("cron:", "");
+		}
+
+		// Spread job metadata into env vars (e.g. RANDAL_HEARTBEAT_TICK)
+		if (job.metadata) {
+			for (const [key, value] of Object.entries(job.metadata)) {
+				env[key] = value;
+			}
+		}
 
 		// Derive gateway URL for MCP tool callbacks (channel_send, channel_list)
 		const httpCh = this.config.gateway?.channels?.find((c) => c.type === "http");

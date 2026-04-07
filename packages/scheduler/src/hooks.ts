@@ -110,6 +110,12 @@ export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 				prompt: body.message,
 				model: body.model,
 				maxIterations: body.maxIterations,
+				origin: {
+					channel: "scheduler",
+					replyTo: "hook:agent",
+					from: "system",
+					triggerType: "hook",
+				},
 			});
 
 			// Wait briefly to get the job started
