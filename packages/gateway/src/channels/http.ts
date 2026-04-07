@@ -10,7 +10,7 @@ import {
 	queryPosseMembers,
 	searchCrossAgent,
 } from "@randal/memory";
-import { type Runner, writeContext } from "@randal/runner";
+import { type Runner, readLoopState, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -191,6 +191,18 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	app.get("/instance", (c) => {
 		const activeJobs = runner.getActiveJobs();
 		const schedulerStatus = scheduler?.getStatus();
+
+		// Include loop-state.json data for brain-managed job visibility
+		let loopState = null;
+		try {
+			const state = readLoopState(config.runner.workdir);
+			if (Object.keys(state.builds).length > 0) {
+				loopState = state;
+			}
+		} catch {
+			/* ok — workdir may not have .opencode yet */
+		}
+
 		return c.json({
 			name: config.name,
 			posse: config.posse,
@@ -205,6 +217,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 				agent: config.runner.defaultAgent,
 			},
 			scheduler: schedulerStatus,
+			loopState,
 		});
 	});
 
