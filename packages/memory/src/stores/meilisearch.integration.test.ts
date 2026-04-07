@@ -281,7 +281,8 @@ describe("MeilisearchStore integration", () => {
 					lower.includes("403") ||
 					lower.includes("unauthorized") ||
 					lower.includes("invalid api key") ||
-					lower.includes("invalid_api_key"),
+					lower.includes("invalid_api_key") ||
+					lower.includes("api key is invalid"),
 			).toBe(true);
 		}
 	});
