@@ -417,4 +417,32 @@ describe("Internal Events API", () => {
 		expect(events).toHaveLength(1);
 		expect(events[0].data.severity).toBe("critical");
 	});
+
+	test("POST /_internal/events → EventBus → subscriber receives formatted event", async () => {
+		const { app, eventBus } = makeTestApp();
+		const received: string[] = [];
+
+		// Simulate a channel adapter subscribing
+		eventBus.subscribe((event) => {
+			if (event.type === "brain.alert") {
+				const sev = event.data.severity ?? "warning";
+				const prefix = sev === "critical" ? "CRITICAL" : "ALERT";
+				received.push(`**${prefix}**: ${event.data.message}`);
+			}
+		});
+
+		await app.request("/_internal/events", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "alert",
+				jobId: "e2e-test",
+				message: "Build stuck on step 7",
+				severity: "critical",
+			}),
+		});
+
+		expect(received).toHaveLength(1);
+		expect(received[0]).toBe("**CRITICAL**: Build stuck on step 7");
+	});
 });
