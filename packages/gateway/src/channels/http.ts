@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
-import type { Job, RandalConfig, RunnerEvent } from "@randal/core";
+import type { Job, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
 import {
 	type MemoryManager,
@@ -130,6 +130,10 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	} = options;
 	const app = new Hono();
 
+	// Rate limiting for brain events: Map<"jobId:eventType", lastEmitTimestamp>
+	const brainEventLastEmit = new Map<string, number>();
+	const BRAIN_EVENT_RATE_LIMIT_MS = 10_000; // 1 per type per 10 seconds
+
 	// CORS — configurable origin
 	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
 	const corsOrigin = httpChannel?.type === "http" ? httpChannel.corsOrigin : undefined;
@@ -158,7 +162,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	app.use("*", async (c, next) => {
 		const path = c.req.path;
 		// Dashboard root and health endpoint are public (healthcheck probes send no auth)
-		if (path === "/" || path === "/health") {
+		if (path === "/" || path === "/health" || path.startsWith("/_internal/")) {
 			return next();
 		}
 		if (authToken) {
@@ -1089,6 +1093,63 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 				500,
 			);
 		}
+	});
+
+	// ---- Internal API (brain event emission) ----
+
+	// Brain event emission — called by emit_event MCP tool
+	app.post("/_internal/events", async (c) => {
+		const body = await c.req.json<{
+			type: "notification" | "alert" | "progress";
+			jobId: string;
+			message: string;
+			severity?: "info" | "warning" | "critical";
+			targetChannel?: string;
+		}>();
+
+		// Validate required fields
+		if (!body.type || !body.jobId || !body.message) {
+			return c.json({ error: "type, jobId, and message are required" }, 400);
+		}
+
+		// Validate event type
+		const validTypes = ["notification", "alert", "progress"];
+		if (!validTypes.includes(body.type)) {
+			return c.json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` }, 400);
+		}
+
+		// Validate message length
+		if (body.message.length > 2000) {
+			return c.json({ error: "message must be <= 2000 characters" }, 400);
+		}
+
+		// Rate limiting: max 1 event per type per job per 10 seconds
+		const rateKey = `${body.jobId}:${body.type}`;
+		const lastEmit = brainEventLastEmit.get(rateKey);
+		const now = Date.now();
+		if (lastEmit && now - lastEmit < BRAIN_EVENT_RATE_LIMIT_MS) {
+			const retryAfter = Math.ceil((BRAIN_EVENT_RATE_LIMIT_MS - (now - lastEmit)) / 1000);
+			return c.json({ error: "Rate limited", retryAfterSeconds: retryAfter }, 429);
+		}
+
+		// Map short type to full RunnerEventType
+		const fullType = `brain.${body.type}` as RunnerEventType;
+
+		// Emit to EventBus
+		eventBus.emit({
+			type: fullType,
+			jobId: body.jobId,
+			timestamp: new Date().toISOString(),
+			data: {
+				message: body.message,
+				severity: body.severity,
+				targetChannel: body.targetChannel,
+			},
+		});
+
+		brainEventLastEmit.set(rateKey, now);
+
+		return c.json({ emitted: true, type: fullType, jobId: body.jobId });
 	});
 
 	return app;

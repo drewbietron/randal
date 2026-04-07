@@ -606,8 +606,14 @@ export class DiscordChannel implements ChannelAdapter {
 
 		const terminal = ["job.complete", "job.failed", "job.stuck"];
 		const intermediate = ["iteration.output", "job.plan_updated", "iteration.start"];
+		const brainEvents = ["brain.notification", "brain.alert"];
 
-		if (!terminal.includes(event.type) && !intermediate.includes(event.type)) return;
+		if (
+			!terminal.includes(event.type) &&
+			!intermediate.includes(event.type) &&
+			!brainEvents.includes(event.type)
+		)
+			return;
 
 		// Look up the job to check origin
 		const job = this.deps.runner.getJob(event.jobId);
@@ -672,6 +678,19 @@ export class DiscordChannel implements ChannelAdapter {
 		// Handle intermediate events as edit-in-place progress messages
 		if (intermediate.includes(event.type)) {
 			this.handleProgressEvent(event, sendable);
+			return;
+		}
+
+		// Handle brain-emitted events as standalone messages
+		if (event.type === "brain.notification" || event.type === "brain.alert") {
+			const brainMessage = formatEvent(event);
+			this.sendReply(sendable, brainMessage).catch((err: unknown) => {
+				this.logger.warn("Failed to send brain event to Discord", {
+					error: err instanceof Error ? err.message : String(err),
+					jobId: event.jobId,
+					type: event.type,
+				});
+			});
 			return;
 		}
 

@@ -247,6 +247,43 @@ channel_list()
 - Don't use `channel_send` to respond to the current conversation — the normal response flow handles that. Use it only for cross-channel or proactive notifications.
 - If `isInteractive` is true, skip all channel adaptation — behave normally.
 
+## Event Emission
+
+If the `emit_event` tool is available (via MCP memory server), use it to send
+intentional notifications and alerts to the user's channel (Discord, iMessage, etc.).
+
+### When to Emit Events
+
+**notification** — Significant milestones that the user wants to know about:
+- "Auth refactor complete — 4 files changed, ready for review"
+- "Database migration generated and tested"
+- "All 12 build steps complete, PR created"
+Do NOT use for minor progress (use `<progress>` tags for that).
+
+**alert** — Issues that need human attention:
+- "Build stuck on step 7: test failures I can't resolve"
+- "Need API key for service X — can't proceed"
+- "Found security issue in dependency — pausing for guidance"
+Always include what you need from the user.
+
+**progress** — Periodic status updates during long-running work:
+- "Step 3/8 complete: API routes implemented"
+- "Running test suite (this may take a few minutes)"
+Use sparingly — rate limited to 1 per type per 10 seconds.
+
+### Usage
+```
+emit_event({ type: "notification", message: "Auth refactor complete, ready for review" })
+emit_event({ type: "alert", message: "Build stuck on step 7 — need help with test failures", severity: "warning" })
+emit_event({ type: "progress", message: "Step 3/8 complete: API routes implemented" })
+```
+
+### Rules
+- Rate limited: max 1 event per type per 10 seconds. Don't retry on rate limit.
+- Messages should be concise and actionable (max 2000 chars).
+- In interactive mode (no gateway), events are logged but not routed — this is fine.
+- Prefer `<progress>` tags for routine iteration updates. Use `emit_event` for intentional, user-facing communications.
+
 ## Self-Monitoring
 
 Track effectiveness across plan and build turns. After each @build checkpoint, evaluate:
@@ -268,11 +305,11 @@ struggle_check({
 
 If `severity` is "warning" or "critical", follow the recommendation. Typical responses:
 - **warning**: Change approach — try different strategy, simplify, break into smaller pieces.
-- **critical**: STOP and ask the user for help. Don't silently loop.
+- **critical**: STOP and ask the user for help. Don't silently loop. If `emit_event` is available, also call `emit_event({ type: "alert", message: "Build stuck — need human help: {reason}", severity: "critical" })` to notify via channel.
 
 ### Manual Checks (fallback if tool unavailable)
 If `struggle_check` is not available:
-- 2 consecutive @build turns with 0 steps completed → ask the user for help
+- 2 consecutive @build turns with 0 steps completed → ask the user for help. If `emit_event` is available, also call `emit_event({ type: "alert", message: "Build stuck — need human help: {reason}", severity: "critical" })` to notify via channel.
 - Same step failing 2+ times → escalate: "Step N is stuck: {reason}. Options: skip, retry differently, or I need help."
 - @plan producing shallow steps → re-do discovery with more files
 

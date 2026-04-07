@@ -264,7 +264,13 @@ export class IMessageChannel implements ChannelAdapter {
 		}
 
 		// Only send significant events
-		const significant = ["job.complete", "job.failed", "job.stuck"];
+		const significant = [
+			"job.complete",
+			"job.failed",
+			"job.stuck",
+			"brain.notification",
+			"brain.alert",
+		];
 		if (!significant.includes(event.type)) return;
 
 		// Check origin

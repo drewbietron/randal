@@ -248,6 +248,15 @@ export function formatEvent(event: RunnerEvent): string {
 			return `Job \`${event.jobId}\` delegation done: ${event.data.delegationTask ?? "unknown task"} (${event.data.delegationStatus ?? "unknown"})`;
 		case "system.update":
 			return event.data.message ?? "System update in progress...";
+		case "brain.notification":
+			return event.data.message ?? "Notification from agent";
+		case "brain.alert": {
+			const sev = event.data.severity ?? "warning";
+			const prefix = sev === "critical" ? "CRITICAL" : "ALERT";
+			return `**${prefix}**: ${event.data.message ?? "Alert from agent"}`;
+		}
+		case "brain.progress":
+			return `Progress: ${event.data.message ?? ""}`;
 		default:
 			return `Event: ${event.type} (job ${event.jobId})`;
 	}
