@@ -90,6 +90,15 @@ const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
 /** Categories that default to global scope (cross-project). */
 const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
 
+// Channel-awareness: origin metadata injected by the runner
+const RANDAL_JOB_ID = process.env.RANDAL_JOB_ID || "";
+const RANDAL_CHANNEL = process.env.RANDAL_CHANNEL || "";
+const RANDAL_FROM = process.env.RANDAL_FROM || "";
+const RANDAL_REPLY_TO = process.env.RANDAL_REPLY_TO || "";
+const RANDAL_TRIGGER = process.env.RANDAL_TRIGGER || "";
+const RANDAL_BRAIN_SESSION = process.env.RANDAL_BRAIN_SESSION || "";
+const _RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
+
 // Posse configuration — enables cross-instance delegation tools
 const RANDAL_POSSE_NAME = process.env.RANDAL_POSSE_NAME || "";
 const RANDAL_SELF_NAME = process.env.RANDAL_SELF_NAME || "";
@@ -913,6 +922,19 @@ const TOOL_DEFINITIONS = [
 			required: ["query"],
 		},
 	},
+	// ---- Channel Awareness Tools ----
+	{
+		name: "job_info",
+		description:
+			"Get metadata about the current job: job ID, channel, sender, reply-to address, and trigger type. " +
+			"Use this to adapt behavior based on context — e.g., shorter responses for Discord, " +
+			"knowing if this is a user request vs a scheduled task. Returns empty/default values in interactive mode (no channel).",
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
 ];
 
 // ---------------------------------------------------------------------------
@@ -1731,6 +1753,23 @@ async function handlePosseMemorySearch(params: Record<string, unknown>): Promise
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Channel-awareness tool handlers
+// ---------------------------------------------------------------------------
+
+async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown> {
+	return {
+		jobId: RANDAL_JOB_ID || null,
+		channel: RANDAL_CHANNEL || null,
+		from: RANDAL_FROM || null,
+		replyTo: RANDAL_REPLY_TO || null,
+		triggerType: RANDAL_TRIGGER || "user",
+		isBrainSession: RANDAL_BRAIN_SESSION === "true",
+		isInteractive: !RANDAL_CHANNEL,
+		gatewayAvailable: !!RANDAL_GATEWAY_URL,
+	};
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -1749,6 +1788,7 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	posse_members: handlePosseMembers,
 	delegate_task: handleDelegateTask,
 	posse_memory_search: handlePosseMemorySearch,
+	job_info: handleJobInfo,
 };
 
 // ---------------------------------------------------------------------------
