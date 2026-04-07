@@ -97,7 +97,7 @@ const RANDAL_FROM = process.env.RANDAL_FROM || "";
 const RANDAL_REPLY_TO = process.env.RANDAL_REPLY_TO || "";
 const RANDAL_TRIGGER = process.env.RANDAL_TRIGGER || "";
 const RANDAL_BRAIN_SESSION = process.env.RANDAL_BRAIN_SESSION || "";
-const _RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
+const RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
 
 // Posse configuration — enables cross-instance delegation tools
 const RANDAL_POSSE_NAME = process.env.RANDAL_POSSE_NAME || "";
@@ -935,6 +935,45 @@ const TOOL_DEFINITIONS = [
 			required: [],
 		},
 	},
+	{
+		name: "channel_list",
+		description:
+			"List connected communication channels and their capabilities. " +
+			"Returns an array of channels (e.g., discord, imessage) with whether they support sending messages. " +
+			"Use this to discover where you can send messages. Returns empty list in interactive mode.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "channel_send",
+		description:
+			"Send a message to a specific channel and target. The target depends on the channel type: " +
+			"for Discord it's a channel/thread ID, for iMessage it's a chat GUID. " +
+			"Use job_info to get the current channel and replyTo target for responding in the same conversation. " +
+			"The message will go through the channel adapter's formatting and rate limiting.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				channel: {
+					type: "string",
+					description: 'Channel name: "discord", "imessage", etc.',
+				},
+				target: {
+					type: "string",
+					description:
+						"Target identifier within the channel (Discord channel/thread ID, iMessage chat GUID, etc.)",
+				},
+				message: {
+					type: "string",
+					description: "Message text to send",
+				},
+			},
+			required: ["channel", "target", "message"],
+		},
+	},
 ];
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1809,71 @@ async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown>
 	};
 }
 
+/**
+ * Call the gateway internal API.
+ * Returns the parsed JSON response or throws on failure.
+ */
+async function gatewayFetch(path: string, options?: RequestInit): Promise<unknown> {
+	if (!RANDAL_GATEWAY_URL) {
+		throw new ToolError("Gateway URL not available (not running in a gateway-managed session)");
+	}
+	const url = `${RANDAL_GATEWAY_URL}${path}`;
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+		...(RANDAL_GATEWAY_AUTH && { Authorization: `Bearer ${RANDAL_GATEWAY_AUTH}` }),
+	};
+	const resp = await fetch(url, {
+		...options,
+		headers: { ...headers, ...(options?.headers as Record<string, string>) },
+	});
+	if (!resp.ok) {
+		const body = await resp.text().catch(() => "");
+		throw new ToolError(`Gateway API error ${resp.status}: ${body}`);
+	}
+	return resp.json();
+}
+
+async function handleChannelList(_params: Record<string, unknown>): Promise<unknown> {
+	if (!RANDAL_GATEWAY_URL) {
+		return { channels: [], message: "No gateway connection (interactive mode)" };
+	}
+	try {
+		return await gatewayFetch("/_internal/channels");
+	} catch (err) {
+		return {
+			channels: [],
+			message: err instanceof Error ? err.message : "Failed to query channels",
+		};
+	}
+}
+
+async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
+	const channel = params.channel as string;
+	const target = params.target as string;
+	const message = params.message as string;
+
+	if (!channel) throw new ToolError("Missing required parameter: channel");
+	if (!target) throw new ToolError("Missing required parameter: target");
+	if (!message) throw new ToolError("Missing required parameter: message");
+
+	if (!RANDAL_GATEWAY_URL) {
+		return { sent: false, message: "No gateway connection (interactive mode)" };
+	}
+
+	try {
+		const result = await gatewayFetch("/_internal/channel/send", {
+			method: "POST",
+			body: JSON.stringify({ channel, target, message }),
+		});
+		return { sent: true, ...(result as object) };
+	} catch (err) {
+		return {
+			sent: false,
+			message: err instanceof Error ? err.message : "Send failed",
+		};
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -1789,6 +1893,8 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	delegate_task: handleDelegateTask,
 	posse_memory_search: handlePosseMemorySearch,
 	job_info: handleJobInfo,
+	channel_list: handleChannelList,
+	channel_send: handleChannelSend,
 };
 
 // ---------------------------------------------------------------------------
