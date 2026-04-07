@@ -199,6 +199,7 @@ function buildStreamLineHandler(callback: StreamEventCallback): (line: string) =
 	};
 }
 
+
 export class Runner {
 	private config: RandalConfig;
 	private configBasePath: string;
@@ -327,92 +328,6 @@ export class Runner {
 	 */
 	getActiveJobs(): Job[] {
 		return [...this.activeJobs.values()].map((e) => e.job);
-	}
-
-	/**
-	 * Execute a delegation request as a child job.
-	 */
-	private async executeDelegation(
-		parentJob: Job,
-		request: DelegationRequest,
-		_iterationNumber: number,
-	): Promise<void> {
-		this.emit("job.delegation.started", parentJob, {
-			delegationTask: request.task,
-		});
-
-		const childPrompt = request.context
-			? `## Delegated Task\n${request.task}\n\n## Context\n${request.context}`
-			: `## Delegated Task\n${request.task}`;
-
-		const childRunner = new Runner({
-			config: this.config,
-			configBasePath: this.configBasePath,
-			onEvent: this.onEvent,
-			memorySearch: this.memorySearch,
-			skillSearch: this.skillSearch,
-			delegationDepth: this.delegationDepth + 1,
-		});
-
-		const startTime = Date.now();
-		try {
-			const childJob = await childRunner.execute({
-				prompt: childPrompt,
-				workdir: parentJob.workdir,
-				agent: request.agent ?? parentJob.agent,
-				model: request.model ?? parentJob.model,
-				maxIterations: request.maxIterations ?? 5,
-			});
-
-			// Set parentJobId on child (it's already completed at this point)
-			childJob.parentJobId = parentJob.id;
-
-			const result: DelegationResult = {
-				jobId: childJob.id,
-				task: request.task,
-				status: childJob.status,
-				summary:
-					childJob.iterations.history.length > 0
-						? childJob.iterations.history[childJob.iterations.history.length - 1].summary
-						: "",
-				filesChanged: childJob.iterations.history.flatMap((h) => h.filesChanged),
-				duration: Math.round((Date.now() - startTime) / 1000),
-			};
-
-			if (childJob.error) {
-				result.error = childJob.error;
-			}
-
-			parentJob.delegations.push(result);
-
-			this.emit("job.delegation.completed", parentJob, {
-				delegationTask: request.task,
-				delegationJobId: childJob.id,
-				delegationStatus: childJob.status,
-			});
-		} catch (err) {
-			const result: DelegationResult = {
-				jobId: "error",
-				task: request.task,
-				status: "failed",
-				summary: "",
-				filesChanged: [],
-				duration: Math.round((Date.now() - startTime) / 1000),
-				error: err instanceof Error ? err.message : String(err),
-			};
-
-			parentJob.delegations.push(result);
-
-			this.logger.warn("Delegation execution failed", {
-				task: request.task,
-				error: err instanceof Error ? err.message : String(err),
-			});
-
-			this.emit("job.delegation.completed", parentJob, {
-				delegationTask: request.task,
-				delegationStatus: "failed",
-			});
-		}
 	}
 
 	/**
