@@ -28,7 +28,10 @@
 
 import { execSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
+import { checkStruggle } from "@randal/runner";
 import type { SummaryGeneratorOptions } from "@randal/memory";
 
 // ---------------------------------------------------------------------------
@@ -556,6 +559,55 @@ const TOOL_DEFINITIONS = [
 			required: ["content"],
 		},
 	},
+	// --- Struggle detection tool ---
+	{
+		name: "struggle_check",
+		description:
+			"Check if the current work session shows signs of struggle (stuck loops, no progress, high token burn). Call this during self-monitoring to detect when you need to change approach. Does not require Meilisearch — pure logic.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				iterations_without_progress: {
+					type: "number",
+					description:
+						"Number of recent iterations/attempts that produced no meaningful file changes",
+				},
+				recent_errors: {
+					type: "number",
+					description:
+						"Number of consecutive errors or non-zero exit codes in recent attempts",
+				},
+				identical_output_count: {
+					type: "number",
+					description:
+						"Number of consecutive attempts that produced identical or near-identical output",
+				},
+				token_burn_ratio: {
+					type: "number",
+					description:
+						"Ratio of recent token usage to average. >1.5 indicates high burn without progress. Pass 1.0 if unknown.",
+				},
+			},
+			required: ["iterations_without_progress", "recent_errors"],
+		},
+	},
+	// --- Context injection check tool ---
+	{
+		name: "context_check",
+		description:
+			"Check for injected context from channels or the user. Returns any pending context from context.md in the working directory. The file is deleted after reading. Call this periodically during long-running tasks to pick up mid-session context injections (e.g., user sends a follow-up message via Discord while a build is running).",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				workdir: {
+					type: "string",
+					description:
+						"Working directory to check. Defaults to the current working directory.",
+				},
+			},
+			required: [],
+		},
+	},
 ];
 
 // ---------------------------------------------------------------------------
@@ -877,6 +929,46 @@ async function handleChatLog(params: Record<string, unknown>): Promise<unknown> 
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Struggle detection + context check handlers — pure logic, no Meilisearch
+// ---------------------------------------------------------------------------
+
+async function handleStruggleCheck(params: Record<string, unknown>): Promise<unknown> {
+	return checkStruggle({
+		iterations_without_progress: (params.iterations_without_progress as number) ?? 0,
+		recent_errors: (params.recent_errors as number) ?? 0,
+		identical_output_count: (params.identical_output_count as number) ?? 0,
+		token_burn_ratio: (params.token_burn_ratio as number) ?? 1.0,
+	});
+}
+
+async function handleContextCheck(params: Record<string, unknown>): Promise<unknown> {
+	const workdir = (params.workdir as string) || process.cwd();
+	const contextPath = join(workdir, "context.md");
+
+	try {
+		if (!existsSync(contextPath)) {
+			return { hasContext: false, content: null };
+		}
+
+		const content = readFileSync(contextPath, "utf-8").trim();
+		if (!content) {
+			return { hasContext: false, content: null };
+		}
+
+		// Delete after reading (atomic read-and-clear)
+		try {
+			unlinkSync(contextPath);
+		} catch {
+			/* ok — file may have been deleted between read and unlink */
+		}
+
+		return { hasContext: true, content };
+	} catch {
+		return { hasContext: false, content: null };
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -886,6 +978,8 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	chat_thread: handleChatThread,
 	chat_recent: handleChatRecent,
 	chat_log: handleChatLog,
+	struggle_check: handleStruggleCheck,
+	context_check: handleContextCheck,
 };
 
 // ---------------------------------------------------------------------------
