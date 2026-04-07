@@ -574,6 +574,18 @@ export class DiscordChannel implements ChannelAdapter {
 	}
 
 	/**
+	 * Send a message to a specific Discord channel/thread by ID.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 */
+	async send(target: string, message: string): Promise<void> {
+		const channel = await this.client.channels.fetch(target);
+		if (!channel || !("send" in channel)) {
+			throw new Error(`Cannot send to Discord channel ${target}: not a text channel`);
+		}
+		await this.sendReply(channel as SendableChannel, message);
+	}
+
+	/**
 	 * Generate a human-readable thread name from a job prompt.
 	 */
 	private generateThreadName(prompt: string): string {

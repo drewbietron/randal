@@ -18,6 +18,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { EventBus } from "../events.js";
 import { listJobs, loadJob, saveJob } from "../jobs.js";
+import type { ChannelAdapter } from "./channel.js";
 
 /**
  * Constant-time string comparison to prevent timing attacks on auth tokens.
@@ -110,6 +111,8 @@ export interface HttpChannelOptions {
 			startedAt: string;
 		}>;
 	};
+	/** Channel adapter registry for internal API dispatch. */
+	channelAdapters?: ChannelAdapter[];
 }
 
 export function createHttpApp(options: HttpChannelOptions): Hono {
@@ -1020,6 +1023,53 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			const safeName = escapeHtml(config.name);
 			return c.html(
 				`<!DOCTYPE html><html><head><title>Randal</title></head><body><h1>${safeName} Dashboard</h1><p>Dashboard package not available.</p></body></html>`,
+			);
+		}
+	});
+
+	// ---- Internal API (channel awareness) ----
+
+	// List connected channels
+	app.get("/_internal/channels", (c) => {
+		const adapters = options.channelAdapters ?? [];
+		return c.json({
+			channels: adapters.map((a) => ({
+				name: a.name,
+				canSend: typeof a.send === "function",
+			})),
+		});
+	});
+
+	// Send message to a channel
+	app.post("/_internal/channel/send", async (c) => {
+		const body = await c.req.json<{
+			channel: string;
+			target: string;
+			message: string;
+		}>();
+
+		if (!body.channel || !body.target || !body.message) {
+			return c.json({ error: "channel, target, and message are required" }, 400);
+		}
+
+		const adapters = options.channelAdapters ?? [];
+		const adapter = adapters.find((a) => a.name === body.channel);
+
+		if (!adapter) {
+			return c.json({ error: `Channel "${body.channel}" not found` }, 404);
+		}
+
+		if (typeof adapter.send !== "function") {
+			return c.json({ error: `Channel "${body.channel}" does not support send` }, 400);
+		}
+
+		try {
+			await adapter.send(body.target, body.message);
+			return c.json({ ok: true, channel: body.channel, target: body.target });
+		} catch (err) {
+			return c.json(
+				{ error: `Send failed: ${err instanceof Error ? err.message : String(err)}` },
+				500,
 			);
 		}
 	});

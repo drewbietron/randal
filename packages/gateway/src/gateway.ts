@@ -219,6 +219,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		await analyticsEngine.warmup();
 	}
 
+	// Mutable adapter registry — populated after channel start, accessed at request time
+	const channelAdapters: ChannelAdapter[] = [];
+
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
@@ -230,6 +233,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		skillManager,
 		posseClient,
 		analyticsEngine,
+		channelAdapters,
 	});
 
 	// Mount hooks router if enabled
@@ -252,8 +256,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		skillManager,
 		onUpdate: options.onUpdate,
 	};
-	const channelAdapters: ChannelAdapter[] = [];
-
 	for (const channelConfig of config.gateway.channels) {
 		try {
 			if (channelConfig.type === "discord") {

@@ -14,6 +14,8 @@ export interface ChannelAdapter {
 	stop(): void;
 	/** Recover a job→channel mapping after gateway restart. Optional per adapter. */
 	recoverJob?(jobId: string, channelId: string): Promise<void>;
+	/** Send a message to a specific target (channel ID, thread ID, etc.) */
+	send?(target: string, message: string): Promise<void>;
 }
 
 export interface ChannelDeps {
