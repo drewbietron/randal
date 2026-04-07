@@ -57,6 +57,7 @@ describe("Trigger env vars", () => {
 				channel: "scheduler",
 				replyTo: "heartbeat",
 				from: "system",
+				triggerType: "heartbeat",
 			},
 		});
 
@@ -80,6 +81,7 @@ describe("Trigger env vars", () => {
 				channel: "scheduler",
 				replyTo: "cron:daily-review",
 				from: "system",
+				triggerType: "cron",
 			},
 		});
 
@@ -104,6 +106,7 @@ describe("Trigger env vars", () => {
 				channel: "scheduler",
 				replyTo: "hook:agent",
 				from: "system",
+				triggerType: "hook",
 			},
 		});
 
@@ -145,6 +148,7 @@ describe("Trigger env vars", () => {
 				channel: "scheduler",
 				replyTo: "heartbeat",
 				from: "system",
+				triggerType: "heartbeat",
 			},
 			metadata: { RANDAL_HEARTBEAT_TICK: "42" },
 		});

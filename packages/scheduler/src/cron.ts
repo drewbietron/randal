@@ -463,6 +463,7 @@ export class CronScheduler {
 						channel: "scheduler",
 						replyTo: `cron:${name}`,
 						from: "system",
+						triggerType: "cron",
 					},
 				});
 			} catch (err) {

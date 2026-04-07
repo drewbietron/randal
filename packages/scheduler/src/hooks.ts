@@ -114,6 +114,7 @@ export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 					channel: "scheduler",
 					replyTo: "hook:agent",
 					from: "system",
+					triggerType: "hook",
 				},
 			});
 

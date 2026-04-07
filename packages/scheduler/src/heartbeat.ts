@@ -359,6 +359,7 @@ export class Heartbeat {
 					channel: "scheduler",
 					replyTo: "heartbeat",
 					from: "system",
+					triggerType: "heartbeat",
 				},
 				metadata: { RANDAL_HEARTBEAT_TICK: String(this.state.tickCount) },
 			});

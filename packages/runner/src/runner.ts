@@ -201,220 +201,6 @@ function buildStreamLineHandler(callback: StreamEventCallback): (line: string) =
 	};
 }
 
-/**
- * Execute a single iteration of the ralph loop.
- * Spawns the agent process, captures output, and parses results.
- */
-async function executeIteration(
-	job: Job,
-	adapter: AgentAdapter,
-	env: Record<string, string>,
-	systemPrompt: string,
-	iterationTimeoutSecs: number,
-	completionPromiseTag: string,
-	activeJobEntry?: { job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> },
-	onStreamEvent?: StreamEventCallback,
-	agentName?: string,
-): Promise<JobIteration> {
-	const iterStart = Date.now();
-	const iterNum = job.iterations.current + 1;
-
-	const prompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${job.prompt}` : job.prompt;
-
-	const args = adapter.buildCommand({
-		prompt,
-		model: job.model,
-		systemPrompt: undefined, // already merged into prompt
-		workdir: job.workdir,
-		agentName,
-	});
-
-	// Add adapter-specific env overrides
-	const adapterEnv = adapter.envOverrides?.({
-		prompt,
-		model: job.model,
-		workdir: job.workdir,
-	});
-
-	const finalEnv: Record<string, string> = {
-		...env,
-		...adapterEnv,
-		RANDAL_JOB_ID: job.id,
-		RANDAL_ITERATION: String(iterNum),
-	};
-
-	// Inject trigger metadata from job origin
-	if (job.origin?.channel === "scheduler") {
-		const replyTo = job.origin.replyTo;
-		if (replyTo === "heartbeat") {
-			finalEnv.RANDAL_TRIGGER = "heartbeat";
-		} else if (replyTo.startsWith("cron:")) {
-			finalEnv.RANDAL_TRIGGER = "cron";
-			finalEnv.RANDAL_CRON_NAME = replyTo.replace("cron:", "");
-		} else if (replyTo.startsWith("hook:")) {
-			finalEnv.RANDAL_TRIGGER = "hook";
-		}
-	} else {
-		finalEnv.RANDAL_TRIGGER = "user";
-	}
-
-	// Spread job metadata into env vars (e.g. RANDAL_HEARTBEAT_TICK)
-	if (job.metadata) {
-		for (const [key, value] of Object.entries(job.metadata)) {
-			finalEnv[key] = value;
-		}
-	}
-
-	const token = generateToken();
-	const { shell } = wrapCommand(token, adapter.binary, args);
-
-	const proc = Bun.spawn(["bash", "-c", shell], {
-		cwd: job.workdir,
-		env: finalEnv,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-
-	// Store proc reference for kill-on-stop
-	if (activeJobEntry) {
-		activeJobEntry.proc = proc;
-	}
-
-	// Start reading stdout (streaming with real-time event detection) and stderr (batch)
-	const stdoutPromise = readStreamLines(proc.stdout, {
-		onLine: onStreamEvent ? buildStreamLineHandler(onStreamEvent) : undefined,
-		onToolUse: onStreamEvent
-			? (event) => onStreamEvent({ type: "tool_use", toolName: event.tool, toolArgs: event.args })
-			: undefined,
-		parseToolUse: adapter.parseToolUse,
-		maxEventsPerSecond: 0, // No rate limiting — tag detection needs every line
-	});
-	const stderrPromise = readStream(proc.stderr);
-
-	// Wait for process exit with iteration timeout
-	const timeoutMs = iterationTimeoutSecs * 1000;
-	let timedOut = false;
-
-	const exitCode = await Promise.race([
-		proc.exited,
-		new Promise<number>((resolve) =>
-			setTimeout(() => {
-				timedOut = true;
-				try {
-					proc.kill("SIGKILL");
-				} catch {
-					// Process already exited
-				}
-				resolve(124); // Standard timeout exit code
-			}, timeoutMs),
-		),
-	]);
-
-	if (timedOut) {
-		const logger = createLogger({ context: { component: "runner" } });
-		logger.warn("Iteration timed out", {
-			jobId: job.id,
-			iteration: iterNum,
-			timeoutSecs: iterationTimeoutSecs,
-		});
-	}
-
-	// Collect whatever output we have, with a short timeout for stream cleanup
-	const [stdoutResult, stderr] = await Promise.race([
-		Promise.all([stdoutPromise, stderrPromise]),
-		new Promise<[StreamingResult, string]>((resolve) =>
-			setTimeout(() => resolve([{ output: "", toolUses: [], lineCount: 0 }, ""]), 1000),
-		),
-	]);
-	const stdout = stdoutResult.output;
-
-	const duration = Math.round((Date.now() - iterStart) / 1000);
-
-	// Parse sentinel markers to extract clean agent output
-	const parsed = parseOutput(stdout, token);
-	const agentOutput = parsed?.output ?? stdout; // Fallback to raw if markers not found
-	const sentinelExitCode = parsed?.exitCode ?? exitCode;
-
-	// Parse token usage if adapter supports it
-	const tokens = adapter.parseUsage?.(agentOutput) ?? { input: 0, output: 0 };
-
-	// Detect file changes via git diff (simple heuristic)
-	const filesChanged = parseFilesChanged(agentOutput);
-
-	// Extract summary (first meaningful line)
-	const summary = extractSummary(agentOutput);
-
-	// Log stderr at warn level when non-empty
-	if (stderr.trim()) {
-		const logger = createLogger({ context: { component: "runner" } });
-		logger.warn("Agent stderr output", {
-			jobId: job.id,
-			iteration: iterNum,
-			stderr: stderr.slice(0, 1000),
-		});
-	}
-
-	// Clear proc reference after completion
-	if (activeJobEntry) {
-		activeJobEntry.proc = undefined;
-	}
-
-	// Check for completion promise using the clean agent output
-	const promiseFound = findCompletionPromise(agentOutput, completionPromiseTag);
-
-	// Check for fatal errors in agent output (auth failures, etc.)
-	const fatalCheck = detectFatalError(agentOutput, stderr);
-
-	// Parse structured output tags (non-fatal — null/empty on failure)
-	const planUpdate = parsePlanUpdate(agentOutput);
-	const progress = parseProgress(agentOutput);
-	const delegationReqs = parseDelegationRequests(agentOutput);
-
-	return {
-		number: iterNum,
-		startedAt: new Date(iterStart).toISOString(),
-		duration,
-		filesChanged,
-		tokens,
-		exitCode: sentinelExitCode,
-		promiseFound,
-		summary,
-		output: agentOutput || undefined,
-		stderr: stderr.trim() || undefined,
-		fatalError: fatalCheck.isFatal ? fatalCheck.error : undefined,
-		planUpdate: planUpdate ?? undefined,
-		progress: progress ?? undefined,
-		delegationRequests: delegationReqs.length > 0 ? delegationReqs : undefined,
-	};
-}
-
-function parseFilesChanged(output: string): string[] {
-	// Look for common patterns indicating file changes
-	const files: Set<string> = new Set();
-
-	// Match "Created file.ts" or "Modified file.ts" patterns
-	for (const match of output.matchAll(
-		/(?:created|modified|wrote|updated|edited)\s+([^\s,]+\.\w+)/gi,
-	)) {
-		files.add(match[1]);
-	}
-
-	// Match "// iteration N" >> "file.ts" pattern from mock agent
-	for (const match of output.matchAll(/>> "?([^\s"]+\.\w+)"?/g)) {
-		files.add(match[1]);
-	}
-
-	return [...files];
-}
-
-function extractSummary(output: string): string {
-	const lines = output.split("\n").filter((l) => {
-		const t = l.trim();
-		return t && !t.startsWith("__START_") && !t.startsWith("__DONE_");
-	});
-	return lines[0]?.trim().slice(0, 200) ?? "";
-}
-
 export class Runner {
 	private config: RandalConfig;
 	private configBasePath: string;
@@ -566,7 +352,19 @@ export class Runner {
 		if (job.origin?.channel) env.RANDAL_CHANNEL = job.origin.channel;
 		if (job.origin?.from) env.RANDAL_FROM = job.origin.from;
 		if (job.origin?.replyTo) env.RANDAL_REPLY_TO = job.origin.replyTo;
-		if (job.origin?.triggerType) env.RANDAL_TRIGGER = job.origin.triggerType;
+		env.RANDAL_TRIGGER = job.origin?.triggerType ?? "user";
+
+		// Inject scheduler-specific env vars (cron name from replyTo)
+		if (job.origin?.replyTo?.startsWith("cron:")) {
+			env.RANDAL_CRON_NAME = job.origin.replyTo.replace("cron:", "");
+		}
+
+		// Spread job metadata into env vars (e.g. RANDAL_HEARTBEAT_TICK)
+		if (job.metadata) {
+			for (const [key, value] of Object.entries(job.metadata)) {
+				env[key] = value;
+			}
+		}
 
 		// Derive gateway URL for MCP tool callbacks (channel_send, channel_list)
 		const httpCh = this.config.gateway?.channels?.find((c) => c.type === "http");
