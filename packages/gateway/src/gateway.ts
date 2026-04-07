@@ -225,9 +225,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		await analyticsEngine.warmup();
 	}
 
-	// Mutable adapter registry — populated after channel start, accessed at request time
-	const channelAdapters: ChannelAdapter[] = [];
-
 	// ── Wire mesh coordinator (optional, non-fatal) ──
 	let meshRegistry: MeilisearchMeshRegistry | undefined;
 	let healthMonitor: HealthMonitor | undefined;
@@ -342,7 +339,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		analyticsEngine,
 		channelAdapters,
 		meshCoordinator,
-		channelAdapters,
 	});
 
 	// Mount hooks router if enabled

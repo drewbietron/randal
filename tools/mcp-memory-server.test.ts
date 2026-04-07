@@ -260,3 +260,156 @@ describe("posse_memory_search — no indexes configured", () => {
 		expect(result.message).toContain("No cross-agent indexes configured");
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Tests: job_info — channel awareness (interactive mode)
+// ---------------------------------------------------------------------------
+
+describe("job_info — interactive mode", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			// Ensure channel env vars are unset (interactive mode)
+			RANDAL_JOB_ID: "",
+			RANDAL_CHANNEL: "",
+			RANDAL_FROM: "",
+			RANDAL_REPLY_TO: "",
+			RANDAL_TRIGGER: "",
+			RANDAL_BRAIN_SESSION: "",
+			RANDAL_GATEWAY_URL: "",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("returns defaults in interactive mode (no env vars)", async () => {
+		const resp = await callTool(proc, "job_info", {});
+		const result = parseToolResult(resp) as {
+			jobId: string | null;
+			channel: string | null;
+			from: string | null;
+			replyTo: string | null;
+			triggerType: string;
+			isBrainSession: boolean;
+			isInteractive: boolean;
+			gatewayAvailable: boolean;
+		};
+		expect(result.isInteractive).toBe(true);
+		expect(result.channel).toBeNull();
+		expect(result.jobId).toBeNull();
+		expect(result.from).toBeNull();
+		expect(result.replyTo).toBeNull();
+		expect(result.triggerType).toBe("user");
+		expect(result.isBrainSession).toBe(false);
+		expect(result.gatewayAvailable).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: job_info — channel awareness (channel mode)
+// ---------------------------------------------------------------------------
+
+describe("job_info — channel mode", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			RANDAL_JOB_ID: "abc123",
+			RANDAL_CHANNEL: "discord",
+			RANDAL_FROM: "user-456",
+			RANDAL_REPLY_TO: "thread-789",
+			RANDAL_TRIGGER: "cron",
+			RANDAL_BRAIN_SESSION: "true",
+			RANDAL_GATEWAY_URL: "http://localhost:7600",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("returns origin metadata when env vars are set", async () => {
+		const resp = await callTool(proc, "job_info", {});
+		const result = parseToolResult(resp) as {
+			jobId: string | null;
+			channel: string | null;
+			from: string | null;
+			replyTo: string | null;
+			triggerType: string;
+			isBrainSession: boolean;
+			isInteractive: boolean;
+			gatewayAvailable: boolean;
+		};
+		expect(result.isInteractive).toBe(false);
+		expect(result.jobId).toBe("abc123");
+		expect(result.channel).toBe("discord");
+		expect(result.from).toBe("user-456");
+		expect(result.replyTo).toBe("thread-789");
+		expect(result.triggerType).toBe("cron");
+		expect(result.isBrainSession).toBe(true);
+		expect(result.gatewayAvailable).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: channel_list — interactive mode
+// ---------------------------------------------------------------------------
+
+describe("channel_list — interactive mode", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			RANDAL_GATEWAY_URL: "",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("returns empty with message in interactive mode", async () => {
+		const resp = await callTool(proc, "channel_list", {});
+		const result = parseToolResult(resp) as { channels: unknown[]; message: string };
+		expect(result.channels).toEqual([]);
+		expect(result.message).toContain("interactive mode");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: channel_send — interactive mode and validation
+// ---------------------------------------------------------------------------
+
+describe("channel_send — interactive mode", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			RANDAL_GATEWAY_URL: "",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("returns not-sent in interactive mode", async () => {
+		const resp = await callTool(proc, "channel_send", {
+			channel: "discord",
+			target: "123",
+			message: "hello",
+		});
+		const result = parseToolResult(resp) as { sent: boolean; message: string };
+		expect(result.sent).toBe(false);
+		expect(result.message).toContain("interactive mode");
+	});
+
+	test("validates required parameters", async () => {
+		const resp = await callTool(proc, "channel_send", { channel: "discord" }, 2);
+		expect(resp.result?.isError).toBe(true);
+		expect(resp.result?.content?.[0]?.text).toContain("Missing required parameter: target");
+	});
+});
