@@ -40,6 +40,7 @@ export interface JobRequest {
 	maxIterations?: number;
 	workdir?: string;
 	origin?: JobOrigin;
+	metadata?: Record<string, string>;
 }
 
 function generateJobId(): string {
@@ -109,6 +110,7 @@ function createJob(req: JobRequest, config: RandalConfig): Job {
 		error: null,
 		exitCode: null,
 		origin: req.origin,
+		metadata: req.metadata,
 	};
 }
 
