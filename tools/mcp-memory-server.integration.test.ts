@@ -15,12 +15,21 @@ import { type Server, type Subprocess, spawn } from "bun";
 import { MeiliSearch } from "meilisearch";
 
 // ---------------------------------------------------------------------------
-// Skip guard
+// Skip guard — probe Meilisearch availability so CI skips automatically
 // ---------------------------------------------------------------------------
 
 const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
 const MEILI_KEY = process.env.MEILI_MASTER_KEY || "";
-const SKIP = process.env.RANDAL_SKIP_MEILISEARCH === "true";
+
+let SKIP = process.env.RANDAL_SKIP_MEILISEARCH === "true";
+if (!SKIP) {
+	try {
+		const client = new MeiliSearch({ host: MEILI_URL, apiKey: MEILI_KEY || undefined });
+		await client.health();
+	} catch {
+		SKIP = true;
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Line-buffered MCP server wrapper
