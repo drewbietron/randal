@@ -1,5 +1,6 @@
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
@@ -13,6 +14,7 @@ import {
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
 import { MeiliSearch } from "meilisearch";
+import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
 import { DiscordChannel } from "./channels/discord.js";
 import { createHttpApp } from "./channels/http.js";
@@ -97,6 +99,25 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		logger.warn("Message history initialization failed, continuing without message history", {
 			error: err instanceof Error ? err.message : String(err),
 		});
+	}
+
+	// Initialize annotation store for analytics (if enabled)
+	let annotationStore: MeilisearchAnnotationStore | undefined;
+	let analyticsEngine: AnalyticsEngineFacade | undefined;
+	if (config.analytics?.enabled) {
+		try {
+			const meiliClient = new MeiliSearch({
+				host: config.memory.url,
+				apiKey: config.memory.apiKey,
+			});
+			annotationStore = new MeilisearchAnnotationStore(meiliClient, config.name);
+			await annotationStore.init();
+			logger.info("Annotation store initialized");
+		} catch (err) {
+			logger.warn("Annotation store init failed, continuing without analytics", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	// Initialize skill manager
@@ -192,6 +213,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		});
 	}
 
+	// Create analytics facade (needs runner for job lookups in addAnnotation)
+	if (annotationStore) {
+		analyticsEngine = new AnalyticsEngineFacade(annotationStore, runner, config);
+		await analyticsEngine.warmup();
+	}
+
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
@@ -202,6 +229,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		scheduler,
 		skillManager,
 		posseClient,
+		analyticsEngine,
 	});
 
 	// Mount hooks router if enabled

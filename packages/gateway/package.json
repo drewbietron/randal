@@ -9,6 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@randal/analytics": "workspace:*",
 		"@randal/core": "workspace:*",
 		"@randal/runner": "workspace:*",
 		"@randal/scheduler": "workspace:*",
