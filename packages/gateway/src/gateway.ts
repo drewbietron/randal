@@ -339,6 +339,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		analyticsEngine,
 		channelAdapters,
 		meshCoordinator,
+		channelAdapters,
 	});
 
 	// Mount hooks router if enabled
