@@ -974,6 +974,37 @@ const TOOL_DEFINITIONS = [
 			required: ["channel", "target", "message"],
 		},
 	},
+	{
+		name: "emit_event",
+		description:
+			"Emit a structured event to all connected channels (Discord, iMessage, etc.). Use this to send intentional notifications or alerts — not for routine progress (use <progress> tags for that). Types: 'notification' for milestones ('Auth refactor complete'), 'alert' for issues needing human attention ('Build stuck, need help'), 'progress' for status updates. Rate limited to 1 per type per 10 seconds.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				type: {
+					type: "string",
+					enum: ["notification", "alert", "progress"],
+					description:
+						"Event type: notification (milestone), alert (needs human attention), progress (status update)",
+				},
+				message: {
+					type: "string",
+					description: "The event message (max 2000 chars). Be concise and actionable.",
+				},
+				severity: {
+					type: "string",
+					enum: ["info", "warning", "critical"],
+					description: "Severity level (default: info for notifications, warning for alerts)",
+				},
+				channel: {
+					type: "string",
+					description:
+						"Target a specific channel (discord, imessage). Omit to send to the originating channel.",
+				},
+			},
+			required: ["type", "message"],
+		},
+	},
 ];
 
 // ---------------------------------------------------------------------------
@@ -1874,6 +1905,75 @@ async function handleChannelSend(params: Record<string, unknown>): Promise<unkno
 	}
 }
 
+async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown> {
+	const type = params.type as string;
+	const message = params.message as string;
+	const severity = params.severity as string | undefined;
+	const channel = params.channel as string | undefined;
+
+	if (!type || !message) {
+		throw new ToolError("Missing required parameters: type and message");
+	}
+
+	if (!RANDAL_JOB_ID) {
+		// Interactive mode — log the event but don't try to route it
+		return {
+			emitted: false,
+			message: "Event logged (interactive mode — no gateway connection)",
+			type,
+			eventMessage: message,
+		};
+	}
+
+	if (!RANDAL_GATEWAY_URL) {
+		return {
+			emitted: false,
+			message: "No gateway URL configured — event not routed",
+			type,
+			eventMessage: message,
+		};
+	}
+
+	try {
+		const resp = await fetch(`${RANDAL_GATEWAY_URL}/_internal/events`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type,
+				jobId: RANDAL_JOB_ID,
+				message,
+				severity,
+				targetChannel: channel,
+			}),
+		});
+
+		if (resp.status === 429) {
+			const body = (await resp.json()) as { retryAfterSeconds?: number };
+			return {
+				emitted: false,
+				rateLimited: true,
+				retryAfterSeconds: body.retryAfterSeconds ?? 10,
+				message: "Rate limited — wait before sending another event of this type",
+			};
+		}
+
+		if (!resp.ok) {
+			const body = (await resp.json().catch(() => ({}))) as { error?: string };
+			return {
+				emitted: false,
+				message: `Gateway error: ${body.error ?? resp.statusText}`,
+			};
+		}
+
+		return { emitted: true, type: `brain.${type}`, jobId: RANDAL_JOB_ID };
+	} catch (err) {
+		return {
+			emitted: false,
+			message: `Failed to reach gateway: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -1895,6 +1995,7 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	job_info: handleJobInfo,
 	channel_list: handleChannelList,
 	channel_send: handleChannelSend,
+	emit_event: handleEmitEvent,
 };
 
 // ---------------------------------------------------------------------------
