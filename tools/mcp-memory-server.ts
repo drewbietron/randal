@@ -11,6 +11,15 @@
  *   - chat_thread    — retrieve a specific conversation thread by ID
  *   - chat_recent    — list recent conversation threads
  *   - chat_log       — persist a message to chat history
+ *   - struggle_check  — detect stuck loops, no progress, high token burn
+ *   - context_check   — read injected context from context.md
+ *   - reliability_scores — query pass rates across dimensions (analytics)
+ *   - recommendations — get actionable improvement suggestions (analytics)
+ *   - get_feedback    — get empirical guidance for a task domain (analytics)
+ *   - annotate        — submit quality annotation for a completed task (analytics)
+ *   - posse_members   — discover other Randal instances in the posse (delegation)
+ *   - delegate_task   — send a task to a peer instance (delegation)
+ *   - posse_memory_search — search shared memory across posse peers (delegation)
  *
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
@@ -24,15 +33,41 @@
  *   SEMANTIC_RATIO       — hybrid search ratio 0-1 (default: 0.7, higher = more semantic)
  *   SUMMARY_MODEL        — LLM model for chat summaries (default: anthropic/claude-haiku-3)
  *   RANDAL_SKIP_MEILISEARCH — skip Docker auto-start when "true" (default: unset)
+ *   ANALYTICS_ENABLED    — enable analytics tools (default: "true")
+ *   RANDAL_INSTANCE_NAME — instance name for annotation index (default: "randal")
+ *   RANDAL_POSSE_NAME    — posse name to join (enables delegation tools)
+ *   RANDAL_SELF_NAME     — this agent's name in the posse
+ *   RANDAL_GATEWAY_URL   — this agent's gateway URL (for peer identification)
+ *   RANDAL_CROSS_AGENT_READ_FROM — comma-separated index names for cross-agent memory search
+ *   RANDAL_PEER_AUTH_TOKEN — optional auth token for peer-to-peer HTTP calls
  */
 
 import { execSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
-import type { SummaryGeneratorOptions } from "@randal/memory";
+import {
+	MeilisearchAnnotationStore,
+	computeReliabilityScores,
+	computeTrends,
+	generateFeedback,
+	generateRecommendations,
+	getPrimaryDomain,
+} from "@randal/analytics";
+import type { Annotation, AnnotationVerdict, RandalConfig } from "@randal/core";
+import {
+	EmbeddingService,
+	MeilisearchStore,
+	MessageManager,
+	queryPosseMembers,
+	registryDocToMeshInstance,
+	searchCrossAgent,
+} from "@randal/memory";
+import type { RegistryClient, SummaryGeneratorOptions } from "@randal/memory";
+import { checkHealth, routeTask } from "@randal/mesh";
+import type { RoutingContext } from "@randal/mesh";
 import { checkStruggle } from "@randal/runner";
+import { MeiliSearch } from "meilisearch";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -54,6 +89,22 @@ const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
 
 /** Categories that default to global scope (cross-project). */
 const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
+
+// Channel-awareness: origin metadata injected by the runner
+const RANDAL_JOB_ID = process.env.RANDAL_JOB_ID || "";
+const RANDAL_CHANNEL = process.env.RANDAL_CHANNEL || "";
+const RANDAL_FROM = process.env.RANDAL_FROM || "";
+const RANDAL_REPLY_TO = process.env.RANDAL_REPLY_TO || "";
+const RANDAL_TRIGGER = process.env.RANDAL_TRIGGER || "";
+const RANDAL_BRAIN_SESSION = process.env.RANDAL_BRAIN_SESSION || "";
+const RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
+
+// Posse configuration — enables cross-instance delegation tools
+const RANDAL_POSSE_NAME = process.env.RANDAL_POSSE_NAME || "";
+const RANDAL_SELF_NAME = process.env.RANDAL_SELF_NAME || "";
+const RANDAL_GATEWAY_URL = process.env.RANDAL_GATEWAY_URL || "";
+const RANDAL_CROSS_AGENT_READ_FROM = process.env.RANDAL_CROSS_AGENT_READ_FROM || "";
+const RANDAL_PEER_AUTH_TOKEN = process.env.RANDAL_PEER_AUTH_TOKEN || "";
 
 // ---------------------------------------------------------------------------
 // Project scope auto-detection
@@ -135,6 +186,22 @@ let messagesAvailable = false;
 let messagesInitError: string | null = null;
 
 // ---------------------------------------------------------------------------
+// Analytics store construction
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_ENABLED = process.env.ANALYTICS_ENABLED !== "false";
+const INSTANCE_NAME = process.env.RANDAL_INSTANCE_NAME || "randal";
+
+const meiliClient = new MeiliSearch({ host: MEILI_URL, apiKey: MEILI_MASTER_KEY || undefined });
+const annotationStore = new MeilisearchAnnotationStore(meiliClient, INSTANCE_NAME);
+
+/** Whether the annotation store initialized successfully. */
+let analyticsAvailable = false;
+
+/** Last init failure reason for diagnostics (null = no error). */
+let analyticsInitError: string | null = null;
+
+// ---------------------------------------------------------------------------
 // Init retry with exponential backoff & lazy re-init helpers
 // ---------------------------------------------------------------------------
 
@@ -211,6 +278,25 @@ async function retryInit(): Promise<void> {
 			if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
 		}
 	}
+	if (ANALYTICS_ENABLED) {
+		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+			try {
+				await annotationStore.init();
+				analyticsAvailable = true;
+				analyticsInitError = null;
+				log("info", `AnnotationStore initialized (attempt ${attempt})`);
+				break;
+			} catch (err) {
+				analyticsInitError = classifyInitError(err);
+				const delay = Math.min(1000 * 2 ** (attempt - 1), 16000);
+				log(
+					"warn",
+					`AnnotationStore init attempt ${attempt}/${MAX_ATTEMPTS} failed: ${analyticsInitError}. Retry in ${delay}ms`,
+				);
+				if (attempt < MAX_ATTEMPTS) await Bun.sleep(delay);
+			}
+		}
+	}
 }
 
 /** Lazy re-init: attempt store.init() if not yet available. Returns true if available. */
@@ -243,6 +329,61 @@ async function ensureMessages(): Promise<boolean> {
 	}
 }
 
+/** Lazy re-init: attempt annotationStore.init() if not yet available. Returns true if available. */
+async function ensureAnalytics(): Promise<boolean> {
+	if (!ANALYTICS_ENABLED) return false;
+	if (analyticsAvailable) return true;
+	try {
+		await annotationStore.init();
+		analyticsAvailable = true;
+		analyticsInitError = null;
+		log("info", "AnnotationStore lazy re-init succeeded");
+		return true;
+	} catch (err) {
+		analyticsInitError = classifyInitError(err);
+		return false;
+	}
+}
+
+/**
+ * Check if posse is configured and the Meilisearch client is ready.
+ * Returns true if posse_members/delegate_task/posse_memory_search tools can operate.
+ */
+function ensurePosse(): boolean {
+	return !!(RANDAL_POSSE_NAME && RANDAL_SELF_NAME);
+}
+
+/**
+ * Build a minimal RandalConfig stub with the fields needed for posse operations.
+ * This avoids importing the full parseConfig() just for the MCP server.
+ */
+function buildPosseConfigStub(): RandalConfig {
+	return {
+		posse: RANDAL_POSSE_NAME,
+		name: RANDAL_SELF_NAME,
+		memory: {
+			url: MEILI_URL,
+			apiKey: MEILI_MASTER_KEY,
+			store: "meilisearch",
+			sharing: {
+				readFrom: RANDAL_CROSS_AGENT_READ_FROM
+					? RANDAL_CROSS_AGENT_READ_FROM.split(",")
+							.map((s) => s.trim())
+							.filter(Boolean)
+					: [],
+				publishTo: "",
+			},
+		},
+		mesh: {
+			endpoint: RANDAL_GATEWAY_URL,
+		},
+		// Minimal stubs for required fields — not used by posse operations
+		tools: [],
+		runner: { defaultAgent: "" },
+		version: "0.1",
+	} as unknown as RandalConfig;
+}
+
 /** Get a diagnostic error string for store unavailability. */
 function getStoreError(): string {
 	return storeInitError ?? "Meilisearch is not available (unknown reason)";
@@ -251,6 +392,12 @@ function getStoreError(): string {
 /** Get a diagnostic error string for messages unavailability. */
 function getMessagesError(): string {
 	return messagesInitError ?? "Chat history is not available (unknown reason)";
+}
+
+/** Get a diagnostic error string for analytics unavailability. */
+function getAnalyticsError(): string {
+	if (!ANALYTICS_ENABLED) return "Analytics not enabled (set ANALYTICS_ENABLED=true)";
+	return analyticsInitError ?? "Annotation store is not available (unknown reason)";
 }
 
 /** Standard hint for Meilisearch connectivity issues. */
@@ -604,6 +751,227 @@ const TOOL_DEFINITIONS = [
 				},
 			},
 			required: [],
+		},
+	},
+	// --- Analytics tools ---
+	{
+		name: "reliability_scores",
+		description:
+			"Query the brain's own pass rates across dimensions (overall, agent, model, domain, complexity). Returns scores + 7-day/30-day trends. Use this to understand your reliability before starting work.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				dimension: {
+					type: "string",
+					description:
+						'Optional dimension filter: "overall", "agent", "model", "domain", or "complexity". Returns all dimensions if omitted.',
+				},
+				agingHalfLife: {
+					type: "number",
+					description:
+						"Half-life for annotation aging in days (default: 30). Recent annotations weigh more.",
+				},
+			},
+			required: [],
+		},
+	},
+	{
+		name: "recommendations",
+		description:
+			'Ask "what should I improve?" Returns actionable recommendations: model switches, knowledge gaps, instance splitting, trend alerts.',
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "get_feedback",
+		description:
+			"Get empirical guidance text for a given task domain based on past annotation patterns. Returns a markdown block suitable for injection into build context.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				domain: {
+					type: "string",
+					description:
+						'Task domain to get feedback for (e.g., "frontend", "backend", "database", "infra", "docs", "testing").',
+				},
+			},
+			required: ["domain"],
+		},
+	},
+	{
+		name: "annotate",
+		description:
+			"Submit a quality annotation for a completed task. Used to track agent reliability and feed the self-learning analytics loop.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				jobId: {
+					type: "string",
+					description: "Job ID or plan slug to annotate",
+				},
+				verdict: {
+					type: "string",
+					description: 'Annotation verdict: "pass", "fail", or "partial"',
+				},
+				feedback: {
+					type: "string",
+					description: "Optional feedback text describing what went well or wrong",
+				},
+				categories: {
+					type: "array",
+					description: "Optional category tags for the annotation",
+				},
+				agent: {
+					type: "string",
+					description: 'Agent name (default: "opencode")',
+				},
+				model: {
+					type: "string",
+					description: 'Model used (default: "unknown")',
+				},
+				prompt: {
+					type: "string",
+					description: "Original task prompt (used for domain auto-detection)",
+				},
+				domain: {
+					type: "string",
+					description: "Task domain. Auto-detected from prompt if omitted.",
+				},
+				iterationCount: {
+					type: "number",
+					description: "Number of iterations/attempts (default: 1)",
+				},
+				tokenCost: {
+					type: "number",
+					description: "Estimated token cost (default: 0)",
+				},
+				duration: {
+					type: "number",
+					description: "Wall time in seconds (default: 0)",
+				},
+				filesChanged: {
+					type: "array",
+					description: "List of files changed during the task",
+				},
+			},
+			required: ["jobId", "verdict"],
+		},
+	},
+	// --- Posse delegation tools ---
+	{
+		name: "posse_members",
+		description:
+			"Discover other Randal instances in your posse. Returns name, status, specialization, capabilities, endpoint, and last heartbeat for each member. Use this to see who is available before delegating work.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "delegate_task",
+		description:
+			"Send a task to another Randal instance in the posse. Specify a target peer by name, or omit to auto-route to the best-fit instance. Returns the job ID and result (or polls until complete).",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				task: {
+					type: "string",
+					description: "The task description to delegate",
+				},
+				target: {
+					type: "string",
+					description: "Name of the target peer (from posse_members). Omit for auto-routing.",
+				},
+				domain: {
+					type: "string",
+					description: "Task domain hint for auto-routing (e.g. 'frontend', 'backend', 'devops')",
+				},
+				model: {
+					type: "string",
+					description: "Preferred model for the task (used in auto-routing scoring)",
+				},
+				async: {
+					type: "boolean",
+					description:
+						"If true, return immediately with the job ID instead of waiting for completion (default: false)",
+				},
+			},
+			required: ["task"],
+		},
+	},
+	{
+		name: "posse_memory_search",
+		description:
+			"Search shared posse memory across other Randal instances. Returns learnings, patterns, and facts from peers. Useful for checking if another instance already solved a similar problem.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				query: {
+					type: "string",
+					description: "Search query for cross-agent memory",
+				},
+				limit: {
+					type: "number",
+					description: "Maximum number of results to return (default 5)",
+				},
+			},
+			required: ["query"],
+		},
+	},
+	// ---- Channel Awareness Tools ----
+	{
+		name: "job_info",
+		description:
+			"Get metadata about the current job: job ID, channel, sender, reply-to address, and trigger type. " +
+			"Use this to adapt behavior based on context — e.g., shorter responses for Discord, " +
+			"knowing if this is a user request vs a scheduled task. Returns empty/default values in interactive mode (no channel).",
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "channel_list",
+		description:
+			"List connected communication channels and their capabilities. " +
+			"Returns an array of channels (e.g., discord, imessage) with whether they support sending messages. " +
+			"Use this to discover where you can send messages. Returns empty list in interactive mode.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {},
+			required: [],
+		},
+	},
+	{
+		name: "channel_send",
+		description:
+			"Send a message to a specific channel and target. The target depends on the channel type: " +
+			"for Discord it's a channel/thread ID, for iMessage it's a chat GUID. " +
+			"Use job_info to get the current channel and replyTo target for responding in the same conversation. " +
+			"The message will go through the channel adapter's formatting and rate limiting.",
+		inputSchema: {
+			type: "object" as const,
+			properties: {
+				channel: {
+					type: "string",
+					description: 'Channel name: "discord", "imessage", etc.',
+				},
+				target: {
+					type: "string",
+					description:
+						"Target identifier within the channel (Discord channel/thread ID, iMessage chat GUID, etc.)",
+				},
+				message: {
+					type: "string",
+					description: "Message text to send",
+				},
+			},
+			required: ["channel", "target", "message"],
 		},
 	},
 ];
@@ -967,6 +1335,545 @@ async function handleContextCheck(params: Record<string, unknown>): Promise<unkn
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Analytics tool handlers
+// ---------------------------------------------------------------------------
+
+/** Shared helper: fetch annotations and compute scores to avoid redundant work. */
+async function getAnnotationsAndScores(agingHalfLife?: number) {
+	const annotations = await annotationStore.list();
+	const { scores, insufficientData } = computeReliabilityScores(annotations, {
+		agingHalfLife,
+	});
+	return { annotations, scores, insufficientData };
+}
+
+async function handleReliabilityScores(params: Record<string, unknown>): Promise<unknown> {
+	if (!ANALYTICS_ENABLED) {
+		return {
+			message: "Analytics not enabled",
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+		};
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return {
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+			message: error,
+			error,
+			hint: MEILI_HINT,
+		};
+	}
+
+	try {
+		const dimension = params.dimension as string | undefined;
+		const agingHalfLife =
+			typeof params.agingHalfLife === "number" ? params.agingHalfLife : undefined;
+
+		const { annotations, scores, insufficientData } = await getAnnotationsAndScores(agingHalfLife);
+		const trends = computeTrends(annotations);
+
+		const filteredScores = dimension ? scores.filter((s) => s.dimension === dimension) : scores;
+
+		return {
+			scores: filteredScores,
+			trends,
+			insufficientData,
+			totalAnnotations: annotations.length,
+		};
+	} catch (err) {
+		log("error", `reliability_scores failed: ${err instanceof Error ? err.message : String(err)}`);
+		return {
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+			message: "Failed to compute scores",
+		};
+	}
+}
+
+async function handleRecommendations(_params: Record<string, unknown>): Promise<unknown> {
+	if (!ANALYTICS_ENABLED) {
+		return { message: "Analytics not enabled", recommendations: [] };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { recommendations: [], message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const { annotations, scores } = await getAnnotationsAndScores();
+		const recommendations = generateRecommendations(scores, annotations);
+
+		return { recommendations };
+	} catch (err) {
+		log("error", `recommendations failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { recommendations: [], message: "Failed to generate recommendations" };
+	}
+}
+
+async function handleGetFeedback(params: Record<string, unknown>): Promise<unknown> {
+	const domain = params.domain as string;
+	if (!domain) {
+		throw new ToolError("Missing required parameter: domain");
+	}
+
+	if (!ANALYTICS_ENABLED) {
+		return { message: "Analytics not enabled", feedback: "", domain };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { feedback: "", domain, message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const { annotations, scores } = await getAnnotationsAndScores();
+		const feedback = generateFeedback(scores, annotations, domain);
+
+		return { feedback, domain };
+	} catch (err) {
+		log("error", `get_feedback failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { feedback: "", domain, message: "Failed to generate feedback" };
+	}
+}
+
+async function handleAnnotate(params: Record<string, unknown>): Promise<unknown> {
+	const jobId = params.jobId as string;
+	const verdict = params.verdict as string;
+
+	if (!jobId) {
+		throw new ToolError("Missing required parameter: jobId");
+	}
+	if (!verdict || !["pass", "fail", "partial"].includes(verdict)) {
+		throw new ToolError(
+			'Missing or invalid parameter: verdict (must be "pass", "fail", or "partial")',
+		);
+	}
+
+	if (!ANALYTICS_ENABLED) {
+		return { success: false, message: "Analytics not enabled" };
+	}
+	if (!(await ensureAnalytics())) {
+		const error = getAnalyticsError();
+		return { success: false, message: error, error, hint: MEILI_HINT };
+	}
+
+	try {
+		const prompt = (params.prompt as string) || "";
+		const domain = (params.domain as string) || (prompt ? getPrimaryDomain(prompt) : "general");
+
+		const annotation: Annotation = {
+			id: randomUUID(),
+			jobId,
+			verdict: verdict as AnnotationVerdict,
+			feedback: (params.feedback as string) || undefined,
+			categories: (params.categories as string[]) || undefined,
+			agent: (params.agent as string) || "opencode",
+			model: (params.model as string) || "unknown",
+			domain,
+			iterationCount: typeof params.iterationCount === "number" ? params.iterationCount : 1,
+			tokenCost: typeof params.tokenCost === "number" ? params.tokenCost : 0,
+			duration: typeof params.duration === "number" ? params.duration : 0,
+			filesChanged: (params.filesChanged as string[]) || [],
+			prompt,
+			timestamp: new Date().toISOString(),
+		};
+
+		await annotationStore.save(annotation);
+
+		return {
+			success: true,
+			annotationId: annotation.id,
+			domain,
+			message: "Annotation saved successfully",
+		};
+	} catch (err) {
+		log("error", `annotate failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { success: false, message: "Failed to save annotation" };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Posse delegation tool handlers
+// ---------------------------------------------------------------------------
+
+const POSSE_NOT_CONFIGURED =
+	"Posse not configured. Set RANDAL_POSSE_NAME and RANDAL_SELF_NAME environment variables to enable posse tools.";
+
+async function handlePosseMembers(_params: Record<string, unknown>): Promise<unknown> {
+	if (!ensurePosse()) {
+		return { members: [], message: POSSE_NOT_CONFIGURED };
+	}
+
+	try {
+		const config = buildPosseConfigStub();
+		const posseClient = new MeiliSearch({
+			host: MEILI_URL,
+			apiKey: MEILI_MASTER_KEY || undefined,
+		}) as unknown as RegistryClient;
+		const docs = await queryPosseMembers(config, posseClient);
+
+		return {
+			members: docs.map((doc) => ({
+				name: doc.name,
+				status: doc.status,
+				specialization: doc.specialization,
+				capabilities: doc.capabilities,
+				endpoint: doc.endpoint,
+				lastHeartbeat: doc.lastHeartbeat,
+				isSelf: doc.name === RANDAL_SELF_NAME,
+			})),
+		};
+	} catch (err) {
+		log("error", `posse_members failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { members: [], message: "Failed to query posse members" };
+	}
+}
+
+/** Maximum time to poll for a delegated job to complete (5 minutes). */
+const DELEGATE_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+/** Interval between job status polls (3 seconds). */
+const DELEGATE_POLL_INTERVAL_MS = 3000;
+/** HTTP request timeout for delegation calls (30 seconds). */
+const DELEGATE_HTTP_TIMEOUT_MS = 30_000;
+
+async function handleDelegateTask(params: Record<string, unknown>): Promise<unknown> {
+	const task = params.task as string;
+	if (!task) {
+		throw new ToolError("Missing required parameter: task");
+	}
+
+	if (!ensurePosse()) {
+		return { delegated: false, message: POSSE_NOT_CONFIGURED };
+	}
+
+	const target = params.target as string | undefined;
+	const domain = params.domain as string | undefined;
+	const model = params.model as string | undefined;
+	const isAsync = params.async === true;
+
+	// Guard: reject self-delegation
+	if (target && target === RANDAL_SELF_NAME) {
+		return { delegated: false, message: "Cannot delegate to self" };
+	}
+
+	try {
+		const config = buildPosseConfigStub();
+		const posseClient = new MeiliSearch({
+			host: MEILI_URL,
+			apiKey: MEILI_MASTER_KEY || undefined,
+		}) as unknown as RegistryClient;
+		const docs = await queryPosseMembers(config, posseClient);
+
+		// Filter out self
+		const peers = docs.filter((d) => d.name !== RANDAL_SELF_NAME);
+		if (peers.length === 0) {
+			return { delegated: false, message: "No peers available in the posse" };
+		}
+
+		let targetEndpoint: string | undefined;
+		let targetName: string | undefined;
+
+		if (target) {
+			// Explicit target — find by name
+			const peer = peers.find((d) => d.name === target);
+			if (!peer) {
+				return {
+					delegated: false,
+					message: `Peer "${target}" not found in posse. Available: ${peers.map((p) => p.name).join(", ")}`,
+				};
+			}
+			if (!peer.endpoint) {
+				return {
+					delegated: false,
+					message: `Peer "${target}" has no endpoint registered`,
+				};
+			}
+			targetEndpoint = peer.endpoint;
+			targetName = peer.name;
+		} else {
+			// Auto-route using mesh router
+			const instances = peers.map(registryDocToMeshInstance);
+			const routingContext: RoutingContext = {
+				prompt: task,
+				domain,
+				model,
+			};
+			const decision = routeTask(instances, routingContext);
+			if (!decision) {
+				return {
+					delegated: false,
+					message: "No suitable peer found for auto-routing. Consider specifying a target.",
+				};
+			}
+			if (!decision.instance.endpoint) {
+				return {
+					delegated: false,
+					message: `Best peer "${decision.instance.name}" has no endpoint registered`,
+				};
+			}
+			targetEndpoint = decision.instance.endpoint;
+			targetName = decision.instance.name;
+			log(
+				"info",
+				`Auto-routed to ${targetName} (score: ${decision.score.toFixed(2)}, reason: ${decision.reason})`,
+			);
+		}
+
+		// Pre-flight health check
+		const healthResult = await checkHealth({
+			instanceId: targetName,
+			name: targetName,
+			endpoint: targetEndpoint,
+			status: "idle",
+			capabilities: [],
+			lastHeartbeat: new Date().toISOString(),
+			models: [],
+			activeJobs: 0,
+			completedJobs: 0,
+			health: { uptime: 0, missedPings: 0 },
+		});
+
+		if (!healthResult.healthy) {
+			return {
+				delegated: false,
+				message: `Peer "${targetName}" is not healthy: ${healthResult.error ?? "unknown error"}`,
+			};
+		}
+
+		// POST to peer's /jobs endpoint
+		const headers: Record<string, string> = { "Content-Type": "application/json" };
+		if (RANDAL_PEER_AUTH_TOKEN) {
+			headers.Authorization = `Bearer ${RANDAL_PEER_AUTH_TOKEN}`;
+		}
+
+		const jobResp = await fetch(`${targetEndpoint}/jobs`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				prompt: task,
+				origin: {
+					channel: "posse",
+					from: RANDAL_SELF_NAME,
+				},
+			}),
+			signal: AbortSignal.timeout(DELEGATE_HTTP_TIMEOUT_MS),
+		});
+
+		if (!jobResp.ok) {
+			const body = await jobResp.text().catch(() => "");
+			return {
+				delegated: false,
+				message: `Peer "${targetName}" rejected the job: HTTP ${jobResp.status} ${body}`,
+			};
+		}
+
+		const jobData = (await jobResp.json()) as { id?: string; jobId?: string };
+		const jobId = jobData.id ?? jobData.jobId;
+		if (!jobId) {
+			return {
+				delegated: false,
+				message: `Peer "${targetName}" returned no job ID`,
+			};
+		}
+
+		log("info", `Task delegated to ${targetName}: jobId=${jobId}`);
+
+		// If async, return immediately
+		if (isAsync) {
+			return {
+				delegated: true,
+				jobId,
+				target: targetName,
+				status: "submitted",
+				message: `Task submitted to ${targetName}. Check status at ${targetEndpoint}/jobs/${jobId}`,
+			};
+		}
+
+		// Poll for completion
+		const deadline = Date.now() + DELEGATE_POLL_TIMEOUT_MS;
+		while (Date.now() < deadline) {
+			await new Promise((r) => setTimeout(r, DELEGATE_POLL_INTERVAL_MS));
+
+			try {
+				const statusResp = await fetch(`${targetEndpoint}/jobs/${jobId}`, {
+					headers,
+					signal: AbortSignal.timeout(DELEGATE_HTTP_TIMEOUT_MS),
+				});
+
+				if (!statusResp.ok) continue;
+
+				const statusData = (await statusResp.json()) as {
+					status?: string;
+					summary?: string;
+					error?: string;
+					filesChanged?: string[];
+				};
+
+				if (
+					statusData.status === "completed" ||
+					statusData.status === "failed" ||
+					statusData.status === "stopped"
+				) {
+					return {
+						delegated: true,
+						jobId,
+						target: targetName,
+						status: statusData.status,
+						summary: statusData.summary ?? "",
+						error: statusData.error,
+						filesChanged: statusData.filesChanged ?? [],
+					};
+				}
+			} catch {
+				// Poll failure — retry
+			}
+		}
+
+		return {
+			delegated: true,
+			jobId,
+			target: targetName,
+			status: "timeout",
+			message: `Job ${jobId} on ${targetName} did not complete within ${DELEGATE_POLL_TIMEOUT_MS / 1000}s. Check status manually.`,
+		};
+	} catch (err) {
+		log("error", `delegate_task failed: ${err instanceof Error ? err.message : String(err)}`);
+		return {
+			delegated: false,
+			message: `Delegation failed: ${err instanceof Error ? err.message : String(err)}`,
+		};
+	}
+}
+
+async function handlePosseMemorySearch(params: Record<string, unknown>): Promise<unknown> {
+	const query = params.query as string;
+	if (!query) {
+		throw new ToolError("Missing required parameter: query");
+	}
+
+	if (!ensurePosse()) {
+		return { results: [], message: POSSE_NOT_CONFIGURED };
+	}
+
+	const config = buildPosseConfigStub();
+	const readFrom = config.memory.sharing.readFrom;
+	if (readFrom.length === 0) {
+		return {
+			results: [],
+			message:
+				"No cross-agent indexes configured. Set RANDAL_CROSS_AGENT_READ_FROM (comma-separated index names).",
+		};
+	}
+
+	const limit = typeof params.limit === "number" ? params.limit : 5;
+
+	try {
+		const docs = await searchCrossAgent(query, config, limit);
+
+		return {
+			results: docs.map((doc) => ({
+				id: doc.id,
+				type: doc.type,
+				category: doc.category,
+				content: doc.content,
+				source: doc.source,
+				scope: doc.scope,
+				timestamp: doc.timestamp,
+			})),
+		};
+	} catch (err) {
+		log("error", `posse_memory_search failed: ${err instanceof Error ? err.message : String(err)}`);
+		return { results: [], message: "Cross-agent memory search failed" };
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Channel-awareness tool handlers
+// ---------------------------------------------------------------------------
+
+async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown> {
+	return {
+		jobId: RANDAL_JOB_ID || null,
+		channel: RANDAL_CHANNEL || null,
+		from: RANDAL_FROM || null,
+		replyTo: RANDAL_REPLY_TO || null,
+		triggerType: RANDAL_TRIGGER || "user",
+		isBrainSession: RANDAL_BRAIN_SESSION === "true",
+		isInteractive: !RANDAL_CHANNEL,
+		gatewayAvailable: !!RANDAL_GATEWAY_URL,
+	};
+}
+
+/**
+ * Call the gateway internal API.
+ * Returns the parsed JSON response or throws on failure.
+ */
+async function gatewayFetch(path: string, options?: RequestInit): Promise<unknown> {
+	if (!RANDAL_GATEWAY_URL) {
+		throw new ToolError("Gateway URL not available (not running in a gateway-managed session)");
+	}
+	const url = `${RANDAL_GATEWAY_URL}${path}`;
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+		...(RANDAL_GATEWAY_AUTH && { Authorization: `Bearer ${RANDAL_GATEWAY_AUTH}` }),
+	};
+	const resp = await fetch(url, {
+		...options,
+		headers: { ...headers, ...(options?.headers as Record<string, string>) },
+	});
+	if (!resp.ok) {
+		const body = await resp.text().catch(() => "");
+		throw new ToolError(`Gateway API error ${resp.status}: ${body}`);
+	}
+	return resp.json();
+}
+
+async function handleChannelList(_params: Record<string, unknown>): Promise<unknown> {
+	if (!RANDAL_GATEWAY_URL) {
+		return { channels: [], message: "No gateway connection (interactive mode)" };
+	}
+	try {
+		return await gatewayFetch("/_internal/channels");
+	} catch (err) {
+		return {
+			channels: [],
+			message: err instanceof Error ? err.message : "Failed to query channels",
+		};
+	}
+}
+
+async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
+	const channel = params.channel as string;
+	const target = params.target as string;
+	const message = params.message as string;
+
+	if (!channel) throw new ToolError("Missing required parameter: channel");
+	if (!target) throw new ToolError("Missing required parameter: target");
+	if (!message) throw new ToolError("Missing required parameter: message");
+
+	if (!RANDAL_GATEWAY_URL) {
+		return { sent: false, message: "No gateway connection (interactive mode)" };
+	}
+
+	try {
+		const result = await gatewayFetch("/_internal/channel/send", {
+			method: "POST",
+			body: JSON.stringify({ channel, target, message }),
+		});
+		return { sent: true, ...(result as object) };
+	} catch (err) {
+		return {
+			sent: false,
+			message: err instanceof Error ? err.message : "Send failed",
+		};
+	}
+}
+
 /** Map tool names to handlers */
 const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise<unknown>> = {
 	memory_search: handleMemorySearch,
@@ -978,6 +1885,16 @@ const TOOL_HANDLERS: Record<string, (params: Record<string, unknown>) => Promise
 	chat_log: handleChatLog,
 	struggle_check: handleStruggleCheck,
 	context_check: handleContextCheck,
+	reliability_scores: handleReliabilityScores,
+	recommendations: handleRecommendations,
+	get_feedback: handleGetFeedback,
+	annotate: handleAnnotate,
+	posse_members: handlePosseMembers,
+	delegate_task: handleDelegateTask,
+	posse_memory_search: handlePosseMemorySearch,
+	job_info: handleJobInfo,
+	channel_list: handleChannelList,
+	channel_send: handleChannelSend,
 };
 
 // ---------------------------------------------------------------------------

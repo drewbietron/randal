@@ -130,7 +130,6 @@ describe("assemblePrompt", () => {
 		expect(result).toContain("## Randal Execution Protocol");
 		expect(result).toContain("<plan-update>");
 		expect(result).toContain("<progress>");
-		expect(result).toContain("<delegate>");
 	});
 
 	test("omits protocol section when includeProtocol is false", () => {
@@ -255,7 +254,6 @@ describe("assemblePrompt", () => {
 		expect(result).toContain("## Randal Execution Protocol");
 		expect(result).toContain("plan-update");
 		expect(result).toContain("progress");
-		expect(result).toContain("delegate");
 		expect(result).toContain("<promise>DONE</promise>");
 	});
 });
@@ -341,12 +339,16 @@ describe("buildProtocolSection", () => {
 		expect(result).toContain("## Randal Execution Protocol");
 		expect(result).toContain("### Task Plan");
 		expect(result).toContain("### Progress Summary");
-		expect(result).toContain("### Delegation");
 		expect(result).toContain("### Completion");
 		expect(result).toContain("<plan-update>");
 		expect(result).toContain("<progress>");
-		expect(result).toContain("<delegate>");
 		expect(result).toContain("<promise>DONE</promise>");
+	});
+
+	test("does not contain removed delegation protocol section", () => {
+		const result = buildProtocolSection();
+		expect(result).not.toContain("### Delegation");
+		expect(result).not.toContain("<delegate>");
 	});
 });
 

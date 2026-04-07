@@ -47,5 +47,6 @@ export {
 	updateHeartbeat,
 	queryPosseMembers,
 	deregisterAgent,
+	registryDocToMeshInstance,
 } from "./posse-registry.js";
 export type { RegistryDoc, RegistryClient } from "./posse-registry.js";

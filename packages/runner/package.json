@@ -9,6 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@randal/analytics": "workspace:*",
 		"@randal/core": "workspace:*",
 		"@randal/credentials": "workspace:*",
 		"@randal/memory": "workspace:*"

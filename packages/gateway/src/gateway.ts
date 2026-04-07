@@ -1,5 +1,6 @@
 import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { createLogger } from "@randal/core";
 import {
@@ -13,6 +14,7 @@ import {
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
 import { MeiliSearch } from "meilisearch";
+import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
 import { DiscordChannel } from "./channels/discord.js";
 import { createHttpApp } from "./channels/http.js";
@@ -97,6 +99,25 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		logger.warn("Message history initialization failed, continuing without message history", {
 			error: err instanceof Error ? err.message : String(err),
 		});
+	}
+
+	// Initialize annotation store for analytics (if enabled)
+	let annotationStore: MeilisearchAnnotationStore | undefined;
+	let analyticsEngine: AnalyticsEngineFacade | undefined;
+	if (config.analytics?.enabled) {
+		try {
+			const meiliClient = new MeiliSearch({
+				host: config.memory.url,
+				apiKey: config.memory.apiKey,
+			});
+			annotationStore = new MeilisearchAnnotationStore(meiliClient, config.name);
+			await annotationStore.init();
+			logger.info("Annotation store initialized");
+		} catch (err) {
+			logger.warn("Annotation store init failed, continuing without analytics", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	// Initialize skill manager
@@ -192,6 +213,15 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		});
 	}
 
+	// Create analytics facade (needs runner for job lookups in addAnnotation)
+	if (annotationStore) {
+		analyticsEngine = new AnalyticsEngineFacade(annotationStore, runner, config);
+		await analyticsEngine.warmup();
+	}
+
+	// Mutable adapter registry — populated after channel start, accessed at request time
+	const channelAdapters: ChannelAdapter[] = [];
+
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
 		config,
@@ -202,6 +232,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		scheduler,
 		skillManager,
 		posseClient,
+		analyticsEngine,
+		channelAdapters,
 	});
 
 	// Mount hooks router if enabled
@@ -224,8 +256,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		skillManager,
 		onUpdate: options.onUpdate,
 	};
-	const channelAdapters: ChannelAdapter[] = [];
-
 	for (const channelConfig of config.gateway.channels) {
 		try {
 			if (channelConfig.type === "discord") {
@@ -260,11 +290,20 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		fetch: app.fetch,
 	});
 
+	// Ensure config.mesh.endpoint is set so the posse registry doc includes
+	// a reachable URL for this agent's gateway (used by delegate_task).
+	if (!config.mesh.endpoint) {
+		config.mesh.endpoint = `http://localhost:${server.port}`;
+	}
+
 	// Register in posse registry (R3.3)
 	if (posseClient && config.posse) {
 		try {
 			await registerAgent(config, posseClient);
-			logger.info("Registered in posse registry", { posse: config.posse });
+			logger.info("Registered in posse registry", {
+				posse: config.posse,
+				endpoint: config.mesh.endpoint,
+			});
 		} catch (err) {
 			logger.warn("Posse registration failed, continuing", {
 				error: err instanceof Error ? err.message : String(err),

@@ -1,3 +1,4 @@
+import { getPrimaryDomain } from "@randal/analytics";
 import { type RandalConfig, createLogger } from "@randal/core";
 import type {
 	Annotation,
@@ -493,7 +494,7 @@ export class McpServer {
 					categories,
 					agent: job.agent,
 					model: job.model,
-					domain: undefined,
+					domain: getPrimaryDomain(job.prompt),
 					iterationCount: job.iterations.current,
 					tokenCost: job.cost.estimatedCost,
 					duration: job.cost.wallTime,

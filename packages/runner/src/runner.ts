@@ -1,15 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-	DelegationRequest,
-	DelegationResult,
-	Job,
-	JobOrigin,
-	RunnerEvent,
-	RunnerEventType,
-	SkillDeployment,
-} from "@randal/core";
+import type { Job, JobOrigin, RunnerEvent, RunnerEventType, SkillDeployment } from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
@@ -38,8 +30,6 @@ export interface RunnerOptions {
 	onEvent?: EventHandler;
 	memorySearch?: (query: string) => Promise<string[]>;
 	skillSearch?: (query: string) => Promise<SkillDeployment[]>;
-	/** Internal: current delegation depth (used by child runners). */
-	delegationDepth?: number;
 }
 
 export interface JobRequest {
@@ -220,9 +210,6 @@ export class Runner {
 		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
 	> = new Map();
 	private logger = createLogger({ context: { component: "runner" } });
-	private delegationDepth: number;
-	private maxDelegationDepth: number;
-	private maxDelegationsPerIteration: number;
 
 	constructor(options: RunnerOptions) {
 		this.config = options.config;
@@ -230,9 +217,6 @@ export class Runner {
 		this.onEvent = options.onEvent ?? (() => {});
 		this.memorySearch = options.memorySearch;
 		this.skillSearch = options.skillSearch;
-		this.delegationDepth = options.delegationDepth ?? 0;
-		this.maxDelegationDepth = this.config.runner.maxDelegationDepth ?? 2;
-		this.maxDelegationsPerIteration = this.config.runner.maxDelegationsPerIteration ?? 3;
 	}
 
 	private emit(type: RunnerEventType, job: Job, data: RunnerEvent["data"] = {}): void {
