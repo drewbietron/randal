@@ -1,13 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type {
-	Job,
-	JobOrigin,
-	RunnerEvent,
-	RunnerEventType,
-	SkillDeployment,
-} from "@randal/core";
+import type { Job, JobOrigin, RunnerEvent, RunnerEventType, SkillDeployment } from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
@@ -204,7 +198,6 @@ function buildStreamLineHandler(callback: StreamEventCallback): (line: string) =
 		}
 	};
 }
-
 
 export class Runner {
 	private config: RandalConfig;
