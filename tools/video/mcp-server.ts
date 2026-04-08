@@ -18,7 +18,7 @@
  * Runtime: Bun
  */
 
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -261,6 +261,82 @@ server.tool(
 	},
 );
 
+/**
+ * Scan a VideoScript object for absolute file paths in scene.src, scene.audio.src,
+ * and globalAudio[].src. Copy each referenced file into the Remotion project's
+ * public/ directory and rewrite the path to just the basename so staticFile() works.
+ *
+ * Mutates the scriptObj in place and returns it.
+ */
+async function collectAndCopyAssets(
+	scriptObj: Record<string, unknown>,
+	projectDir: string,
+): Promise<Record<string, unknown>> {
+	const { copyFile } = await import("node:fs/promises");
+	const publicDir = join(projectDir, "public");
+	await ensureDir(publicDir);
+
+	const usedNames = new Set<string>();
+
+	async function copyAsset(absolutePath: string): Promise<string> {
+		if (!absolutePath || !absolutePath.startsWith("/")) return absolutePath;
+
+		const file = Bun.file(absolutePath);
+		if (!(await file.exists())) return absolutePath;
+
+		let name = basename(absolutePath);
+		// Handle duplicate basenames
+		if (usedNames.has(name)) {
+			const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+			const base = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
+			let counter = 1;
+			while (usedNames.has(`${base}_${counter}${ext}`)) counter++;
+			name = `${base}_${counter}${ext}`;
+		}
+		usedNames.add(name);
+
+		const destPath = join(publicDir, name);
+		await copyFile(absolutePath, destPath);
+		return name;
+	}
+
+	// Process scenes
+	const scenes = scriptObj.scenes;
+	if (Array.isArray(scenes)) {
+		for (const scene of scenes) {
+			if (scene && typeof scene === "object") {
+				const s = scene as Record<string, unknown>;
+				if (typeof s.src === "string") {
+					s.src = await copyAsset(s.src);
+				}
+				// Scene-level audio
+				const audio = s.audio;
+				if (audio && typeof audio === "object" && !Array.isArray(audio)) {
+					const a = audio as Record<string, unknown>;
+					if (typeof a.src === "string") {
+						a.src = await copyAsset(a.src);
+					}
+				}
+			}
+		}
+	}
+
+	// Process global audio
+	const globalAudio = scriptObj.globalAudio;
+	if (Array.isArray(globalAudio)) {
+		for (const track of globalAudio) {
+			if (track && typeof track === "object") {
+				const t = track as Record<string, unknown>;
+				if (typeof t.src === "string") {
+					t.src = await copyAsset(t.src);
+				}
+			}
+		}
+	}
+
+	return scriptObj;
+}
+
 // ---------------------------------------------------------------------------
 // Tool: compose_video
 // ---------------------------------------------------------------------------
@@ -302,6 +378,10 @@ server.tool(
 				await Bun.$`bun install`.cwd(tempDir);
 				projectDir = tempDir;
 			}
+
+			// Copy referenced assets into the project's public/ directory
+			// so Remotion's staticFile() can resolve them.
+			scriptObj = await collectAndCopyAssets(scriptObj, projectDir);
 
 			const resultPath = await renderVideo(
 				projectDir,
