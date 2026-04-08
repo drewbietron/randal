@@ -118,14 +118,40 @@ function hasCapability(
 }
 
 /**
+ * Derive the gateway URL from config.
+ * Looks for an HTTP channel in the gateway config; falls back to localhost:7600.
+ */
+function deriveGatewayUrl(config: RandalConfig): string {
+	const httpChannel = config.gateway.channels.find((ch) => ch.type === "http");
+	if (httpChannel && httpChannel.type === "http") {
+		return `http://localhost:${httpChannel.port}`;
+	}
+	return "http://localhost:7600";
+}
+
+/**
+ * Derive the summary model for memory MCP.
+ * Uses a lightweight model for summarization — defaults to claude-haiku-3.
+ */
+function deriveSummaryModel(config: RandalConfig): string {
+	// If the default model is already a haiku variant, use it
+	if (config.runner.defaultModel.includes("haiku")) {
+		return config.runner.defaultModel;
+	}
+	return "anthropic/claude-haiku-3";
+}
+
+/**
  * Build the `mcp` section of the opencode.json based on config state.
  *
  * Each MCP server is conditionally included based on the Randal config:
  *   - memory: when `config.memory.store` is set
  *   - scheduler: when heartbeat is enabled or cron jobs exist
- *   - tavily: when "search" or "tavily" is in capabilities
+ *   - tavily: when "search" or "tavily" is in capabilities, OR when TAVILY_API_KEY is in env
  *   - video: when "video" is in capabilities or tools
  *   - image-gen: when "image-gen" is in capabilities or tools
+ *
+ * All local MCP server paths use the resolved `toolsDir`, never hardcoded absolute paths.
  */
 function buildMcpSection(
 	config: RandalConfig,
@@ -135,17 +161,20 @@ function buildMcpSection(
 
 	// Memory MCP — always present when memory store is configured
 	if (config.memory.store) {
+		const memoryEnv: Record<string, string> = {
+			MEILI_URL: config.memory.url,
+			SUMMARY_MODEL: deriveSummaryModel(config),
+		};
+
+		// Pass through Meilisearch API key if configured
+		if (config.memory.apiKey) {
+			memoryEnv.MEILI_API_KEY = config.memory.apiKey;
+		}
+
 		mcp.memory = {
 			type: "local",
 			command: ["bun", "run", `${toolsDir}/mcp-memory-server.ts`],
-			environment: {
-				MEILI_URL: config.memory.url,
-				...(config.runner.defaultModel
-					? { SUMMARY_MODEL: config.runner.defaultModel.includes("haiku")
-						? config.runner.defaultModel
-						: "anthropic/claude-haiku-3" }
-					: { SUMMARY_MODEL: "anthropic/claude-haiku-3" }),
-			},
+			environment: memoryEnv,
 			enabled: true,
 		};
 	}
@@ -153,19 +182,22 @@ function buildMcpSection(
 	// Scheduler MCP — when heartbeat is enabled or cron jobs exist
 	const hasCronJobs = Object.keys(config.cron.jobs).length > 0;
 	if (config.heartbeat.enabled || hasCronJobs) {
+		const gatewayUrl = deriveGatewayUrl(config);
+
 		mcp.scheduler = {
 			type: "local",
 			command: ["bun", "run", `${toolsDir}/mcp-scheduler-server.ts`],
 			environment: {
-				RANDAL_GATEWAY_URL: "http://localhost:7600",
+				RANDAL_GATEWAY_URL: gatewayUrl,
 				RANDAL_GATEWAY_TOKEN: "{env:RANDAL_GATEWAY_TOKEN}",
 			},
 			enabled: true,
 		};
 	}
 
-	// Tavily MCP — when "search" or "tavily" capability is listed
-	if (hasCapability(config, "search", "tavily")) {
+	// Tavily MCP — when "search" or "tavily" capability is listed, or TAVILY_API_KEY is in env
+	const hasTavilyKey = typeof process !== "undefined" && !!process.env.TAVILY_API_KEY;
+	if (hasCapability(config, "search", "tavily") || hasTavilyKey) {
 		mcp.tavily = {
 			type: "remote",
 			url: "https://mcp.tavily.com/mcp/?tavilyApiKey={env:TAVILY_API_KEY}",
