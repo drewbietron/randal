@@ -1,0 +1,10 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"plugin": ["opencode-claude-auth"],
+	"agent": {
+		"build": { "disable": true },
+		"plan": { "disable": true }
+	},
+	"mcp": {},
+	"tools": {}
+}

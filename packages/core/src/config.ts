@@ -334,6 +334,8 @@ export const configSchema = z.object({
 
 	tools: z.array(toolSchema).default([]),
 
+	capabilities: z.array(z.string()).default([]),
+
 	skills: z
 		.object({
 			dir: z.string().default("./skills"),
