@@ -1,6 +1,8 @@
 # Full-platform Randal configuration
 # All features enabled: voice, mesh, analytics, browser, multiple channels
 # See the docs/ directory for setup guides for each feature
+#
+# Run `randal setup` to generate opencode.json from this config.
 
 name: randal-full
 
@@ -181,6 +183,11 @@ analytics:
       - playwright
       - coverage
   agingHalfLife: 30
+
+# Capabilities: controls which MCP servers and tool permissions are wired
+# into the generated opencode.json when you run `randal setup`.
+# This full-platform config enables all available capabilities.
+capabilities: [memory, search, video, image-gen, scheduler]
 
 browser:
   enabled: true

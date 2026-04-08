@@ -6,6 +6,8 @@
 # - Heartbeat for periodic check-ins during active hours
 # - Cron for scheduled tasks
 # - Hooks for external triggers (CI, email, etc.)
+#
+# Run `randal setup` to generate opencode.json from this config.
 name: dev-agent
 version: "0.1"
 
@@ -79,6 +81,11 @@ cron:
 hooks:
   enabled: true
   token: "${RANDAL_HOOK_TOKEN}"
+
+# Capabilities: controls which MCP servers and tool permissions are wired
+# into the generated opencode.json when you run `randal setup`.
+# Valid values: memory, search, video, image-gen, scheduler
+capabilities: [memory, search, video, image-gen, scheduler]
 
 tools: []
 

@@ -5,6 +5,14 @@
 # Default agent: opencode
 # Default model: anthropic/claude-sonnet-4
 # Default memory: Meilisearch (auto-installed on first serve)
+#
+# Run `randal setup` to generate opencode.json from this config.
 name: my-agent
 runner:
   workdir: .
+
+# Capabilities: omitted here — defaults to [] (empty).
+# MCP servers are still derived from other config fields:
+#   - memory MCP is auto-included because memory.store defaults to "meilisearch"
+#   - Add capabilities like [search, video, image-gen] to wire additional MCP servers
+# capabilities: []

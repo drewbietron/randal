@@ -5,6 +5,8 @@
 #   - Layer 0: Inline strings (passthrough)
 #
 # See docs/config-reference.md for full documentation on prompt resolution.
+#
+# Run `randal setup` to generate opencode.json from this config.
 name: layers-demo
 version: "0.1"
 
@@ -64,5 +66,8 @@ cron:
       prompt: ./HEARTBEAT.md
       execution: isolated
       announce: true
+
+# Capabilities: memory for context, search for research, scheduler for cron/heartbeat
+capabilities: [memory, search, scheduler]
 
 tools: []

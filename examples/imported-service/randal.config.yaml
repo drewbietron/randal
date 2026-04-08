@@ -9,6 +9,8 @@
 # Your Dockerfile controls what ships in the container: codebase, knowledge
 # files, tools, data — whatever your agent needs. Randal just needs this
 # config file and a workdir.
+#
+# Run `randal setup` to generate opencode.json from this config.
 
 name: my-service-agent
 version: "0.1"
@@ -47,6 +49,9 @@ memory:
   url: http://127.0.0.1:7700
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-my-service
+
+# Capabilities: memory for persistent context, scheduler for heartbeat
+capabilities: [memory, search, scheduler]
 
 heartbeat:
   enabled: true
