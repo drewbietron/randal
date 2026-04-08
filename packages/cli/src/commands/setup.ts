@@ -355,12 +355,26 @@ export async function setupCommand(args: string[]): Promise<void> {
 		if (dryRun) {
 			console.log("\n  [dry-run] Generated opencode.json:\n");
 			console.log(JSON.stringify(result.compileResult.config, null, "\t"));
-			console.log("\n  [dry-run] Would write to:", result.outputPath);
+			console.log(`\n  [dry-run] Would write to: ${result.outputPath}`);
 			if (result.symlinks.length > 0) {
 				console.log("\n  [dry-run] Would create symlinks:");
 				for (const link of result.symlinks) {
 					console.log(`    ${basename(link.target)} -> ${link.source}`);
 				}
+			}
+			// Show plugin install intent
+			const sourceConfigDir = getSourceConfigDir();
+			const packageJsonSource = join(sourceConfigDir, "package.json");
+			if (existsSync(packageJsonSource)) {
+				console.log("\n  [dry-run] Would run: bun install (plugin dependencies)");
+			}
+			// Show identity resolution summary
+			if (result.compileResult.resolvedPersona) {
+				const preview = result.compileResult.resolvedPersona.slice(0, 100).replace(/\n/g, " ");
+				console.log(`\n  [dry-run] Resolved persona: ${preview}...`);
+			}
+			if (result.compileResult.resolvedRules && result.compileResult.resolvedRules.length > 0) {
+				console.log(`  [dry-run] Resolved rules: ${result.compileResult.resolvedRules.length} entries`);
 			}
 			return;
 		}
