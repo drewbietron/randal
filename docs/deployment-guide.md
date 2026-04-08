@@ -37,7 +37,9 @@ Or manually:
 ```bash
 git clone <repo-url> ~/randal
 cd ~/randal
-bash scripts/setup.sh
+bun install && bun link
+randal init
+randal setup
 ```
 
 ### 2. Configure
@@ -72,7 +74,7 @@ memory:
 
 ### 3. Meilisearch
 
-> **Note:** If you used `install.sh` or `scripts/setup.sh`, Meilisearch is already running via Docker with persistent storage at `~/.randal/meili-data/`.
+> **Note:** If you used `install.sh` or `randal init`, Meilisearch is already running via Docker with persistent storage at `~/.randal/meili-data/`.
 
 To manage manually:
 
@@ -433,7 +435,7 @@ DISCORD_BOT_TOKEN=your-bot-token-here
 
 **Automatic Setup (recommended):**
 
-BlueBubbles Server is automatically installed during `randal init` (or via `install.sh` / `scripts/setup.sh`). The setup wizard will:
+BlueBubbles Server is automatically installed during `randal init` (or via `install.sh`). The setup wizard will:
 
 1. Install BlueBubbles Server via Homebrew (or direct DMG download as fallback)
 2. Generate a server password and save it to `.env`

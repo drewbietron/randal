@@ -19,6 +19,37 @@ All string values support `${ENV_VAR}` substitution from the process environment
 | `name` | string | — | Yes | Instance name. Used for memory index naming and identification. |
 | `version` | string | `"0.1"` | No | Config schema version. |
 | `posse` | string | — | No | Team/group identifier for multi-agent coordination. |
+| `capabilities` | string[] | `[]` | No | Capabilities this agent has access to. Controls MCP server wiring and tool permissions in the generated `opencode.json`. See [Capabilities](#-capabilities) below. |
+
+---
+
+## 🧩 Capabilities
+
+The `capabilities` field declares what this agent can do. It drives the `opencode.json` generation performed by `randal setup` — each capability maps to MCP servers and tool permissions that are included in the generated config.
+
+| Capability | MCP Server(s) | Description |
+|------------|---------------|-------------|
+| `memory` | `memory` | Persistent memory via Meilisearch. Also enabled automatically when `memory.store` is configured. |
+| `search` or `tavily` | `tavily` | Web search via Tavily. Also enabled when `TAVILY_API_KEY` is in the environment. |
+| `video` | `video` | Video generation and composition tools. Also enabled when a `video` tool is in `tools[]`. |
+| `image-gen` | `image-gen` | Image generation tools. Also enabled when an `image-gen` tool is in `tools[]`. |
+| `scheduler` | `scheduler` | Heartbeat and cron scheduling. Also enabled automatically when `heartbeat.enabled` or `cron.jobs` is non-empty. |
+
+**Example:**
+
+```yaml
+# Explicitly declare all capabilities this agent uses
+capabilities:
+  - memory
+  - search
+  - video
+  - image-gen
+  - scheduler
+```
+
+If `capabilities` is omitted or empty, MCP servers are still wired based on other config sections (e.g., `memory.store`, `heartbeat.enabled`, `tools[]`). The `capabilities` field provides explicit control and is the recommended way to declare what your agent can do.
+
+After changing `capabilities`, run `randal setup` to regenerate `opencode.json`.
 
 ---
 
