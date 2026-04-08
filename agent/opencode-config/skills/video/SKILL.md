@@ -16,7 +16,7 @@ Use the `video_*` MCP tools:
 | `video_generate_asset` | Generate a still image from a prompt (Gemini 3.1 Flash Image via OpenRouter) |
 | `video_generate_clip` | Generate a video clip — text-to-video OR image-to-video (Veo, or any configured provider) |
 | `video_stitch_clips` | Concatenate clips into a final video (ffmpeg — simple concat or crossfade) |
-| `video_compose_video` | Rich composition via Remotion (overlays, transitions, text, music) |
+| `video_compose_video` | Rich composition via Remotion (overlays, transitions, text, audio) |
 | `video_scaffold_project` | Create a new Remotion project from template |
 | `video_list_providers` | List available video generation providers |
 
@@ -25,10 +25,142 @@ Use the `video_*` MCP tools:
 **Simple path** (no Remotion needed):
 `generate_asset` → `generate_clip` (with reference image) → `stitch_clips` → done
 
-**Rich path** (overlays, transitions, text):
+**Rich path** (overlays, transitions, text, audio):
 `generate_asset` → `generate_clip` → `compose_video` (Remotion) → done
 
 Use the simple path unless you need text overlays, transitions, or complex compositions.
+
+## VideoScript Schema (compose_video)
+
+The `compose_video` tool accepts a JSON string conforming to the `VideoScript` schema. This is the **canonical format** — do NOT invent alternatives (no `layers`, no `meta` block, no nested `type` within layers).
+
+### Top-Level Fields
+
+```typescript
+{
+  title?: string;        // Optional metadata title (not rendered)
+  fps?: number;          // Frames per second (default: 30)
+  width?: number;        // Canvas width in px (default: 1920)
+  height?: number;       // Canvas height in px (default: 1080)
+  scenes: Scene[];       // Ordered list of scenes (required, >= 1)
+  globalAudio?: AudioTrack[];  // Audio spanning the entire video (narration, music)
+}
+```
+
+### Scene
+
+Each scene is a **flat object** with a `type` that determines its background:
+
+```typescript
+{
+  type: "image" | "video" | "text" | "color";  // REQUIRED — scene background type
+  src?: string;          // Path to image/video file (required for "image"/"video")
+  text?: string;         // Text content (required for "text" type)
+  color?: string;        // CSS color value (required for "color" type)
+  duration: number;      // Scene duration in seconds (required, > 0)
+  transition?: Transition;  // Transition INTO this scene (not applied to first scene)
+  overlay?: TextOverlay;    // Single text overlay rendered on top
+  audio?: AudioTrack;       // Per-scene audio track
+}
+```
+
+### Transition
+
+```typescript
+{
+  type: "crossfade" | "slide-left" | "slide-right" | "zoom-in" | "cut";
+  duration: number;  // Duration in seconds (must be < scene duration)
+}
+```
+
+### TextOverlay
+
+```typescript
+{
+  text: string;                          // The text to display
+  position?: "top" | "center" | "bottom";  // Vertical placement (default: "bottom")
+  style?: "title" | "caption" | "subtitle"; // Visual preset (default: "caption")
+}
+```
+
+### AudioTrack
+
+```typescript
+{
+  src: string;            // Path to audio file
+  volume?: number;        // Volume multiplier, 0.0-1.0+ (default: 1.0)
+  startOffset?: number;   // Delay in seconds before playback (default: 0)
+  fadeIn?: number;        // Fade in duration in seconds (default: 0)
+  fadeOut?: number;       // Fade out duration in seconds (default: 0)
+  loop?: boolean;         // Whether to loop (default: false)
+}
+```
+
+### Asset Path Resolution
+
+- **Absolute paths** (e.g. `/tmp/video-gen/assets/scene1.png`) are **automatically copied** into the Remotion project's `public/` directory by `compose_video`. The path in the script is rewritten to just the filename. You do NOT need to manually copy files or scaffold a project.
+- **Relative paths** (e.g. `scene1.png`) are assumed to already exist in `public/`.
+- For `generate_asset` and `generate_speech` outputs, just pass the full path from the tool's response — `compose_video` handles the rest.
+
+### Complete Working Example
+
+```json
+{
+  "title": "Product Demo",
+  "fps": 30,
+  "width": 1080,
+  "height": 1920,
+  "scenes": [
+    {
+      "type": "image",
+      "src": "/tmp/video-gen/assets/intro.png",
+      "duration": 5,
+      "overlay": {
+        "text": "Welcome to the future.",
+        "position": "center",
+        "style": "title"
+      }
+    },
+    {
+      "type": "image",
+      "src": "/tmp/video-gen/assets/features.png",
+      "duration": 5,
+      "transition": { "type": "crossfade", "duration": 0.5 },
+      "overlay": {
+        "text": "Built for developers.",
+        "position": "bottom",
+        "style": "caption"
+      }
+    },
+    {
+      "type": "color",
+      "color": "#000000",
+      "duration": 5,
+      "transition": { "type": "crossfade", "duration": 0.5 },
+      "overlay": {
+        "text": "Get started today.",
+        "position": "center",
+        "style": "title"
+      }
+    }
+  ],
+  "globalAudio": [
+    {
+      "src": "/tmp/video-gen/audio/voiceover.mp3",
+      "volume": 1.0
+    }
+  ]
+}
+```
+
+### Common Mistakes to Avoid
+
+- ❌ **Do NOT** use a `layers` array inside scenes — each scene has ONE background (`type` + `src`/`text`/`color`) and ONE optional `overlay`
+- ❌ **Do NOT** wrap the script in a `meta` + `scenes` structure — `fps`, `width`, `height` go at the top level alongside `scenes`
+- ❌ **Do NOT** use `durationInFrames` — use `duration` in seconds (the composition converts to frames)
+- ❌ **Do NOT** use custom CSS styles in overlays — use the `style` preset ("title", "caption", "subtitle")
+- ❌ **Do NOT** use custom position objects — use the `position` preset ("top", "center", "bottom")
+- ✅ **DO** pass absolute paths from `generate_asset`/`generate_speech` — they're auto-copied
 
 ## The Image-to-Video Workflow (Key Technique)
 
@@ -81,11 +213,12 @@ for each scene in the plan:
   3. collect the clip path
 end
 
-# Simple assembly
+# Simple assembly (no overlays)
 video_stitch_clips(all_clip_paths, output_path, transition="crossfade")
 
-# OR rich assembly
+# Rich assembly (with text overlays, transitions, audio)
 video_compose_video(script_json, output_path)
+# Pass absolute paths in the script — compose_video auto-copies assets
 ```
 
 ## Long-Form Production (2+ hours)
