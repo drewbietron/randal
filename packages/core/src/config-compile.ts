@@ -1,7 +1,40 @@
 import type { RandalConfig } from "./config.js";
 import baseTemplate from "./opencode-base.json";
+import { interpolateTemplate } from "./resolve-prompt.js";
 
 // ---- Types ----
+
+/**
+ * Pre-resolved identity content for injection into the compiled config.
+ *
+ * When provided, the compile function uses this instead of performing
+ * async I/O to resolve persona files/modules. This keeps the core
+ * compile path synchronous and pure.
+ */
+export interface ResolvedIdentity {
+	/** The fully resolved persona text (after file loading / module execution) */
+	persona?: string;
+	/** Resolved rules (after file loading / splitting) */
+	rules?: string[];
+	/** Resolved knowledge entries (after file loading / glob expansion) */
+	knowledge?: string[];
+}
+
+/**
+ * Metadata about how identity was resolved during compilation.
+ * Returned alongside the OpenCode config for downstream consumers
+ * (e.g., writing persona to a known location, logging, dry-run output).
+ */
+export interface CompileResult {
+	/** The generated OpenCode configuration object */
+	config: OpenCodeConfig;
+	/** The resolved and interpolated persona text, if available */
+	resolvedPersona?: string;
+	/** The resolved and interpolated rules, if available */
+	resolvedRules?: string[];
+	/** The resolved and interpolated knowledge entries, if available */
+	resolvedKnowledge?: string[];
+}
 
 /**
  * Options controlling how the OpenCode config is compiled from a Randal config.
@@ -13,6 +46,12 @@ export interface CompileOptions {
 	repoRoot?: string;
 	/** Directory containing MCP tool server scripts (defaults to `{repoRoot}/tools`) */
 	toolsDir?: string;
+	/**
+	 * Pre-resolved identity content. When provided, template interpolation
+	 * ({{var}} replacement via identity.vars) is applied to persona, rules,
+	 * and knowledge. This avoids async I/O in the core compile path.
+	 */
+	resolvedIdentity?: ResolvedIdentity;
 }
 
 /**
@@ -58,24 +97,80 @@ export interface OpenCodeConfig {
  * to `~/.config/opencode/opencode.json`. This function does NOT perform I/O —
  * it returns a value; the caller decides where to write it.
  *
+ * When `options.resolvedIdentity` is provided, template interpolation using
+ * `config.identity.vars` is applied to persona, rules, and knowledge content.
+ * The interpolated results are returned in the `CompileResult` for downstream
+ * consumers (e.g., writing persona to a known file, dry-run display).
+ *
  * @param config - A validated, frozen RandalConfig
  * @param options - Paths and overrides controlling compilation
- * @returns A fully populated OpenCode configuration object
+ * @returns A CompileResult containing the config and resolved identity metadata
  */
 export function compileOpenCodeConfig(
 	config: RandalConfig,
 	options: CompileOptions,
-): OpenCodeConfig {
+): CompileResult {
 	const toolsDir = resolveToolsDir(options);
 
 	// Start from a deep clone of the base template so we never mutate the import
-	const result: OpenCodeConfig = structuredClone(baseTemplate) as OpenCodeConfig;
+	const openCodeConfig: OpenCodeConfig = structuredClone(baseTemplate) as OpenCodeConfig;
 
 	// Populate MCP servers based on config + capabilities
-	result.mcp = buildMcpSection(config, toolsDir);
+	openCodeConfig.mcp = buildMcpSection(config, toolsDir);
 
 	// Populate tool permissions based on capabilities
-	result.tools = buildToolsSection(config);
+	openCodeConfig.tools = buildToolsSection(config);
+
+	// Resolve identity: apply {{var}} interpolation from identity.vars
+	const identityResult = resolveIdentity(config, options.resolvedIdentity);
+
+	return {
+		config: openCodeConfig,
+		...identityResult,
+	};
+}
+
+// ---- Identity resolution ----
+
+/**
+ * Apply template interpolation to pre-resolved identity content.
+ *
+ * Uses `identity.vars` from the config to replace `{{key}}` patterns
+ * in persona text, rules, and knowledge entries. This mirrors the
+ * interpolation behavior in `resolve-prompt.ts` but operates on
+ * already-loaded content rather than performing I/O.
+ *
+ * @param config - The Randal config (provides identity.vars)
+ * @param resolved - Pre-resolved identity content (optional)
+ * @returns Interpolated identity fields for inclusion in CompileResult
+ */
+function resolveIdentity(
+	config: RandalConfig,
+	resolved?: ResolvedIdentity,
+): Omit<CompileResult, "config"> {
+	if (!resolved) {
+		return {};
+	}
+
+	const vars = config.identity.vars;
+
+	const result: Omit<CompileResult, "config"> = {};
+
+	if (resolved.persona !== undefined) {
+		result.resolvedPersona = interpolateTemplate(resolved.persona, vars);
+	}
+
+	if (resolved.rules !== undefined) {
+		result.resolvedRules = resolved.rules.map((rule) =>
+			interpolateTemplate(rule, vars),
+		);
+	}
+
+	if (resolved.knowledge !== undefined) {
+		result.resolvedKnowledge = resolved.knowledge.map((entry) =>
+			interpolateTemplate(entry, vars),
+		);
+	}
 
 	return result;
 }
