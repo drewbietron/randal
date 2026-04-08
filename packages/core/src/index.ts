@@ -11,6 +11,9 @@ export type { RandalConfig, ConfigValidation } from "./config.js";
 
 export { RANDAL_VERSION } from "./version.js";
 
+export { compileOpenCodeConfig } from "./config-compile.js";
+export type { CompileOptions, McpServerEntry, OpenCodeConfig } from "./config-compile.js";
+
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
 
