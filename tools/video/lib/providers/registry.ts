@@ -9,6 +9,7 @@ import { MockProvider } from "./mock";
 import type { VideoProvider } from "./types";
 import { VideoProviderError } from "./types";
 import { VeoProvider } from "./veo";
+import { FalProvider } from "./fal";
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -76,3 +77,4 @@ export function listProviders(): VideoProvider[] {
 
 registerProvider(new VeoProvider());
 registerProvider(new MockProvider());
+registerProvider(new FalProvider());

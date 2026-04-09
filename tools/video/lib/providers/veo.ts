@@ -75,7 +75,7 @@ interface VeoOperationResponse {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MODEL: VeoModel = "veo-3.0-generate-001";
+const DEFAULT_MODEL: VeoModel = "veo-3.1-generate-preview";
 
 const AI_STUDIO_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const VERTEX_AI_LOCATION = "us-central1";
@@ -401,6 +401,7 @@ export class VeoProvider implements VideoProvider {
 					);
 				}
 
+				console.error(`[veo] Submit succeeded. Operation name: ${body.name}`);
 				return body.name;
 			} catch (error) {
 				if (error instanceof VideoProviderError) {
@@ -469,10 +470,18 @@ export class VeoProvider implements VideoProvider {
 		}
 
 		// AI Studio: GET with the operation path
-		const operationPath = operationName.startsWith("operations/")
-			? operationName
-			: `operations/${operationName}`;
+		// The operation name can come in various formats:
+		//   - "operations/xyz" — use as-is
+		//   - "models/veo-.../operations/xyz" — use as-is (full path)
+		//   - bare "xyz" — prepend "operations/"
+		let operationPath: string;
+		if (operationName.includes("operations/") || operationName.includes("models/")) {
+			operationPath = operationName;
+		} else {
+			operationPath = `operations/${operationName}`;
+		}
 		const url = `${AI_STUDIO_API_BASE}/${operationPath}`;
+		console.error(`[veo] AI Studio poll URL: ${url}`);
 		return {
 			url,
 			init: {
@@ -496,6 +505,8 @@ export class VeoProvider implements VideoProvider {
 		const startTime = Date.now();
 		let consecutiveErrors = 0;
 		const MAX_CONSECUTIVE_ERRORS = 5;
+		console.error(`[veo] Polling operation: ${operationName}, backend: ${this.requireBackend()}`);
+		console.error(`[veo] Starting poll for operation: ${operationName}`);
 
 		while (true) {
 			const elapsed = Date.now() - startTime;
@@ -512,10 +523,12 @@ export class VeoProvider implements VideoProvider {
 				const response = await fetch(url, init);
 
 				if (!response.ok) {
+					let errBody = "";
+					try { errBody = await response.text(); } catch {}
 					consecutiveErrors++;
 					if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 						throw new VideoProviderError(
-							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times (${this.requireBackend()}). Last status: ${response.status}`,
+							`Polling failed ${MAX_CONSECUTIVE_ERRORS} consecutive times (${this.requireBackend()}). Status: ${response.status}. Operation: ${operationName}. URL: ${url}. Body: ${errBody.slice(0, 500)}`,
 							"API_ERROR",
 							this.name,
 							response.status,
