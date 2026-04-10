@@ -190,7 +190,7 @@ export class FalProvider implements VideoProvider {
 	// -------------------------------------------------------------------------
 
 	async submitToQueue(
-		prompt: string,
+		_prompt: string,
 		apiKey: string,
 		model: string,
 		input: Record<string, unknown>,
@@ -213,8 +213,9 @@ export class FalProvider implements VideoProvider {
 					const status = response.status;
 					let errorMessage: string;
 					try {
-						const body = await response.json() as Record<string, unknown>;
-						errorMessage = (body.detail as string) ?? (body.error as string) ?? JSON.stringify(body);
+						const body = (await response.json()) as Record<string, unknown>;
+						errorMessage =
+							(body.detail as string) ?? (body.error as string) ?? JSON.stringify(body);
 					} catch {
 						errorMessage = `HTTP ${status}: ${response.statusText}`;
 					}
@@ -249,14 +250,15 @@ export class FalProvider implements VideoProvider {
 					);
 				}
 
-				console.error(`[fal] Submitted to queue. Request ID: ${body.request_id}, response_url: ${body.response_url}, status_url: ${body.status_url}`);
+				console.error(
+					`[fal] Submitted to queue. Request ID: ${body.request_id}, response_url: ${body.response_url}, status_url: ${body.status_url}`,
+				);
 				return body;
 			} catch (error) {
 				if (error instanceof VideoProviderError) throw error;
 				lastError = error;
 				if (attempt < MAX_RETRIES) {
 					await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
-					continue;
 				}
 			}
 		}
@@ -268,11 +270,7 @@ export class FalProvider implements VideoProvider {
 		);
 	}
 
-	async pollStatus(
-		requestId: string,
-		apiKey: string,
-		model: string,
-	): Promise<void> {
+	async pollStatus(requestId: string, apiKey: string, model: string): Promise<void> {
 		const queueModel = this.getQueueModelPath(model);
 		const url = `${API_BASE}/${queueModel}/requests/${requestId}/status`;
 		const startTime = Date.now();
@@ -321,11 +319,7 @@ export class FalProvider implements VideoProvider {
 		}
 	}
 
-	async getResult(
-		requestId: string,
-		apiKey: string,
-		model: string,
-	): Promise<FalResultResponse> {
+	async getResult(requestId: string, apiKey: string, model: string): Promise<FalResultResponse> {
 		const queueModel = this.getQueueModelPath(model);
 		const url = `${API_BASE}/${queueModel}/requests/${requestId}`;
 
@@ -336,7 +330,7 @@ export class FalProvider implements VideoProvider {
 		if (!response.ok) {
 			let errorMessage: string;
 			try {
-				const body = await response.json() as Record<string, unknown>;
+				const body = (await response.json()) as Record<string, unknown>;
 				errorMessage = (body.detail as string) ?? JSON.stringify(body);
 			} catch {
 				errorMessage = `HTTP ${response.status}`;
