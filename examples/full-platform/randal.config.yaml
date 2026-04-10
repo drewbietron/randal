@@ -52,34 +52,10 @@ gateway:
       port: 7600
       auth: ${API_TOKEN}
       corsOrigin: ${CORS_ORIGIN}
-    - type: voice
     - type: discord
       token: ${DISCORD_BOT_TOKEN}
       allowFrom:
         - "${DISCORD_ALLOWED_USER}"
-    - type: telegram
-      token: ${TELEGRAM_BOT_TOKEN}
-      allowFrom:
-        - "${TELEGRAM_ALLOWED_USER}"
-    - type: slack
-      botToken: ${SLACK_BOT_TOKEN}
-      appToken: ${SLACK_APP_TOKEN}
-      signingSecret: ${SLACK_SIGNING_SECRET}
-    - type: email
-      imap:
-        host: ${EMAIL_IMAP_HOST}
-        port: 993
-        user: ${EMAIL_IMAP_USER}
-        password: ${EMAIL_IMAP_PASS}
-        tls: true
-      smtp:
-        host: ${EMAIL_SMTP_HOST}
-        port: 587
-        user: ${EMAIL_SMTP_USER}
-        password: ${EMAIL_SMTP_PASS}
-        secure: false
-      allowFrom:
-        - "*@company.com"
 
 voice:
   enabled: true
@@ -255,17 +231,6 @@ credentials:
     - CORS_ORIGIN
     - DISCORD_BOT_TOKEN
     - DISCORD_ALLOWED_USER
-    - TELEGRAM_BOT_TOKEN
-    - TELEGRAM_ALLOWED_USER
-    - SLACK_BOT_TOKEN
-    - SLACK_APP_TOKEN
-    - SLACK_SIGNING_SECRET
-    - EMAIL_IMAP_HOST
-    - EMAIL_IMAP_USER
-    - EMAIL_IMAP_PASS
-    - EMAIL_SMTP_HOST
-    - EMAIL_SMTP_USER
-    - EMAIL_SMTP_PASS
     - LIVEKIT_URL
     - LIVEKIT_API_KEY
     - LIVEKIT_API_SECRET
