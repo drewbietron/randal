@@ -9,26 +9,29 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Built with Bun](https://img.shields.io/badge/Built_with-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6?logo=typescript&logoColor=white)](https://typescriptlang.org)
-[![v0.2](https://img.shields.io/badge/version-0.2-blue)]()
+[![v0.1.0](https://img.shields.io/badge/version-0.1.0-blue)]()
 
 ---
 
 <br clear="right"/>
 
-Randal wraps [OpenCode](https://github.com/nickthecook/opencode) in a persistent execution loop and gives it superpowers:
+Randal wraps [OpenCode](https://github.com/opencode-ai/opencode) (or any agent CLI) in a persistent execution loop and gives it superpowers:
 
-- 🧠 **Memory** — Agents learn, remember, and share context across runs
+- 🧠 **Memory** — Agents learn, remember, and share context across runs via Meilisearch
 - ⏰ **Scheduling** — Heartbeats, cron jobs, and webhook triggers keep your agents alive
-- 🔐 **Credentials** — Scoped env-var filtering with explicit allowlists. No leaks.
-- 📡 **Dashboard** — Real-time web UI with SSE streaming, job tracking, and cost monitoring
-- 🤝 **Posse Mode** — Multiple agents, shared memory, coordinated teamwork
-- 🎙️ **Voice & Video** — Join phone calls and video meetings as a full participant via LiveKit + Twilio
+- 🔐 **Credentials** — Scoped env-var filtering with explicit allowlists and sandbox enforcement
+- 📡 **Dashboard** — Real-time web UI with SSE streaming, job tracking, cost monitoring, and analytics
+- 🤝 **Posse Mode** — Multiple agents with shared memory and coordinated teamwork
+- 🎙️ **Voice & Video** *(experimental)* — Session management framework for LiveKit + Twilio integration (STT/TTS/SIP scaffolding in place)
 - 🌐 **Multi-Instance Mesh** — Distributed orchestration with specialization-based routing across machines
 - 📊 **Self-Learning Analytics** — Human annotation feedback loops, reliability scoring, and prompt tuning
-- 💬 **Expanded Channels** — Telegram, Slack, WhatsApp, Signal, Email — reach your agent anywhere
-- 🌍 **Browser Automation** — Chrome/Chromium control via CDP for web browsing and OAuth flows
+- 💬 **Messaging Channels** — HTTP, Discord, iMessage, Telegram, Slack, WhatsApp, Signal, Email, and Voice
+- 🌍 **Browser Automation** — Chrome/Chromium control via CDP for web browsing, screenshots, and interaction
 - 🔄 **Real-Time Streaming** — Line-by-line agent output with tool use detection and MCP server integration
 - 📦 **Context Compaction** — LLM-based summarization when context grows too large
+- 🧩 **Skills System** — Discoverable, indexable, cross-agent skill sharing with file watching
+- 🔧 **MCP Servers** — Built-in Memory (16 tools), Scheduler (3 tools), and Runner (5 tools) MCP servers
+- 🎨 **Image & Video Generation** — Standalone MCP servers for AI-powered image and video creation
 
 > *One agent is useful. A posse is unstoppable.*
 
@@ -40,7 +43,7 @@ Randal wraps [OpenCode](https://github.com/nickthecook/opencode) in a persistent
 curl -fsSL https://raw.githubusercontent.com/drewbietron/randal/main/install.sh | bash
 ```
 
-One command. Installs Bun (if needed), clones the repo, links the CLI, runs the setup wizard, and starts Meilisearch if selected.
+One command. Installs Bun (if needed), clones the repo, builds tools (steer, drive), links the CLI, runs the setup wizard, and starts Meilisearch if selected.
 
 Or clone and set up manually:
 
@@ -169,7 +172,7 @@ Full reference: [📖 docs/config-reference.md](docs/config-reference.md)
 
 ## 💬 Messaging Channels
 
-Agents are reachable via HTTP, Discord DMs, or iMessage texts. Each channel uses the same prefix commands. Channel-aware routing ensures job notifications only go back to the originating channel. Cross-channel context is seamless via shared memory.
+Agents are reachable via HTTP, Discord, iMessage, Telegram, Slack, WhatsApp, Signal, Email, or Voice. Each channel uses the same prefix commands. Channel-aware routing ensures job notifications only go back to the originating channel. Cross-channel context is seamless via shared memory.
 
 ### Discord
 
@@ -206,6 +209,66 @@ gateway:
 2. Configure a webhook pointing to `http://<host>:<port>/webhooks/imessage`
 3. Set `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, and `APPLE_ID` in your `.env` file
 
+### Telegram
+
+```yaml
+gateway:
+  channels:
+    - type: telegram
+      token: "${TELEGRAM_BOT_TOKEN}"
+      allowFrom: ["123456789"]
+```
+
+### Slack
+
+```yaml
+gateway:
+  channels:
+    - type: slack
+      appToken: "${SLACK_APP_TOKEN}"
+      botToken: "${SLACK_BOT_TOKEN}"
+```
+
+### Email
+
+```yaml
+gateway:
+  channels:
+    - type: email
+      imap:
+        host: "${IMAP_HOST}"
+        user: "${EMAIL_USER}"
+        password: "${EMAIL_PASSWORD}"
+      smtp:
+        host: "${SMTP_HOST}"
+        user: "${EMAIL_USER}"
+        password: "${EMAIL_PASSWORD}"
+      allowFrom: ["trusted@example.com"]
+```
+
+### WhatsApp (via Twilio)
+
+```yaml
+gateway:
+  channels:
+    - type: whatsapp
+      accountSid: "${TWILIO_ACCOUNT_SID}"
+      authToken: "${TWILIO_AUTH_TOKEN}"
+      phoneNumber: "${TWILIO_WHATSAPP_NUMBER}"
+```
+
+### Signal
+
+```yaml
+gateway:
+  channels:
+    - type: signal
+      phoneNumber: "${SIGNAL_PHONE_NUMBER}"
+      allowFrom: ["+15551234567"]
+```
+
+Full channel setup: [📖 docs/channel-adapters-guide.md](docs/channel-adapters-guide.md)
+
 ### Prefix Commands
 
 | Command | Description |
@@ -240,10 +303,19 @@ Full setup instructions: [📖 docs/deployment-guide.md](docs/deployment-guide.m
 | `randal context [job-id] <text>` | 💉 Inject context into running job |
 | `randal resume <job-id>` | 🔄 Resume a failed job |
 | `randal memory search\|list\|add` | 🧠 Memory operations |
+| `randal message add\|search\|list\|thread` | 💬 Message history management |
+| `randal skills list\|search\|show` | 🧩 Skill management |
 | `randal cron list\|add\|remove` | 📅 Cron job management |
 | `randal heartbeat status\|trigger` | 💓 Heartbeat control |
+| `randal posse` | 🤝 Multi-agent posse management |
+| `randal mesh status\|route` | 🌐 Mesh operations |
+| `randal analytics scores\|recommendations` | 📊 Analytics and reliability |
+| `randal voice status` | 🎙️ Voice session management |
+| `randal gateway status\|kill\|restart\|token` | 🏗️ Gateway management |
+| `randal audit` | 🔍 Audit ambient host auth (SSH, GitHub, AWS, etc.) |
 | `randal setup` | 🔩 Generate opencode.json and configure runtime |
 | `randal doctor` | 🩺 Validate deployment (config, MCP, symlinks) |
+| `randal update` | ⬆️ Self-update (`--check`, `--pin`, `--dry-run`) |
 
 Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
 
@@ -357,10 +429,16 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 │          │◀─────────────────────────│  │  - HTTP API    │  │
 └──────────┘                          │  │  - Discord     │  │
                                       │  │  - iMessage    │  │
-┌──────────┐                          │  └───────┬────────┘  │
-│ 📱 iMessage── BB webhook ──────────▶│          │           │
-│          │◀── BB REST ──────────────│  ┌───────┴────────┐  │
-└──────────┘                          │  │  🔀 EventBus   │  │
+┌──────────┐                          │  │  - Telegram    │  │
+│ 📱 iMessage── BB webhook ──────────▶│  │  - Slack       │  │
+│          │◀── BB REST ──────────────│  │  - Email       │  │
+└──────────┘                          │  │  - WhatsApp    │  │
+                                      │  │  - Signal      │  │
+┌──────────┐                          │  │  - Voice       │  │
+│ 📧 Email │ ── IMAP/SMTP ──────────▶│  └───────┬────────┘  │
+└──────────┘                          │          │           │
+                                      │  ┌───────┴────────┐  │
+                                      │  │  🔀 EventBus   │  │
                                       │  │  📂 Job Persist│  │
                                       │  └───────┬────────┘  │
                                       └──────────┼───────────┘
@@ -369,11 +447,14 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
                                    ▼                           ▼
                           ┌──────────────────┐        ┌──────────────────┐
                           │    🎯 Runner     │        │   ⏰ Scheduler   │
-                          │  - Ralph Loop    │        │  - Heartbeat     │
+                          │  - Agent Loop    │        │  - Heartbeat     │
                           │  - Adapters      │        │  - Cron          │
-                          │  - Sentinel      │        │  - Hooks         │
-                          │  - Struggle Det. │        │  (webhooks)      │
-                          └───┬──────────┬───┘        └──────────────────┘
+                          │  - MCP Server    │        │  - Hooks         │
+                          │  - Sentinel      │        │  (webhooks)      │
+                          │  - Struggle Det. │        └──────────────────┘
+                          │  - Browser (CDP) │
+                          │  - Compaction    │
+                          └───┬──────────┬───┘
                               │          │
                      ┌────────┘          └────────┐
                      ▼                            ▼
@@ -381,12 +462,21 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
                │  🔐 Credentials  │      │    🧠 Memory     │
                │ - .env parsing   │      │ - Meilisearch    │
                │ - Allowlist      │      │ - Cross-agent    │
-               │ - Inheritance    │      │ - Auto-inject    │
-               └──────────────────┘      │ - Posse sharing  │
+               │ - Services       │      │ - Auto-inject    │
+               │ - Sandbox        │      │ - Posse sharing  │
+               │ - Ambient audit  │      │ - Embeddings     │
+               └──────────────────┘      │ - Skills         │
                                          └──────────────────┘
+        ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+        │  🌐 Mesh         │  │  📊 Analytics    │  │  🎙️ Voice       │
+        │ - Registry       │  │ - Annotations    │  │ - LiveKit        │
+        │ - Discovery      │  │ - Reliability    │  │ - Twilio         │
+        │ - Routing        │  │ - Feedback       │  │ - STT/TTS        │
+        │ - Health         │  │ - Recommendations│  │  (experimental)  │
+        └──────────────────┘  └──────────────────┘  └──────────────────┘
 ```
 
-9 packages. Clean separation. See [📖 docs/architecture.md](docs/architecture.md) for the full breakdown.
+12 packages. Clean separation. See [📖 docs/architecture.md](docs/architecture.md) for the full breakdown.
 
 </details>
 
@@ -402,6 +492,11 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | [`examples/multi-agent-posse/`](examples/multi-agent-posse/) | 🤝 Two agents sharing memory — the posse in action |
 | [`examples/customer-support/`](examples/customer-support/) | 🎧 Identity, knowledge base, cron jobs, webhook hooks |
 | [`examples/imported-service/`](examples/imported-service/) | 📦 Import Randal as a dependency in your own app |
+| [`examples/multi-instance-mesh/`](examples/multi-instance-mesh/) | 🌐 Multi-machine mesh with specialization-based routing |
+| [`examples/full-platform/`](examples/full-platform/) | 🏢 Full platform config with all features enabled |
+| [`examples/voice-enabled/`](examples/voice-enabled/) | 🎙️ Voice/video integration with LiveKit + Twilio |
+| [`examples/prompt-layers/`](examples/prompt-layers/) | 📝 Identity, knowledge, rules, and layered prompt composition |
+| [`examples/analytics-driven/`](examples/analytics-driven/) | 📊 Self-learning loop with annotation feedback |
 
 ---
 
@@ -410,8 +505,11 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | Requirement | Notes |
 |-------------|-------|
 | **Bun** >= 1.1 | Runtime. [Install](https://bun.sh) |
-| **Agent CLI** | [OpenCode](https://github.com/nickthecook/opencode) |
+| **Agent CLI** | [OpenCode](https://github.com/opencode-ai/opencode) (default adapter) or any compatible agent CLI |
 | **Meilisearch** *(optional)* | Full-text memory search + cross-agent sharing. [Install](https://www.meilisearch.com/docs/learn/getting_started/installation) |
+| **Chromium** *(optional)* | For browser automation via CDP. Bundled in Docker image. |
+| **Python 3.11+** *(optional)* | For `drive` terminal automation tool. |
+| **Swift** *(optional, macOS)* | For `steer` GUI automation tool. |
 
 ---
 
@@ -423,6 +521,11 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | [CLI Reference](docs/cli-reference.md) | Every command, every flag, HTTP API endpoints |
 | [Config Reference](docs/config-reference.md) | All YAML config options with examples |
 | [Deployment Guide](docs/deployment-guide.md) | Mac Mini, Railway, Docker, Meilisearch setup |
+| [Channel Adapters Guide](docs/channel-adapters-guide.md) | Setup for all 9 messaging channels |
+| [Voice & Video Guide](docs/voice-video-guide.md) | LiveKit, Twilio, STT/TTS integration |
+| [Mesh Guide](docs/mesh-guide.md) | Multi-instance deployment, routing, discovery |
+| [Browser Automation Guide](docs/browser-automation-guide.md) | CDP setup, screenshots, web interaction |
+| [Analytics Guide](docs/analytics-guide.md) | Annotations, reliability scoring, feedback loops |
 | [Security Model](SECURITY.md) | Deployment modes, sandbox enforcement, isolation boundaries |
 
 ---
