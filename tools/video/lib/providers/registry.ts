@@ -5,11 +5,11 @@
  * be registered at runtime via `registerProvider()`.
  */
 
+import { FalProvider } from "./fal";
 import { MockProvider } from "./mock";
 import type { VideoProvider } from "./types";
 import { VideoProviderError } from "./types";
 import { VeoProvider } from "./veo";
-import { FalProvider } from "./fal";
 
 // ---------------------------------------------------------------------------
 // Registry
