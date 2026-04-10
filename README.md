@@ -25,7 +25,7 @@ Randal wraps [OpenCode](https://github.com/opencode-ai/opencode) (or any agent C
 - 🎙️ **Voice & Video** *(experimental)* — Session management framework for LiveKit + Twilio integration (STT/TTS/SIP scaffolding in place)
 - 🌐 **Multi-Instance Mesh** — Distributed orchestration with specialization-based routing across machines
 - 📊 **Self-Learning Analytics** — Human annotation feedback loops, reliability scoring, and prompt tuning
-- 💬 **Messaging Channels** — HTTP, Discord, iMessage, Telegram, Slack, WhatsApp, Signal, Email, and Voice
+- 💬 **Discord Integration** — Threaded conversations, slash commands, interactive buttons, progress tracking, per-server config
 - 🌍 **Browser Automation** — Chrome/Chromium control via CDP for web browsing, screenshots, and interaction
 - 🔄 **Real-Time Streaming** — Line-by-line agent output with tool use detection and MCP server integration
 - 📦 **Context Compaction** — LLM-based summarization when context grows too large
@@ -170,11 +170,11 @@ Full reference: [📖 docs/config-reference.md](docs/config-reference.md)
 
 ---
 
-## 💬 Messaging Channels
+## 💬 Discord Integration
 
-Agents are reachable via HTTP, Discord, iMessage, Telegram, Slack, WhatsApp, Signal, Email, or Voice. Each channel uses the same prefix commands. Channel-aware routing ensures job notifications only go back to the originating channel. Cross-channel context is seamless via shared memory.
+Randal's primary messaging interface. Full-featured conversational agent with threads, slash commands, interactive buttons, real-time progress tracking, and per-server configuration.
 
-### Discord
+### Quick Setup
 
 ```yaml
 gateway:
@@ -184,90 +184,21 @@ gateway:
       allowFrom: ["123456789012345678"]
 ```
 
-**Setup:**
 1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Enable **Message Content Intent** under Bot settings
-3. Invite the bot to your server with Send Messages, Read Message History, View Channels permissions
-4. Set `DISCORD_BOT_TOKEN` in your `.env` file
+3. Invite the bot with Send Messages, Read Message History, View Channels permissions
+4. Set `DISCORD_BOT_TOKEN` in your `.env`
 
-### iMessage (macOS only)
+### What You Get
 
-```yaml
-gateway:
-  channels:
-    - type: imessage
-      provider: bluebubbles
-      url: "${BLUEBUBBLES_URL}"
-      password: "${BLUEBUBBLES_PASSWORD}"
-      allowFrom: ["+15551234567"]
-```
-
-> **macOS only.** Requires a Mac with Messages.app signed into an Apple ID and [BlueBubbles Server](https://bluebubbles.app) running.
-
-**Setup:**
-1. Install BlueBubbles Server on your Mac
-2. Configure a webhook pointing to `http://<host>:<port>/webhooks/imessage`
-3. Set `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, and `APPLE_ID` in your `.env` file
-
-### Telegram
-
-```yaml
-gateway:
-  channels:
-    - type: telegram
-      token: "${TELEGRAM_BOT_TOKEN}"
-      allowFrom: ["123456789"]
-```
-
-### Slack
-
-```yaml
-gateway:
-  channels:
-    - type: slack
-      appToken: "${SLACK_APP_TOKEN}"
-      botToken: "${SLACK_BOT_TOKEN}"
-```
-
-### Email
-
-```yaml
-gateway:
-  channels:
-    - type: email
-      imap:
-        host: "${IMAP_HOST}"
-        user: "${EMAIL_USER}"
-        password: "${EMAIL_PASSWORD}"
-      smtp:
-        host: "${SMTP_HOST}"
-        user: "${EMAIL_USER}"
-        password: "${EMAIL_PASSWORD}"
-      allowFrom: ["trusted@example.com"]
-```
-
-### WhatsApp (via Twilio)
-
-```yaml
-gateway:
-  channels:
-    - type: whatsapp
-      accountSid: "${TWILIO_ACCOUNT_SID}"
-      authToken: "${TWILIO_AUTH_TOKEN}"
-      phoneNumber: "${TWILIO_WHATSAPP_NUMBER}"
-```
-
-### Signal
-
-```yaml
-gateway:
-  channels:
-    - type: signal
-      phoneNumber: "${SIGNAL_PHONE_NUMBER}"
-      allowFrom: ["+15551234567"]
-```
-
-Full channel setup: [📖 docs/channel-adapters-guide.md](docs/channel-adapters-guide.md)
+| Feature | Description |
+|---------|-------------|
+| 💬 **Conversations** | Threaded, multi-turn conversations with full context |
+| ⌨️ **Slash Commands** | `/run`, `/status`, `/jobs`, `/stop`, `/resume`, `/memory`, `/dashboard` |
+| 🔘 **Interactive Buttons** | Stop, Inject Context, Details, Retry, Resume, Save to Memory |
+| 📊 **Progress Tracking** | Edit-in-place status with plan checklist, iteration count |
+| 🏢 **Per-Server Config** | Custom commands, agent/model overrides, server-specific instructions |
+| 🔄 **Recovery** | Conversations and jobs survive gateway restarts |
 
 ### Prefix Commands
 
@@ -284,7 +215,7 @@ Full channel setup: [📖 docs/channel-adapters-guide.md](docs/channel-adapters-
 
 Or just send a message without a prefix to start a job (implicit `run:`).
 
-Full setup instructions: [📖 docs/deployment-guide.md](docs/deployment-guide.md)
+Full reference: [📖 docs/discord-guide.md](docs/discord-guide.md) · Channel adapters: [📖 docs/channel-adapters-guide.md](docs/channel-adapters-guide.md)
 
 ---
 
@@ -428,15 +359,8 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 │ 💬 Discord│ ── discord.js ─────────▶│  │  📡 Channels   │  │
 │          │◀─────────────────────────│  │  - HTTP API    │  │
 └──────────┘                          │  │  - Discord     │  │
-                                      │  │  - iMessage    │  │
-┌──────────┐                          │  │  - Telegram    │  │
-│ 📱 iMessage── BB webhook ──────────▶│  │  - Slack       │  │
-│          │◀── BB REST ──────────────│  │  - Email       │  │
-└──────────┘                          │  │  - WhatsApp    │  │
-                                      │  │  - Signal      │  │
-┌──────────┐                          │  │  - Voice       │  │
-│ 📧 Email │ ── IMAP/SMTP ──────────▶│  └───────┬────────┘  │
-└──────────┘                          │          │           │
+                                      │  └───────┬────────┘  │
+                                      │          │           │
                                       │  ┌───────┴────────┐  │
                                       │  │  🔀 EventBus   │  │
                                       │  │  📂 Job Persist│  │
@@ -521,7 +445,8 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | [CLI Reference](docs/cli-reference.md) | Every command, every flag, HTTP API endpoints |
 | [Config Reference](docs/config-reference.md) | All YAML config options with examples |
 | [Deployment Guide](docs/deployment-guide.md) | Mac Mini, Railway, Docker, Meilisearch setup |
-| [Channel Adapters Guide](docs/channel-adapters-guide.md) | Setup for all 9 messaging channels |
+| [Discord Integration Guide](docs/discord-guide.md) | Full Discord setup, slash commands, buttons, per-server config |
+| [Channel Adapters Guide](docs/channel-adapters-guide.md) | HTTP API, channel overview, custom channel development |
 | [Voice & Video Guide](docs/voice-video-guide.md) | LiveKit, Twilio, STT/TTS integration |
 | [Mesh Guide](docs/mesh-guide.md) | Multi-instance deployment, routing, discovery |
 | [Browser Automation Guide](docs/browser-automation-guide.md) | CDP setup, screenshots, web interaction |

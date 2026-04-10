@@ -375,20 +375,14 @@ Server and channel configuration. Defaults to `{}` if omitted.
 | `type` | `"discord"` | — | Yes | Channel type discriminator. |
 | `token` | string | — | Yes | Discord bot token. |
 | `allowFrom` | string[] | — | No | Discord user ID allowlist. |
+| `guildId` | string | — | No | Guild ID for instant slash command registration. If omitted, uses global registration (~1 hour propagation). |
+| `servers` | DiscordServer[] | `[]` | No | Per-server configuration. See [Discord Guide](./discord-guide.md#-per-server-configuration). |
 
-**Setup:** Create a bot at [Discord Developer Portal](https://discord.com/developers/applications). Enable the **Message Content Intent** under Bot settings. The bot needs **Send Messages**, **Read Message History**, and **View Channels** permissions. `allowFrom` uses Discord user IDs (numeric strings like `"123456789012345678"`), not usernames. If `allowFrom` is omitted, the bot accepts all DMs; in guild channels, it only responds when mentioned.
+**Setup:** See the [Discord Integration Guide](./discord-guide.md) for full setup instructions.
 
-### 💬 iMessage Channel
+### Other Channels
 
-| Field | Type | Default | Required | Description |
-|-------|------|---------|----------|-------------|
-| `type` | `"imessage"` | — | Yes | Channel type discriminator. |
-| `provider` | `"bluebubbles"` | — | Yes | iMessage bridge provider. |
-| `url` | string | — | Yes | BlueBubbles server URL. |
-| `password` | string | — | Yes | BlueBubbles password. |
-| `allowFrom` | string[] | — | No | Phone number allowlist. |
-
-**Setup:** Requires **macOS 12+** with a Mac that stays awake. Messages.app must be signed into an Apple ID with iMessage active. Install and run [BlueBubbles Server](https://bluebubbles.app). Configure the webhook URL as `http://<host>:<port>/webhooks/imessage`. Set `BLUEBUBBLES_URL`, `BLUEBUBBLES_PASSWORD`, and `APPLE_ID` in your `.env` file. `allowFrom` uses phone numbers (E.164 format recommended, e.g., `"+15551234567"`); numbers are normalized during comparison (spaces, dashes, and parentheses are stripped). **Cannot run in Docker or Railway** — macOS with Messages.app is required.
+Additional channel types (iMessage, Telegram, Slack, Email, WhatsApp, Signal, Voice) are community-maintained. See the [Channel Adapters Guide](./channel-adapters-guide.md#-community-channels) for details and `packages/core/src/config.ts` for their config schemas.
 
 ---
 
@@ -681,12 +675,12 @@ tracking:
       output: 0.000015
 ```
 
-### 💬 Personal Assistant with Multi-Channel
+### 💬 Personal Assistant with Discord
 
 ```yaml
 name: assistant
 identity:
-  persona: "Personal dev assistant reachable via any channel."
+  persona: "Personal dev assistant reachable via Discord."
 runner:
   defaultAgent: opencode
   defaultModel: claude-sonnet-4
@@ -703,11 +697,6 @@ gateway:
     - type: discord
       token: "${DISCORD_BOT_TOKEN}"
       allowFrom: ["123456789012345678"]
-    - type: imessage
-      provider: bluebubbles
-      url: "${BLUEBUBBLES_URL}"
-      password: "${BLUEBUBBLES_PASSWORD}"
-      allowFrom: ["+15551234567"]
 memory:
   store: meilisearch
   url: http://localhost:7700
@@ -808,66 +797,8 @@ memory:
 
 ---
 
-## 💬 Expanded Channel Types
+## 💬 Additional Channel Types
 
-### Telegram
+The gateway supports additional channel types beyond HTTP and Discord. These channels have adapter implementations in the codebase but are **community-maintained** and not wired into the gateway by default. See the [Channel Adapters Guide](./channel-adapters-guide.md#-community-channels) for details.
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"telegram"` | — | Channel type discriminator |
-| `token` | string | — | Telegram Bot API token |
-| `allowFrom` | string[] | — | Allowed Telegram user IDs |
-
-### Slack
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"slack"` | — | Channel type discriminator |
-| `botToken` | string | — | Slack Bot token (xoxb-...) |
-| `appToken` | string | — | Slack App token (xapp-...) |
-| `signingSecret` | string | — | Slack signing secret |
-| `allowFrom` | string[] | — | Allowed Slack user IDs |
-
-### Email
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"email"` | — | Channel type discriminator |
-| `imap.host` | string | — | IMAP server host |
-| `imap.port` | number | `993` | IMAP server port |
-| `imap.user` | string | — | IMAP username |
-| `imap.password` | string | — | IMAP password |
-| `imap.tls` | boolean | `true` | Use TLS |
-| `smtp.host` | string | — | SMTP server host |
-| `smtp.port` | number | `587` | SMTP server port |
-| `smtp.user` | string | — | SMTP username |
-| `smtp.password` | string | — | SMTP password |
-| `smtp.secure` | boolean | `false` | Use secure connection |
-| `allowFrom` | string[] | — | Allowed email addresses |
-
-### WhatsApp
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"whatsapp"` | — | Channel type discriminator |
-| `provider` | `"twilio"` \| `"baileys"` | `"twilio"` | WhatsApp provider |
-| `accountSid` | string | — | Twilio Account SID |
-| `authToken` | string | — | Twilio Auth Token |
-| `phoneNumber` | string | — | WhatsApp phone number |
-| `allowFrom` | string[] | — | Allowed phone numbers |
-
-### Signal
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"signal"` | — | Channel type discriminator |
-| `phoneNumber` | string | — | Signal phone number |
-| `signalCliBin` | string | `"signal-cli"` | Path to signal-cli binary |
-| `allowFrom` | string[] | — | Allowed phone numbers |
-
-### Voice
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `type` | `"voice"` | — | Channel type discriminator |
-| `allowFrom` | string[] | — | Allowed phone numbers / caller IDs |
+Available community channel types: `telegram`, `slack`, `email`, `whatsapp`, `signal`, `voice`. Config schemas remain in `packages/core/src/config.ts` for reference.
