@@ -2,8 +2,6 @@ import {
 	existsSync,
 	lstatSync,
 	mkdirSync,
-	readFileSync,
-	readdirSync,
 	renameSync,
 	symlinkSync,
 	unlinkSync,
@@ -14,10 +12,10 @@ import { basename, join, resolve } from "node:path";
 import {
 	compileOpenCodeConfig,
 	loadConfig,
-	resolvePromptValue,
 	resolvePromptArray,
+	resolvePromptValue,
 } from "@randal/core";
-import type { CompileResult, RandalConfig, PromptContext, ResolvedIdentity } from "@randal/core";
+import type { CompileResult, PromptContext, RandalConfig, ResolvedIdentity } from "@randal/core";
 
 // ---- Constants ----
 
@@ -181,9 +179,7 @@ export async function executeSetup(options: SetupOptions): Promise<SetupResult> 
 
 	// 1. Load config
 	const config = loadConfig(options.configPath);
-	const configDir = options.configPath
-		? resolve(options.configPath, "..")
-		: process.cwd();
+	const configDir = options.configPath ? resolve(options.configPath, "..") : process.cwd();
 
 	if (options.verbose) {
 		console.log(`  Config loaded: ${config.name}`);
@@ -259,9 +255,7 @@ export async function executeSetup(options: SetupOptions): Promise<SetupResult> 
 	const symlinks: Array<{ source: string; target: string }> = [];
 
 	if (!existsSync(sourceConfigDir)) {
-		console.warn(
-			`  Warning: Source config directory not found: ${sourceConfigDir}`,
-		);
+		console.warn(`  Warning: Source config directory not found: ${sourceConfigDir}`);
 	} else {
 		for (const entry of STATIC_CONTENT_ENTRIES) {
 			const sourcePath = join(sourceConfigDir, entry);
@@ -374,7 +368,9 @@ export async function setupCommand(args: string[]): Promise<void> {
 				console.log(`\n  [dry-run] Resolved persona: ${preview}...`);
 			}
 			if (result.compileResult.resolvedRules && result.compileResult.resolvedRules.length > 0) {
-				console.log(`  [dry-run] Resolved rules: ${result.compileResult.resolvedRules.length} entries`);
+				console.log(
+					`  [dry-run] Resolved rules: ${result.compileResult.resolvedRules.length} entries`,
+				);
 			}
 			return;
 		}

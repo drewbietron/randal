@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { configSchema } from "./config.js";
-import { compileOpenCodeConfig } from "./config-compile.js";
-import type { RandalConfig, CompileOptions } from "./index.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { compileOpenCodeConfig } from "./config-compile.js";
+import { configSchema } from "./config.js";
+import type { CompileOptions, RandalConfig } from "./index.js";
 
 // ---- Helpers ----
 
@@ -156,9 +156,7 @@ describe("backward compatibility — default config produces equivalent output",
 
 		if (handCrafted.tools) {
 			const hcTools = handCrafted.tools as Record<string, boolean>;
-			expect(Object.keys(compiled.config.tools).sort()).toEqual(
-				Object.keys(hcTools).sort(),
-			);
+			expect(Object.keys(compiled.config.tools).sort()).toEqual(Object.keys(hcTools).sort());
 		}
 	});
 
@@ -315,9 +313,7 @@ describe("edge cases", () => {
 		const deserialized = JSON.parse(serialized);
 		expect(deserialized.$schema).toBe(result.config.$schema);
 		expect(deserialized.plugin).toEqual(result.config.plugin);
-		expect(Object.keys(deserialized.mcp).sort()).toEqual(
-			Object.keys(result.config.mcp).sort(),
-		);
+		expect(Object.keys(deserialized.mcp).sort()).toEqual(Object.keys(result.config.mcp).sort());
 	});
 
 	test("base template fields are preserved in output", () => {
@@ -395,9 +391,7 @@ describe("edge cases", () => {
 			// repoRoot and toolsDir both omitted
 		});
 		const videoCmd = result.config.mcp.video.command ?? [];
-		expect(videoCmd[2]).toBe(
-			"/my/workspace/tools/video/mcp-server.ts",
-		);
+		expect(videoCmd[2]).toBe("/my/workspace/tools/video/mcp-server.ts");
 	});
 
 	test("memory MCP includes apiKey when configured", () => {
@@ -771,11 +765,7 @@ describe("template interpolation via identity.vars", () => {
 		const result = compileOpenCodeConfig(config, {
 			...defaultOptions(),
 			resolvedIdentity: {
-				rules: [
-					"Work on {{project}} only",
-					"Deploy {{project}} to staging",
-					"Static rule no vars",
-				],
+				rules: ["Work on {{project}} only", "Deploy {{project}} to staging", "Static rule no vars"],
 			},
 		});
 		expect(result.resolvedRules).toEqual([
@@ -792,16 +782,10 @@ describe("template interpolation via identity.vars", () => {
 		const result = compileOpenCodeConfig(config, {
 			...defaultOptions(),
 			resolvedIdentity: {
-				knowledge: [
-					"API version {{version}} docs",
-					"Changelog for {{version}}",
-				],
+				knowledge: ["API version {{version}} docs", "Changelog for {{version}}"],
 			},
 		});
-		expect(result.resolvedKnowledge).toEqual([
-			"API version 3.0 docs",
-			"Changelog for 3.0",
-		]);
+		expect(result.resolvedKnowledge).toEqual(["API version 3.0 docs", "Changelog for 3.0"]);
 	});
 
 	test("unknown variables are left as-is (not stripped)", () => {

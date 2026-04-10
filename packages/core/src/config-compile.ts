@@ -161,15 +161,11 @@ function resolveIdentity(
 	}
 
 	if (resolved.rules !== undefined) {
-		result.resolvedRules = resolved.rules.map((rule) =>
-			interpolateTemplate(rule, vars),
-		);
+		result.resolvedRules = resolved.rules.map((rule) => interpolateTemplate(rule, vars));
 	}
 
 	if (resolved.knowledge !== undefined) {
-		result.resolvedKnowledge = resolved.knowledge.map((entry) =>
-			interpolateTemplate(entry, vars),
-		);
+		result.resolvedKnowledge = resolved.knowledge.map((entry) => interpolateTemplate(entry, vars));
 	}
 
 	return result;
@@ -197,10 +193,7 @@ function resolveToolsDir(options: CompileOptions): string {
  * A capability is active if it appears in `config.capabilities` or if a
  * matching tool exists in `config.tools[]`.
  */
-function hasCapability(
-	config: RandalConfig,
-	...names: string[]
-): boolean {
+function hasCapability(config: RandalConfig, ...names: string[]): boolean {
 	for (const name of names) {
 		if (config.capabilities.includes(name)) {
 			return true;
@@ -248,10 +241,7 @@ function deriveSummaryModel(config: RandalConfig): string {
  *
  * All local MCP server paths use the resolved `toolsDir`, never hardcoded absolute paths.
  */
-function buildMcpSection(
-	config: RandalConfig,
-	toolsDir: string,
-): Record<string, McpServerEntry> {
+function buildMcpSection(config: RandalConfig, toolsDir: string): Record<string, McpServerEntry> {
 	const mcp: Record<string, McpServerEntry> = {};
 
 	// Memory MCP — always present when memory store is configured
