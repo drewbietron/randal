@@ -42,12 +42,11 @@ import type { CharacterPhysical, CharacterProfile } from "./lib/characters";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
 import { listAudioProviders } from "./lib/providers/audio-registry";
-import { listProviders } from "./lib/providers/registry";
+import { FalProvider } from "./lib/providers/fal";
+import { getProvider, listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
-import { getProvider } from "./lib/providers/registry";
-import { FalProvider } from "./lib/providers/fal";
 import { analyzeVideoWithVision, extractFrames, prepareVideoReference } from "./lib/video-ref";
 
 // ---------------------------------------------------------------------------
