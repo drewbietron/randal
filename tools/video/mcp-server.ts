@@ -245,9 +245,18 @@ server.tool(
 		model: z
 			.string()
 			.optional()
-			.describe("Model endpoint ID (e.g. 'fal-ai/veo3/fast', 'fal-ai/bytedance/seedance/v1.5/pro/text-to-video'). Defaults to fal-ai/veo3/fast"),
+			.describe(
+				"Model endpoint ID (e.g. 'fal-ai/veo3/fast', 'fal-ai/bytedance/seedance/v1.5/pro/text-to-video'). Defaults to fal-ai/veo3/fast",
+			),
 	},
-	async ({ prompt, duration, aspect_ratio, reference_image_path, provider: providerName, model: modelOverride }) => {
+	async ({
+		prompt,
+		duration,
+		aspect_ratio,
+		reference_image_path,
+		provider: providerName,
+		model: modelOverride,
+	}) => {
 		try {
 			const provider = getProvider(providerName);
 
@@ -351,7 +360,9 @@ server.tool(
 
 			if (!statusResp.ok) {
 				let errBody = "";
-				try { errBody = await statusResp.text(); } catch {}
+				try {
+					errBody = await statusResp.text();
+				} catch {}
 				return err(`Failed to check status: HTTP ${statusResp.status}. ${errBody.slice(0, 300)}`);
 			}
 
@@ -380,8 +391,12 @@ server.tool(
 
 			if (!resultResp.ok) {
 				let errBody = "";
-				try { errBody = await resultResp.text(); } catch {}
-				return err(`Status is COMPLETED but failed to fetch result: HTTP ${resultResp.status}. ${errBody.slice(0, 300)}`);
+				try {
+					errBody = await resultResp.text();
+				} catch {}
+				return err(
+					`Status is COMPLETED but failed to fetch result: HTTP ${resultResp.status}. ${errBody.slice(0, 300)}`,
+				);
 			}
 
 			const result = (await resultResp.json()) as {

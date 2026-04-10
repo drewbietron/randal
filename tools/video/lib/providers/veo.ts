@@ -524,7 +524,9 @@ export class VeoProvider implements VideoProvider {
 
 				if (!response.ok) {
 					let errBody = "";
-					try { errBody = await response.text(); } catch {}
+					try {
+						errBody = await response.text();
+					} catch {}
 					consecutiveErrors++;
 					if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
 						throw new VideoProviderError(
