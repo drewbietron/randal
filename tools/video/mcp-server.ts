@@ -42,7 +42,8 @@ import type { CharacterPhysical, CharacterProfile } from "./lib/characters";
 import { generateImage } from "./lib/image-gen";
 import { detectMimeType, ensureCorrectExtension } from "./lib/mime-detect";
 import { listAudioProviders } from "./lib/providers/audio-registry";
-import { listProviders } from "./lib/providers/registry";
+import { FalProvider } from "./lib/providers/fal";
+import { getProvider, listProviders } from "./lib/providers/registry";
 import { renderVideo } from "./lib/renderer";
 import { stitchClips } from "./lib/stitch";
 import { generateVideoClip } from "./lib/video-gen";
@@ -211,6 +212,216 @@ server.tool(
 				path: outPath,
 				mimeType: result.mimeType,
 				model: result.model,
+				sizeBytes: stat.size,
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: submit_clip (async — submit job, returns immediately with request ID)
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"submit_clip",
+	"Submit a video clip generation job (async). Returns a request ID immediately. Use check_clip to poll for completion and download the result.",
+	{
+		prompt: z.string().describe("Text description of the motion/action for the clip"),
+		duration: z
+			.union([z.literal(4), z.literal(6), z.literal(8)])
+			.optional()
+			.describe("Clip duration in seconds (4, 6, or 8)"),
+		aspect_ratio: z.string().optional().describe("Aspect ratio (e.g. '16:9' or '9:16')"),
+		reference_image_path: z
+			.string()
+			.optional()
+			.describe("Path to a reference image (used as first frame for image-to-video)"),
+		provider: z
+			.string()
+			.optional()
+			.describe("Video provider name (e.g. 'fal'). Uses first configured provider if omitted"),
+		model: z
+			.string()
+			.optional()
+			.describe(
+				"Model endpoint ID (e.g. 'fal-ai/veo3/fast', 'fal-ai/bytedance/seedance/v1.5/pro/text-to-video'). Defaults to fal-ai/veo3/fast",
+			),
+	},
+	async ({
+		prompt,
+		duration,
+		aspect_ratio,
+		reference_image_path,
+		provider: providerName,
+		model: modelOverride,
+	}) => {
+		try {
+			const provider = getProvider(providerName);
+
+			// Currently only FalProvider supports async submit
+			if (!(provider instanceof FalProvider)) {
+				return err(
+					`Provider "${provider.name}" does not support async submit. Use generate_clip instead.`,
+				);
+			}
+
+			const apiKey = process.env.FAL_KEY;
+			if (!apiKey?.trim()) {
+				return err("FAL_KEY environment variable is not set.");
+			}
+
+			const model = modelOverride ?? "fal-ai/veo3/fast";
+
+			// Build input
+			const input: Record<string, unknown> = {
+				prompt: prompt.trim(),
+				aspect_ratio: aspect_ratio ?? "16:9",
+				enhance_prompt: true,
+			};
+
+			if (duration) {
+				// Veo uses "6s" format, other models use plain "6"
+				input.duration = model.includes("veo") ? `${duration}s` : `${duration}`;
+			}
+
+			// Read reference image if provided
+			if (reference_image_path) {
+				const file = Bun.file(reference_image_path);
+				if (!(await file.exists())) {
+					return err(`Reference image not found: ${reference_image_path}`);
+				}
+				const arrayBuf = await file.arrayBuffer();
+				const imageBuffer = Buffer.from(arrayBuf);
+				const detected = detectMimeType(imageBuffer);
+				input.image_url = `data:${detected.mimeType};base64,${imageBuffer.toString("base64")}`;
+			}
+
+			const submitResult = await provider.submitToQueue(prompt, apiKey, model, input);
+
+			return ok({
+				request_id: submitResult.request_id,
+				response_url: submitResult.response_url,
+				status_url: submitResult.status_url,
+				provider: provider.name,
+				model,
+				status: "SUBMITTED",
+				message: "Job submitted. Use check_clip with this request_id to poll for completion.",
+			});
+		} catch (error) {
+			return err(error instanceof Error ? error.message : String(error));
+		}
+	},
+);
+
+// ---------------------------------------------------------------------------
+// Tool: check_clip (poll status and optionally download completed clip)
+// ---------------------------------------------------------------------------
+
+server.tool(
+	"check_clip",
+	"Check the status of an async video generation job. If complete, downloads and saves the video clip.",
+	{
+		request_id: z.string().describe("The request ID from submit_clip"),
+		output_dir: z
+			.string()
+			.optional()
+			.describe(`Directory to save the clip (default: ${DEFAULT_CLIP_DIR})`),
+		filename: z.string().optional().describe("Output filename (default: auto-generated UUID)"),
+		model: z
+			.string()
+			.optional()
+			.describe("Model endpoint ID used for the submission (default: fal-ai/veo3/fast)"),
+	},
+	async ({ request_id, output_dir, filename, model }) => {
+		try {
+			const provider = getProvider("fal");
+			if (!(provider instanceof FalProvider)) {
+				return err("fal provider not available.");
+			}
+
+			const apiKey = process.env.FAL_KEY;
+			if (!apiKey?.trim()) {
+				return err("FAL_KEY environment variable is not set.");
+			}
+
+			// fal.ai uses the first 2 path segments of the model ID for queue URLs
+			// e.g. "fal-ai/veo3/fast" -> "fal-ai/veo3"
+			// e.g. "fal-ai/bytedance/seedance/v1.5/pro/text-to-video" -> "fal-ai/bytedance"
+			const rawModel = model ?? "fal-ai/veo3/fast";
+			const segments = rawModel.split("/");
+			const queueModel = segments.slice(0, 2).join("/");
+
+			const baseUrl = `https://queue.fal.run/${queueModel}/requests/${request_id}`;
+
+			// Step 1: Check status first
+			const statusResp = await fetch(`${baseUrl}/status`);
+
+			if (!statusResp.ok) {
+				let errBody = "";
+				try {
+					errBody = await statusResp.text();
+				} catch {}
+				return err(`Failed to check status: HTTP ${statusResp.status}. ${errBody.slice(0, 300)}`);
+			}
+
+			const statusData = (await statusResp.json()) as { status: string; error?: string };
+
+			if (statusData.status === "FAILED") {
+				return ok({
+					request_id,
+					status: "FAILED",
+					error: statusData.error ?? "Unknown error",
+				});
+			}
+
+			if (statusData.status !== "COMPLETED") {
+				return ok({
+					request_id,
+					status: statusData.status,
+					message: `Job is ${statusData.status}. Call check_clip again to poll.`,
+				});
+			}
+
+			// Step 2: Status is COMPLETED — fetch the result
+			const resultResp = await fetch(baseUrl, {
+				headers: { Authorization: `Key ${apiKey}` },
+			});
+
+			if (!resultResp.ok) {
+				let errBody = "";
+				try {
+					errBody = await resultResp.text();
+				} catch {}
+				return err(
+					`Status is COMPLETED but failed to fetch result: HTTP ${resultResp.status}. ${errBody.slice(0, 300)}`,
+				);
+			}
+
+			const result = (await resultResp.json()) as {
+				video?: { url: string; content_type?: string };
+				[key: string]: unknown;
+			};
+
+			if (!result.video?.url) {
+				return err("Completed but no video URL in response.");
+			}
+
+			const buffer = await provider.downloadVideo(result.video.url);
+
+			const dir = output_dir ?? DEFAULT_CLIP_DIR;
+			await ensureDir(dir);
+			const outFilename = filename ?? `clip-${crypto.randomUUID()}.mp4`;
+			const outPath = join(dir, outFilename);
+			await Bun.write(outPath, buffer);
+
+			const stat = Bun.file(outPath);
+			return ok({
+				request_id,
+				status: "COMPLETED",
+				path: outPath,
+				mimeType: result.video.content_type ?? "video/mp4",
 				sizeBytes: stat.size,
 			});
 		} catch (error) {

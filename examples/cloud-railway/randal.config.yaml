@@ -5,6 +5,8 @@
 # - Cloud-hosted Meilisearch (Railway internal networking)
 # - Heartbeat for autonomous check-ins
 # - Hooks for CI/CD integration
+#
+# Run `randal setup` to generate opencode.json from this config.
 name: cloud-agent
 version: "0.1"
 
@@ -51,6 +53,9 @@ heartbeat:
   prompt: |
     Check for pending tasks, failed jobs, or items needing attention.
     Stay silent if nothing requires action.
+
+# Capabilities: search for web research, scheduler for heartbeat/cron
+capabilities: [memory, search, scheduler]
 
 # Hooks: accept webhooks from CI/CD, monitoring, etc.
 hooks:

@@ -1,21 +1,24 @@
 # Randal Brain — OpenCode Agent Setup
 
-Randal's brain is a set of agent files and custom tools that run inside [OpenCode](https://opencode.ai). Everything lives in `agent/opencode-config/` — the setup script symlinks this directory to `~/.config/opencode/`.
+Randal's brain is a set of agent files and custom tools that run inside [OpenCode](https://opencode.ai). Everything lives in `agent/opencode-config/` — `randal setup` generates `opencode.json` from your config and symlinks the static content into `~/.config/opencode/`.
 
 ## Quick Start
 
 ```bash
 cd ~/dev/randal
-bash agent/setup.sh
+randal setup
 ```
 
 Restart OpenCode and press Tab — you should see only Randal.
 
+> **Note:** `agent/setup.sh` is **deprecated**. Use `randal setup` instead. The old script still works but prints a deprecation warning.
+
 ## Architecture
 
-- **Single source of truth**: `agent/opencode-config/` (version-controlled)
-- **Setup**: `agent/setup.sh` creates one symlink: `~/.config/opencode → agent/opencode-config/`
-- **Updates**: `git pull` updates the repo; the symlink follows automatically
+- **Single source of truth**: `randal.config.yaml` + `agent/opencode-config/` (version-controlled)
+- **Setup**: `randal setup` generates `opencode.json` from config and symlinks static dirs into `~/.config/opencode/`
+- **Validation**: `randal doctor` checks that the deployment is healthy
+- **Updates**: `git pull` updates the repo; symlinks follow automatically
 - **Structure**: See [`agent/opencode-config/README.md`](opencode-config/README.md) for the full directory layout
 
 ## Memory Setup (Meilisearch)
@@ -70,17 +73,18 @@ cd ~/dev/randal && git pull
 # Symlink follows automatically — restart OpenCode to pick up changes
 ```
 
-Only re-run `bash agent/setup.sh` if:
+Only re-run `randal setup` if:
 - You cloned to a new machine
-- The setup script itself was updated with new config steps
+- You changed `capabilities` or other config that affects `opencode.json`
 
 ## Troubleshooting
 
 **Symlink broken or agent not loading:**
 ```bash
 ls -la ~/.config/opencode
-# Should be a symlink → .../agent/opencode-config
-# If broken, re-run: bash agent/setup.sh
+# Should contain symlinks → .../agent/opencode-config/*
+# If broken, re-run: randal setup
+# To diagnose: randal doctor
 ```
 
 **Memory not working:**

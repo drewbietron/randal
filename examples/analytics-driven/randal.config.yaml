@@ -1,6 +1,8 @@
 # Analytics and self-learning enabled instance
 # Randal learns from annotations and improves over time.
 # See docs/analytics-guide.md for setup instructions
+#
+# Run `randal setup` to generate opencode.json from this config.
 
 name: learning-agent
 
@@ -105,6 +107,9 @@ analytics:
       - playwright
       - coverage
   agingHalfLife: 30
+
+# Capabilities: memory for persistent learning context, search for research
+capabilities: [memory, search]
 
 memory:
   store: meilisearch

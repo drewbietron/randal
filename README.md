@@ -46,7 +46,10 @@ Or clone and set up manually:
 
 ```bash
 git clone https://github.com/drewbietron/randal && cd randal
-bash scripts/setup.sh
+bun install && bun link
+randal init
+randal setup
+randal serve
 ```
 
 Dashboard at [`http://localhost:7600`](http://localhost:7600). Your agent is live.
@@ -239,6 +242,8 @@ Full setup instructions: [📖 docs/deployment-guide.md](docs/deployment-guide.m
 | `randal memory search\|list\|add` | 🧠 Memory operations |
 | `randal cron list\|add\|remove` | 📅 Cron job management |
 | `randal heartbeat status\|trigger` | 💓 Heartbeat control |
+| `randal setup` | 🔩 Generate opencode.json and configure runtime |
+| `randal doctor` | 🩺 Validate deployment (config, MCP, symlinks) |
 
 Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
 

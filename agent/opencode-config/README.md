@@ -1,17 +1,19 @@
 # Randal OpenCode Config
 
-This directory IS your `~/.config/opencode/` — the global OpenCode configuration. It's symlinked from the Randal repo so there's a single source of truth.
+This directory contains the static content for `~/.config/opencode/` — the global OpenCode configuration. `randal setup` generates `opencode.json` from your `randal.config.yaml` and symlinks the static content (agents, skills, lenses, etc.) from this directory into `~/.config/opencode/`.
 
 ## Setup
 
 ```bash
-# The setup script handles this automatically:
-bash ~/dev/randal/agent/setup.sh
+# Recommended:
+randal setup
 
 # Or manually:
-ln -sfn ~/dev/randal/agent/opencode-config ~/.config/opencode
+ln -sfn ~/dev/randal/agent/opencode-config/* ~/.config/opencode/
 cd ~/.config/opencode && bun install
 ```
+
+> **Note:** `agent/setup.sh` is **deprecated**. Use `randal setup` instead.
 
 ## Breaking the symlink (for local experiments)
 

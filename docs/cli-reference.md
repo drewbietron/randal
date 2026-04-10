@@ -259,6 +259,87 @@ Does not require a config file. Probes run in subprocesses with short timeouts a
 
 ---
 
+## 🔩 `randal setup`
+
+Generate `opencode.json` and configure the OpenCode runtime. This command replaces `agent/setup.sh` and is the recommended way to set up a Randal deployment.
+
+```bash
+randal setup                  # Generate config, symlink dirs, install plugins
+randal setup --dry-run        # Preview what would be generated (no writes)
+randal setup --json           # Output raw JSON to stdout (for piping)
+randal setup --verbose        # Show detailed MCP wiring and resolution steps
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--config <path>` | string | Path to `randal.config.yaml`. |
+| `--output <dir>` | string | Output directory. Default: `~/.config/opencode/`. |
+| `--dry-run` | flag | Print generated `opencode.json` and planned symlinks without writing anything. |
+| `--json` | flag | Output raw JSON to stdout for piping to other tools. |
+| `--verbose` | flag | Show which MCP servers are included, why, which capabilities were detected, and identity resolution details. |
+
+**What it does:**
+
+1. Reads `randal.config.yaml` (or the file given by `--config`)
+2. Compiles `opencode.json` from `opencode.base.json` + config values (MCP servers, tool permissions, capabilities)
+3. Writes the generated `opencode.json` to `~/.config/opencode/opencode.json`
+4. Symlinks static content (`agents/`, `skills/`, `lenses/`, `tools/`, `rules/`, `plugins/`, `package.json`, `tui.json`) from `agent/opencode-config/` into the output directory
+5. Runs `bun install` for plugin dependencies
+
+The command is idempotent — safe to run repeatedly. Existing non-symlink entries are backed up before replacement.
+
+> **Migration from `agent/setup.sh`:** If you previously used `bash agent/setup.sh`, switch to `randal setup`. The old script still works but prints a deprecation warning. See [Deprecation: agent/setup.sh](#deprecation-agentsetupsh) below.
+
+---
+
+## 🩺 `randal doctor`
+
+Validate the current deployment. Runs a series of diagnostic checks and reports pass/fail/warn for each.
+
+```bash
+randal doctor                 # Run all checks
+randal doctor --config ./my-config.yaml   # Check a specific config
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--config <path>` | string | Path to `randal.config.yaml`. |
+| `--output <dir>` | string | OpenCode config directory to check. Default: `~/.config/opencode/`. |
+
+**Checks performed:**
+
+| Check | What it validates |
+|-------|-------------------|
+| Config | `randal.config.yaml` parses correctly |
+| opencode.json | File exists at `~/.config/opencode/opencode.json` |
+| Config freshness | Generated config matches current `randal.config.yaml` (detects stale configs) |
+| Identity files | All referenced persona, rules, and knowledge files resolve |
+| MCP servers | All MCP server binaries/scripts referenced in `opencode.json` exist on disk |
+| Meilisearch | Health check passes (if memory is configured) |
+| OpenCode CLI | `opencode` binary is available on PATH |
+| Symlinks | Symlinks in `~/.config/opencode/` point to valid targets |
+
+**Exit codes:** `0` if all checks pass, `1` if any check fails.
+
+Example output:
+
+```
+  Randal Doctor — deployment validation
+
+  [PASS] Config: randal.config.yaml parses correctly
+  [PASS] opencode.json: opencode.json exists at ~/.config/opencode/opencode.json
+  [PASS] Config freshness: opencode.json is consistent with current config
+  [PASS] Identity files: All identity files resolve (persona, 3 rules)
+  [PASS] MCP servers: All MCP server scripts exist (memory, scheduler, tavily)
+  [PASS] Meilisearch: Meilisearch is healthy at http://localhost:7700
+  [PASS] OpenCode CLI: `opencode` is available on PATH
+  [PASS] Symlinks: 8 symlinks OK (agents, skills, lenses, ...)
+
+  Summary: 8 passed, 0 warned, 0 failed
+```
+
+---
+
 ## ⬆️ `randal update`
 
 Self-update for git-based installs. Fetches latest tags, compares versions, and optionally applies the update.
@@ -464,3 +545,29 @@ Show active voice sessions with duration and transcript length.
 ```bash
 randal voice status
 ```
+
+---
+
+## ⚠️ Deprecation: `agent/setup.sh`
+
+The `agent/setup.sh` script is **deprecated** and will be removed in a future version. Use `randal setup` instead.
+
+**Migration:**
+
+```bash
+# Old way (deprecated)
+bash agent/setup.sh
+
+# New way
+randal setup
+```
+
+`randal setup` is a superset of `agent/setup.sh` with several improvements:
+
+- **Config-driven**: Generates `opencode.json` from `randal.config.yaml` instead of using hardcoded paths
+- **Dynamic MCP wiring**: MCP servers are included based on your `capabilities` and config, not hardcoded
+- **Cross-platform**: TypeScript-based, not bash-only
+- **Dry-run support**: Preview changes before applying with `--dry-run`
+- **Validation companion**: Pair with `randal doctor` to verify your deployment
+
+The old script continues to work but prints a deprecation warning. If the `randal` CLI is available on PATH, it will suggest using `randal setup` instead.

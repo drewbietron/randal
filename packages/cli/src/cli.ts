@@ -36,6 +36,8 @@ function printHelp(): void {
     \x1b[36mvoice\x1b[0m <sub>            🎙️  Voice sessions (status)
     \x1b[36mgateway\x1b[0m <sub>           🚦 Gateway management (status, kill, restart, token)
     \x1b[36maudit\x1b[0m                   🔍 Audit ambient host auth (--json)
+    \x1b[36msetup\x1b[0m                   🔩 Generate opencode.json and configure runtime
+    \x1b[36mdoctor\x1b[0m                  🩺 Validate deployment (config, MCP, symlinks)
     \x1b[36mupdate\x1b[0m                  ⬆️  Self-update (--check, --pin, --dry-run)
 
   \x1b[1mGlobal options:\x1b[0m
@@ -85,6 +87,20 @@ export async function run(argv: string[]): Promise<void> {
 	if (command === "reset") {
 		const { resetCommand } = await import("./commands/reset.js");
 		await resetCommand(args.slice(1));
+		return;
+	}
+
+	if (command === "setup") {
+		// Setup loads config itself — it doesn't need CliContext
+		const { setupCommand } = await import("./commands/setup.js");
+		await setupCommand(args.slice(1));
+		return;
+	}
+
+	if (command === "doctor") {
+		// Doctor loads config itself — it doesn't need CliContext
+		const { doctorCommand } = await import("./commands/doctor.js");
+		await doctorCommand(args.slice(1));
 		return;
 	}
 

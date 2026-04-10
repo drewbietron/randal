@@ -11,10 +11,19 @@ export type { RandalConfig, ConfigValidation } from "./config.js";
 
 export { RANDAL_VERSION } from "./version.js";
 
+export { compileOpenCodeConfig } from "./config-compile.js";
+export type {
+	CompileOptions,
+	CompileResult,
+	McpServerEntry,
+	OpenCodeConfig,
+	ResolvedIdentity,
+} from "./config-compile.js";
+
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
 
-export { resolvePromptValue, resolvePromptArray } from "./resolve-prompt.js";
+export { resolvePromptValue, resolvePromptArray, interpolateTemplate } from "./resolve-prompt.js";
 export type { PromptContext } from "./resolve-prompt.js";
 
 export type {

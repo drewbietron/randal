@@ -1,6 +1,8 @@
 # Voice-enabled Randal instance
 # Requires: LiveKit server, Twilio account, Deepgram API key, ElevenLabs API key
 # See docs/voice-video-guide.md for setup instructions
+#
+# Run `randal setup` to generate opencode.json from this config.
 
 name: voice-assistant
 
@@ -55,6 +57,9 @@ voice:
 
   video:
     enabled: false
+
+# Capabilities: memory for conversation context, search for web research
+capabilities: [memory, search]
 
 credentials:
   envFile: ./.env

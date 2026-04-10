@@ -45,6 +45,25 @@ for arg in "$@"; do
   esac
 done
 
+# --- Deprecation Warning ---
+echo "" >&2
+echo "╔══════════════════════════════════════════════════════════════════╗" >&2
+echo "║  DEPRECATED: This script will be removed in a future version.  ║" >&2
+echo "║  Use \`randal setup\` instead.                                   ║" >&2
+echo "╚══════════════════════════════════════════════════════════════════╝" >&2
+if command -v randal &> /dev/null; then
+  echo "" >&2
+  echo "  The \`randal\` CLI is available on your PATH." >&2
+  echo "  Run \`randal setup\` instead of this script." >&2
+  echo "  Run \`randal doctor\` to validate your deployment." >&2
+else
+  echo "" >&2
+  echo "  Install the Randal CLI to use the replacement command:" >&2
+  echo "    cd $(cd "$(dirname "$0")/.." && pwd) && bun install" >&2
+  echo "  Then run: randal setup" >&2
+fi
+echo "" >&2
+
 echo ""
 echo "=== Randal Brain Setup (TUI-only) ==="
 echo ""

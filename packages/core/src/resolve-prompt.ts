@@ -46,8 +46,11 @@ function isFileRef(value: string): boolean {
 /**
  * Replace {{key}} patterns with values from vars.
  * Unknown keys are left as-is with a debug warning.
+ *
+ * Exported for reuse by config-compile and other modules that need
+ * template interpolation without the full prompt resolution pipeline.
  */
-function interpolateTemplate(content: string, vars?: Record<string, string>): string {
+export function interpolateTemplate(content: string, vars?: Record<string, string>): string {
 	if (!vars) return content;
 
 	return content.replace(/\{\{(\w[\w.]*)\}\}/g, (_match, key: string) => {

@@ -6,6 +6,8 @@
 # - Frequent heartbeat for checking unresolved tickets
 # - Daily and weekly cron jobs for reports
 # - Webhook hooks for external ticket system integration
+#
+# Run `randal setup` to generate opencode.json from this config.
 name: support-agent
 version: "0.1"
 
@@ -70,6 +72,9 @@ cron:
       execution: isolated
       model: anthropic/claude-sonnet-4
       announce: true
+
+# Capabilities: memory for ticket history, search for research, scheduler for cron
+capabilities: [memory, search, scheduler]
 
 # Hooks: accept triggers from ticket system, monitoring, etc.
 hooks:

@@ -5,6 +5,7 @@
  * be registered at runtime via `registerProvider()`.
  */
 
+import { FalProvider } from "./fal";
 import { MockProvider } from "./mock";
 import type { VideoProvider } from "./types";
 import { VideoProviderError } from "./types";
@@ -76,3 +77,4 @@ export function listProviders(): VideoProvider[] {
 
 registerProvider(new VeoProvider());
 registerProvider(new MockProvider());
+registerProvider(new FalProvider());

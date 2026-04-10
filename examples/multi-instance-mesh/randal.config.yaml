@@ -2,6 +2,8 @@
 # This config represents a single node specialized in frontend work.
 # Deploy multiple instances with different specializations to form a mesh.
 # See docs/mesh-guide.md for setup instructions
+#
+# Run `randal setup` to generate opencode.json from this config.
 
 name: frontend-agent
 
@@ -55,6 +57,9 @@ analytics:
   enabled: true
   feedbackInjection: true
   recommendationFrequency: weekly
+
+# Capabilities: memory for cross-instance context, search for research
+capabilities: [memory, search]
 
 credentials:
   envFile: ./.env
