@@ -400,81 +400,31 @@ Both agents publish to and read from the `shared` index while maintaining their 
 
 ---
 
-## 💬 Messaging Channels Setup
-
-### Discord Bot Setup
+## 💬 Discord Setup
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) and create a new application.
 2. Navigate to **Bot** settings. Click **Reset Token** to generate a bot token. Copy it.
 3. Under **Privileged Gateway Intents**, enable **Message Content Intent**.
 4. Navigate to **OAuth2 > URL Generator**. Select scopes: `bot`. Select permissions: `Send Messages`, `Read Message History`, `View Channels`.
 5. Copy the generated URL and open it in a browser to invite the bot to your server.
-6. Add the token to your Randal config and `.env`:
-
-```yaml
-gateway:
-  channels:
-    - type: discord
-      token: "${DISCORD_BOT_TOKEN}"
-      # allowFrom: ["your-discord-user-id"]
-```
+6. Add the token to your `.env` and config:
 
 ```bash
 # .env
 DISCORD_BOT_TOKEN=your-bot-token-here
 ```
 
-### BlueBubbles / iMessage Setup (macOS only)
-
-> iMessage (BlueBubbles) is **not available in containerized deployments** (Docker, Railway). It requires a local Mac with Messages.app.
-
-**Prerequisites:**
-- A Mac that stays awake (disable sleep, or use `caffeinate`)
-- Messages.app signed into an Apple ID with iMessage active
-- Set `APPLE_ID` in your `.env` file for reference
-
-**Automatic Setup (recommended):**
-
-BlueBubbles Server is automatically installed during `randal init` (or via `install.sh`). The setup wizard will:
-
-1. Install BlueBubbles Server via Homebrew (or direct DMG download as fallback)
-2. Generate a server password and save it to `.env`
-3. Launch BlueBubbles Server
-4. Configure the iMessage channel in `randal.config.yaml`
-
-You only need to complete the one-time BlueBubbles window setup:
-1. Set the server password to the value shown by the wizard (also in `.env` as `BLUEBUBBLES_PASSWORD`)
-2. Choose 'REST API' as the connection method
-3. In Settings → Webhooks, add the URL shown by the wizard (e.g. `http://localhost:7600/webhooks/imessage`) with the 'New Message' event
-
-**Manual Setup (if needed):**
-
-1. Install: `brew install --cask bluebubbles --no-quarantine`
-2. Open BlueBubbles Server, set a server password, and choose a connection method.
-3. In BlueBubbles Server settings, add a webhook:
-   - URL: `http://<randal-host>:<port>/webhooks/imessage`
-   - Events: select at minimum **New Message**
-4. Add the iMessage channel to your Randal config:
-
 ```yaml
 gateway:
   channels:
-    - type: imessage
-      provider: bluebubbles
-      url: "${BLUEBUBBLES_URL}"
-      password: "${BLUEBUBBLES_PASSWORD}"
-      # allowFrom: ["+15551234567"]
+    - type: discord
+      token: "${DISCORD_BOT_TOKEN}"
+      allowFrom: ["your-discord-user-id"]
 ```
 
-5. Set environment variables in your `.env`:
+> Discord works on all platforms — local Mac, Railway, Docker, anywhere Randal runs.
 
-```bash
-BLUEBUBBLES_URL=http://localhost:1234
-BLUEBUBBLES_PASSWORD=your-server-password
-APPLE_ID=your-apple-id@icloud.com
-```
-
-6. Start Randal and verify by sending a test iMessage to the Mac's phone number. Send `help` to see available commands.
+For the full Discord feature reference (slash commands, buttons, threads, per-server config), see the [Discord Integration Guide](./discord-guide.md).
 
 ### Channel Commands Reference
 
@@ -493,8 +443,6 @@ APPLE_ID=your-apple-id@icloud.com
 
 Unrecognized messages are treated as implicit `run:` commands.
 
-> **Note for Railway/Docker deployments:** Discord works on all platforms. iMessage (BlueBubbles) is not available in containerized deployments. It requires a local Mac with Messages.app.
-
 ---
 
 ## 🔑 Environment Variables Reference
@@ -507,6 +455,3 @@ Unrecognized messages are treated as implicit `run:` commands.
 | `OPENROUTER_API_KEY` | 🤖 Agent / Embedder | OpenRouter API key (if using OpenRouter models). |
 | `OPENAI_API_KEY` | 🔌 Embedder | OpenAI API key (if using OpenAI embeddings). |
 | `DISCORD_BOT_TOKEN` | 💬 Discord channel | Discord bot token for the Discord adapter. |
-| `BLUEBUBBLES_URL` | 💬 iMessage channel | BlueBubbles server URL (e.g., `http://localhost:1234`). |
-| `BLUEBUBBLES_PASSWORD` | 💬 iMessage channel | BlueBubbles server password. |
-| `APPLE_ID` | 💬 iMessage channel | Apple ID for iMessage (reference for Messages.app sign-in). |
