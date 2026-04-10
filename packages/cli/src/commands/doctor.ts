@@ -4,10 +4,10 @@ import { join, resolve } from "node:path";
 import {
 	compileOpenCodeConfig,
 	loadConfig,
-	resolvePromptValue,
 	resolvePromptArray,
+	resolvePromptValue,
 } from "@randal/core";
-import type { RandalConfig, PromptContext, OpenCodeConfig } from "@randal/core";
+import type { OpenCodeConfig, PromptContext, RandalConfig } from "@randal/core";
 
 // ---- Constants ----
 
@@ -424,9 +424,7 @@ function checkSymlinks(outputDir: string): CheckResult {
 				valid.push(`${entry} (copy)`);
 			}
 		} catch (err) {
-			issues.push(
-				`${entry}: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			issues.push(`${entry}: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 

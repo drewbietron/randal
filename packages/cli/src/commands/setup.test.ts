@@ -1,15 +1,18 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { executeSetup } from "./setup.js";
+import { join } from "node:path";
 import type { OpenCodeConfig } from "@randal/core";
+import { executeSetup } from "./setup.js";
 
 // ---- Test helpers ----
 
 /** Create a unique temp directory for each test. */
 function makeTempDir(prefix: string): string {
-	const dir = join(tmpdir(), `randal-setup-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	const dir = join(
+		tmpdir(),
+		`randal-setup-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
 	mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -35,12 +38,15 @@ describe("randal setup — dry-run", () => {
 	});
 
 	test("dry-run returns compiled config without writing files", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: test-setup-agent
 runner:
   workdir: ${tempDir}
 capabilities: [search, video]
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "output");
 
@@ -60,7 +66,9 @@ capabilities: [search, video]
 	});
 
 	test("dry-run output contains expected MCP servers based on config", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: test-mcp-agent
 runner:
   workdir: ${tempDir}
@@ -72,7 +80,8 @@ gateway:
     - type: http
       port: 7600
       auth: test-token
-`);
+`,
+		);
 
 		const result = await executeSetup({
 			configPath,
@@ -96,12 +105,15 @@ gateway:
 	});
 
 	test("dry-run output is valid JSON-serializable", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: json-test
 runner:
   workdir: ${tempDir}
 capabilities: [search]
-`);
+`,
+		);
 
 		const result = await executeSetup({
 			configPath,
@@ -119,11 +131,14 @@ capabilities: [search]
 	});
 
 	test("dry-run returns symlink list (may be empty if source dir not found)", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: symlink-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const result = await executeSetup({
 			configPath,
@@ -153,12 +168,15 @@ describe("randal setup — file generation", () => {
 	});
 
 	test("writes opencode.json to output directory", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: write-test
 runner:
   workdir: ${tempDir}
 capabilities: [search]
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "output");
 
@@ -180,7 +198,9 @@ capabilities: [search]
 	});
 
 	test("generated opencode.json includes correct MCP servers", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: mcp-gen-test
 runner:
   workdir: ${tempDir}
@@ -192,7 +212,8 @@ gateway:
     - type: http
       port: 8080
       auth: token123
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "output");
 		await executeSetup({ configPath, outputDir });
@@ -209,12 +230,15 @@ gateway:
 	});
 
 	test("is idempotent — running twice does not corrupt output", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: idempotent-test
 runner:
   workdir: ${tempDir}
 capabilities: [search]
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "output");
 
@@ -231,11 +255,14 @@ capabilities: [search]
 	});
 
 	test("creates output directory if it does not exist", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: mkdir-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "nested", "deep", "output");
 		expect(existsSync(outputDir)).toBe(false);

@@ -1,7 +1,7 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runDiagnostics } from "./doctor.js";
 import { executeSetup } from "./setup.js";
 
@@ -9,7 +9,10 @@ import { executeSetup } from "./setup.js";
 
 /** Create a unique temp directory for each test. */
 function makeTempDir(prefix: string): string {
-	const dir = join(tmpdir(), `randal-doctor-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+	const dir = join(
+		tmpdir(),
+		`randal-doctor-test-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+	);
 	mkdirSync(dir, { recursive: true });
 	return dir;
 }
@@ -35,11 +38,14 @@ describe("randal doctor — check results", () => {
 	});
 
 	test("reports failure when opencode.json is missing", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: missing-json-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "empty-output");
 		mkdirSync(outputDir, { recursive: true });
@@ -57,11 +63,14 @@ runner:
 	});
 
 	test("config check passes with valid config", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: valid-config-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const result = await runDiagnostics({
 			configPath,
@@ -74,12 +83,15 @@ runner:
 	});
 
 	test("opencode.json check passes after setup", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: after-setup-test
 runner:
   workdir: ${tempDir}
 capabilities: [search]
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "setup-output");
 
@@ -100,21 +112,27 @@ capabilities: [search]
 		const outputDir = join(tempDir, "stale-output");
 
 		// Setup with search capability
-		const configPath1 = writeTestConfig(tempDir, `
+		const configPath1 = writeTestConfig(
+			tempDir,
+			`
 name: stale-test
 runner:
   workdir: ${tempDir}
 capabilities: [search]
-`);
+`,
+		);
 		await executeSetup({ configPath: configPath1, outputDir });
 
 		// Now change config to add video capability
-		const configPath2 = writeTestConfig(tempDir, `
+		const configPath2 = writeTestConfig(
+			tempDir,
+			`
 name: stale-test
 runner:
   workdir: ${tempDir}
 capabilities: [search, video]
-`);
+`,
+		);
 
 		const result = await runDiagnostics({
 			configPath: configPath2,
@@ -128,12 +146,15 @@ capabilities: [search, video]
 	});
 
 	test("stale detection passes when config matches on-disk", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: fresh-test
 runner:
   workdir: ${tempDir}
 capabilities: [search, video]
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "fresh-output");
 		await executeSetup({ configPath, outputDir });
@@ -149,11 +170,14 @@ capabilities: [search, video]
 	});
 
 	test("reports failure for invalid opencode.json content", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: bad-json-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const outputDir = join(tempDir, "bad-json-output");
 		mkdirSync(outputDir, { recursive: true });
@@ -173,11 +197,14 @@ runner:
 	});
 
 	test("result contains pass/warn/fail counts", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: counts-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const result = await runDiagnostics({
 			configPath,
@@ -191,11 +218,14 @@ runner:
 	});
 
 	test("all checks have name, status, and message", async () => {
-		const configPath = writeTestConfig(tempDir, `
+		const configPath = writeTestConfig(
+			tempDir,
+			`
 name: shape-test
 runner:
   workdir: ${tempDir}
-`);
+`,
+		);
 
 		const result = await runDiagnostics({
 			configPath,
