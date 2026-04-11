@@ -1,4 +1,5 @@
-FROM oven/bun:1.3.11
+# Keep Bun version in sync with .github/workflows/ci.yml
+FROM oven/bun:1.3.12
 WORKDIR /app
 
 # System dependencies (including headless Chromium for agent web browsing)
