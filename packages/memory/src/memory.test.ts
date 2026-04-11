@@ -342,3 +342,150 @@ memory:
 		expect(recent[0].content).toBe("Recent thing");
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Tests: Scope fix (Step 6) — MemoryManager layer
+// ---------------------------------------------------------------------------
+
+describe("MemoryManager.index() — scope assignment", () => {
+	function makeManager() {
+		const config = parseConfig(`
+name: test-agent
+runner:
+  workdir: /tmp
+memory:
+  url: http://localhost:7700
+  apiKey: test
+  sharing:
+    readFrom: []
+  autoInject:
+    maxResults: 5
+`);
+
+		const ownStore = new MockStore();
+		const mgr = new MemoryManager({ config, store: ownStore });
+		return { mgr, ownStore };
+	}
+
+	test("'preference' category gets scope 'global' when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "User likes dark mode",
+			contentHash: "hash-scope-pref",
+			category: "preference",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'fact' category gets scope 'global' when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "TypeScript is great",
+			contentHash: "hash-scope-fact",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'pattern' category gets undefined scope (not 'global') when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Always wrap in try-catch",
+			contentHash: "hash-scope-pattern",
+			category: "pattern",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		// MemoryManager sets undefined for non-global categories, deferring to store/caller
+		expect(docs[0].scope).toBeUndefined();
+	});
+
+	test("'lesson' category gets undefined scope (not 'global') when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Learned about retry patterns",
+			contentHash: "hash-scope-lesson",
+			category: "lesson",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBeUndefined();
+	});
+
+	test("explicit scope is preserved regardless of category", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Project-scoped fact",
+			contentHash: "hash-scope-explicit",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+			scope: "project:/my/repo",
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("project:/my/repo");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: IndexResult propagation (Step 9) — MemoryManager layer
+// ---------------------------------------------------------------------------
+
+describe("MemoryManager.index() — IndexResult propagation", () => {
+	function makeManager() {
+		const config = parseConfig(`
+name: test-agent
+runner:
+  workdir: /tmp
+memory:
+  url: http://localhost:7700
+  apiKey: test
+  sharing:
+    readFrom: []
+  autoInject:
+    maxResults: 5
+`);
+
+		const ownStore = new MockStore();
+		const mgr = new MemoryManager({ config, store: ownStore });
+		return { mgr, ownStore };
+	}
+
+	test("returns IndexResult from underlying store", async () => {
+		const { mgr } = makeManager();
+		const result = await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Test propagation",
+			contentHash: "hash-propagate",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		expect(result).toEqual({ status: "success" });
+	});
+});
