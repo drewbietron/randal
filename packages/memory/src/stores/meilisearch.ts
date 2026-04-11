@@ -33,6 +33,7 @@ export class MeilisearchStore implements MemoryStore {
 	private client: MeiliSearch;
 	private indexName: string;
 	private embeddingService?: EmbeddingService;
+	private meiliUrl: string;
 	private semanticRatio: number;
 	private logger = createLogger({ context: { component: "meilisearch-store" } });
 
@@ -40,9 +41,18 @@ export class MeilisearchStore implements MemoryStore {
 	private writeQueue: Array<{ doc: Record<string, unknown>; queuedAt: number }> = [];
 	private static readonly MAX_QUEUE_SIZE = 100;
 
+	// Health monitoring
+	private healthy = false;
+	private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+
 	/** Number of documents waiting in the write-ahead queue. */
 	get pendingWrites(): number {
 		return this.writeQueue.length;
+	}
+
+	/** Whether the Meilisearch backend is currently reachable. */
+	isHealthy(): boolean {
+		return this.healthy;
 	}
 
 	constructor(options: MeilisearchStoreOptions) {
@@ -50,6 +60,7 @@ export class MeilisearchStore implements MemoryStore {
 			host: options.url,
 			apiKey: options.apiKey,
 		});
+		this.meiliUrl = options.url;
 		this.indexName = options.index;
 		this.embeddingService = options.embeddingService;
 		this.semanticRatio = options.semanticRatio ?? DEFAULT_SEMANTIC_RATIO;
@@ -103,6 +114,8 @@ export class MeilisearchStore implements MemoryStore {
 				});
 			}
 		}
+
+		this.startHealthCheck();
 	}
 
 	async search(query: string, limit: number, options?: MemorySearchOptions): Promise<MemoryDoc[]> {
@@ -278,6 +291,95 @@ export class MeilisearchStore implements MemoryStore {
 			this.logger.warn(`drainQueue: ${failed.length}/${batch.length} items still failing`);
 		} else if (batch.length > 0) {
 			this.logger.info(`drainQueue: flushed ${batch.length} queued writes`);
+		}
+	}
+
+	/**
+	 * Start periodic health check — called at end of init().
+	 * Pings Meilisearch `/health` every 30 seconds to detect outages and recovery.
+	 */
+	private startHealthCheck(): void {
+		this.healthy = true; // if init() succeeded, we're healthy
+		this.healthCheckInterval = setInterval(() => this.checkHealth(), 30_000);
+	}
+
+	private async checkHealth(): Promise<void> {
+		try {
+			const resp = await fetch(`${this.meiliUrl}/health`, {
+				signal: AbortSignal.timeout(5000),
+			});
+			const wasHealthy = this.healthy;
+			this.healthy = resp.ok;
+
+			if (!wasHealthy && this.healthy) {
+				this.logger.info("Meilisearch recovered — re-initializing indexes");
+				await this.reInit();
+			}
+			if (wasHealthy && !this.healthy) {
+				this.logger.warn("Meilisearch health check failed", { status: resp.status });
+			}
+		} catch (err) {
+			if (this.healthy) {
+				this.logger.warn("Meilisearch unreachable", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+			this.healthy = false;
+		}
+	}
+
+	/**
+	 * Re-initialize indexes after health recovery.
+	 * Re-runs the same configuration as init() (without throwing) and drains the write queue.
+	 */
+	private async reInit(): Promise<void> {
+		try {
+			const index = this.client.index(this.indexName);
+			await index.updateSearchableAttributes(["content", "category", "type", "source"]);
+			await index.updateFilterableAttributes([
+				"type",
+				"category",
+				"source",
+				"file",
+				"timestamp",
+				"contentHash",
+				"scope",
+			]);
+			await index.updateSortableAttributes(["timestamp"]);
+
+		// Re-register userProvided embedder if applicable
+		if (this.embeddingService) {
+			try {
+				await index.updateEmbedders({
+					[EMBEDDER_NAME]: {
+						source: "userProvided",
+						dimensions: this.embeddingService.dimensions,
+					},
+				});
+			} catch (err) {
+				this.logger.warn("Failed to re-register embedder after recovery", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+			this.logger.info("Re-initialized indexes after health recovery");
+
+			// Attempt to drain the write queue
+			await this.drainQueue();
+		} catch (err) {
+			this.logger.warn("Re-init after recovery failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			this.healthy = false;
+		}
+	}
+
+	/** Cleanup — call when store is being shut down. Stops the health check timer. */
+	destroy(): void {
+		if (this.healthCheckInterval) {
+			clearInterval(this.healthCheckInterval);
+			this.healthCheckInterval = null;
 		}
 	}
 
