@@ -285,7 +285,7 @@ describe("MCP Scheduler Server", () => {
 			expect(text).toContain("name is required");
 		});
 
-		test("rejects unknown action", async () => {
+		test("rejects unknown action via Zod enum validation", async () => {
 			const response = await callMcpServer("tools/call", {
 				name: "schedule_cron",
 				arguments: { action: "pause" },
@@ -294,7 +294,7 @@ describe("MCP Scheduler Server", () => {
 			expect(response.error).toBeUndefined();
 			const { text, isError } = parseToolResult(response);
 			expect(isError).toBe(true);
-			expect(text).toContain("Unknown action");
+			expect(text).toContain("Invalid parameters");
 		});
 	});
 
@@ -321,7 +321,7 @@ describe("MCP Scheduler Server", () => {
 			expect(response.error).toBeUndefined();
 			const { text, isError } = parseToolResult(response);
 			expect(isError).toBe(true);
-			expect(text).toContain("text is required");
+			expect(text).toContain("Invalid parameters");
 		});
 
 		test("returns error when gateway is unreachable", async () => {
@@ -358,6 +358,60 @@ describe("MCP Scheduler Server", () => {
 
 			expect(response.error).toBeDefined();
 			expect(response.error?.message).toContain("Unknown tool");
+		});
+	});
+
+	// ── Input validation security tests ──────────────────────
+
+	describe("schedule_cron — param validation", () => {
+		test("action 'add' missing both name and prompt returns validation error", async () => {
+			const response = await callMcpServer("tools/call", {
+				name: "schedule_cron",
+				arguments: { action: "add" },
+			});
+
+			expect(response.error).toBeUndefined();
+			const { text, isError } = parseToolResult(response);
+			expect(isError).toBe(true);
+			expect(text).toContain("Invalid parameters");
+		});
+
+		test("action 'invalid' returns validation error", async () => {
+			const response = await callMcpServer("tools/call", {
+				name: "schedule_cron",
+				arguments: { action: "invalid" },
+			});
+
+			expect(response.error).toBeUndefined();
+			const { text, isError } = parseToolResult(response);
+			expect(isError).toBe(true);
+			expect(text).toContain("Invalid parameters");
+		});
+	});
+
+	describe("wake_heartbeat — param validation", () => {
+		test("empty string text returns validation error", async () => {
+			const response = await callMcpServer("tools/call", {
+				name: "wake_heartbeat",
+				arguments: { text: "" },
+			});
+
+			expect(response.error).toBeUndefined();
+			const { text, isError } = parseToolResult(response);
+			expect(isError).toBe(true);
+			expect(text).toContain("Invalid parameters");
+		});
+
+		test("wrong type (text: 123) returns validation error", async () => {
+			const response = await callMcpServer("tools/call", {
+				name: "wake_heartbeat",
+				arguments: { text: 123 },
+			});
+
+			expect(response.error).toBeUndefined();
+			const { text, isError } = parseToolResult(response);
+			expect(isError).toBe(true);
+			expect(text).toContain("Invalid parameters");
 		});
 	});
 });
