@@ -15,6 +15,7 @@ import {
 import { listJobs, loadJob } from "../jobs.js";
 import { parseCommand } from "../router.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { splitMessage } from "./utils.js";
 import {
 	type DiscordServerConfig,
 	SLASH_COMMANDS,
@@ -541,33 +542,7 @@ export class DiscordChannel implements ChannelAdapter {
 	 * Send a reply, splitting messages that exceed Discord's 2000 char limit.
 	 */
 	async sendReply(channel: SendableChannel, text: string): Promise<void> {
-		if (text.length <= DISCORD_MAX_LENGTH) {
-			await channel.send(text);
-			return;
-		}
-
-		// Split on newline boundaries
-		const chunks: string[] = [];
-		let current = "";
-
-		for (const line of text.split("\n")) {
-			if (current.length + line.length + 1 > DISCORD_MAX_LENGTH) {
-				if (current) {
-					chunks.push(current);
-					current = "";
-				}
-				// If a single line exceeds the limit, hard-split it
-				if (line.length > DISCORD_MAX_LENGTH) {
-					for (let i = 0; i < line.length; i += DISCORD_MAX_LENGTH) {
-						chunks.push(line.slice(i, i + DISCORD_MAX_LENGTH));
-					}
-					continue;
-				}
-			}
-			current = current ? `${current}\n${line}` : line;
-		}
-		if (current) chunks.push(current);
-
+		const chunks = splitMessage(text, DISCORD_MAX_LENGTH);
 		for (const chunk of chunks) {
 			await channel.send(chunk);
 		}
@@ -938,33 +913,11 @@ export class DiscordChannel implements ChannelAdapter {
 		// biome-ignore lint: discord.js component types vary
 		components: any[],
 	): Promise<void> {
-		if (text.length <= DISCORD_MAX_LENGTH) {
-			await channel.send({ content: text, components });
-			return;
-		}
-
-		// Split text, attach components to last chunk only
-		const chunks: string[] = [];
-		let current = "";
-		for (const line of text.split("\n")) {
-			if (current.length + line.length + 1 > DISCORD_MAX_LENGTH) {
-				if (current) {
-					chunks.push(current);
-					current = "";
-				}
-				if (line.length > DISCORD_MAX_LENGTH) {
-					for (let i = 0; i < line.length; i += DISCORD_MAX_LENGTH) {
-						chunks.push(line.slice(i, i + DISCORD_MAX_LENGTH));
-					}
-					continue;
-				}
-			}
-			current = current ? `${current}\n${line}` : line;
-		}
-		if (current) chunks.push(current);
+		const chunks = splitMessage(text, DISCORD_MAX_LENGTH);
 
 		for (let i = 0; i < chunks.length; i++) {
 			if (i === chunks.length - 1) {
+				// Attach components to the last chunk only
 				await channel.send({ content: chunks[i], components });
 			} else {
 				await channel.send(chunks[i]);
