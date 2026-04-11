@@ -66,6 +66,21 @@ describe("SlackChannel", () => {
 		channel.stop();
 	});
 
+	test("has send() method", () => {
+		const config = makeSlackConfig();
+		const deps = makeMockDeps();
+		const channel = new SlackChannel(config as never, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
+	test("send() throws if app not connected", async () => {
+		const config = makeSlackConfig();
+		const deps = makeMockDeps();
+		const channel = new SlackChannel(config as never, deps);
+		// App is not connected (no start() called), so send should throw
+		await expect(channel.send("C01234", "hello")).rejects.toThrow("not connected");
+	});
+
 	test("allowFrom filter blocks unauthorized users in DM", async () => {
 		const deps = makeMockDeps();
 		const config = makeSlackConfig({ allowFrom: ["U_ALLOWED"] });

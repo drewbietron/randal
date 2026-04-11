@@ -63,6 +63,13 @@ describe("WhatsAppChannel", () => {
 		channel.stop();
 	});
 
+	test("has send() method", () => {
+		const config = makeWhatsAppConfig();
+		const deps = makeMockDeps();
+		const channel = new WhatsAppChannel(config as never, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
 	test("phone number normalization", async () => {
 		// The normalizePhone function strips "whatsapp:" prefix and non-digits
 		// We test it through the handleIncoming behavior

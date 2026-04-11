@@ -42,6 +42,13 @@ describe("SignalChannel", () => {
 		expect(channel.name).toBe("signal");
 	});
 
+	test("has send() method", () => {
+		const config = makeSignalConfig();
+		const deps = makeMockDeps();
+		const channel = new SignalChannel(config as never, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
 	test("start/stop lifecycle", async () => {
 		const unsubscribe = mock(() => {});
 		const subscribe = mock(() => unsubscribe);
