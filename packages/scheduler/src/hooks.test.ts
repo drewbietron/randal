@@ -213,6 +213,90 @@ describe("createHooksRouter", () => {
 		expect(res.status).toBe(200);
 	});
 
+	test("rejects token that shares a prefix with valid token", async () => {
+		const runner = createMockRunner();
+		const heartbeat = createMockHeartbeat(runner);
+
+		const app = createHooksRouter({
+			token: "abcdef123456",
+			heartbeat,
+			runner,
+		});
+
+		const res = await app.request("/wake", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer abcdef999999",
+			},
+			body: JSON.stringify({ text: "test", mode: "now" }),
+		});
+
+		expect(res.status).toBe(401);
+	});
+
+	test("rejects oversized request body with 413", async () => {
+		const runner = createMockRunner();
+		const heartbeat = createMockHeartbeat(runner);
+
+		const app = createHooksRouter({
+			token: "test-token",
+			heartbeat,
+			runner,
+		});
+
+		// Generate a body larger than 1MB
+		const largeBody = JSON.stringify({
+			text: "x".repeat(1.5 * 1024 * 1024),
+			mode: "now",
+		});
+
+		const res = await app.request("/wake", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer test-token",
+			},
+			body: largeBody,
+		});
+
+		expect(res.status).toBe(413);
+	});
+
+	test("agent fire-and-forget returns 200 immediately for hung job", async () => {
+		// Create a runner that never resolves
+		const neverResolve = new Promise(() => {});
+		const runner = {
+			execute: mock(() => neverResolve),
+			getJob: mock(() => undefined),
+			getActiveJobs: mock(() => []),
+			stop: mock(() => false),
+		} as unknown as Runner;
+
+		const heartbeat = createMockHeartbeat(runner);
+
+		const app = createHooksRouter({
+			token: "test-token",
+			heartbeat,
+			runner,
+		});
+
+		const res = await app.request("/agent", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: "Bearer test-token",
+			},
+			body: JSON.stringify({ message: "will hang", wakeMode: "now" }),
+		});
+
+		// Should still return 200 immediately (fire-and-forget with timeout guard)
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { ok: boolean; wakeMode: string };
+		expect(body.ok).toBe(true);
+		expect(body.wakeMode).toBe("now");
+	});
+
 	test("emits hook events", async () => {
 		const runner = createMockRunner();
 		const heartbeat = createMockHeartbeat(runner);

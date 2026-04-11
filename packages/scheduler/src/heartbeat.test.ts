@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stringify as stringifyYaml } from "yaml";
 import { isWithinActiveHours, parseDuration, setHeartbeatStateDir } from "./heartbeat.js";
 
 describe("parseDuration", () => {
@@ -378,5 +379,84 @@ describe("Heartbeat", () => {
 		await heartbeat.triggerNow();
 
 		expect(heartbeat.getState().pendingWakeItems).toHaveLength(0);
+	});
+
+	test("runs catch-up tick when lastTick is stale", async () => {
+		// Write a stale persisted state with lastTick 2 hours ago
+		const staleState = {
+			tickCount: 5,
+			lastTick: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+			wakeQueue: [],
+		};
+		writeFileSync(join(tempDir, "heartbeat-state.yaml"), stringifyYaml(staleState), "utf-8");
+
+		const executeMock = mock(() => Promise.resolve({}));
+		const mockRunner = {
+			execute: executeMock,
+			getJob: mock(() => undefined),
+			getActiveJobs: mock(() => []),
+			stop: mock(() => false),
+		} as unknown as import("@randal/runner").Runner;
+
+		const { Heartbeat } = await import("./heartbeat.js");
+		const heartbeat = new Heartbeat({
+			config: {
+				enabled: true,
+				every: "30m",
+				prompt: "Check in",
+				target: "none",
+			},
+			runner: mockRunner,
+		});
+
+		heartbeat.start();
+
+		// Wait for the setTimeout(0) catch-up tick to fire
+		await new Promise((r) => setTimeout(r, 200));
+
+		expect(executeMock).toHaveBeenCalled();
+		expect(heartbeat.getState().tickCount).toBe(6); // 5 restored + 1 catch-up
+
+		heartbeat.stop();
+	});
+
+	test("does not run catch-up tick when lastTick is recent", async () => {
+		// Write a recent persisted state (lastTick 5 minutes ago, interval 30m)
+		const recentState = {
+			tickCount: 5,
+			lastTick: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+			wakeQueue: [],
+		};
+		writeFileSync(join(tempDir, "heartbeat-state.yaml"), stringifyYaml(recentState), "utf-8");
+
+		const executeMock = mock(() => Promise.resolve({}));
+		const mockRunner = {
+			execute: executeMock,
+			getJob: mock(() => undefined),
+			getActiveJobs: mock(() => []),
+			stop: mock(() => false),
+		} as unknown as import("@randal/runner").Runner;
+
+		const { Heartbeat } = await import("./heartbeat.js");
+		const heartbeat = new Heartbeat({
+			config: {
+				enabled: true,
+				every: "30m",
+				prompt: "Check in",
+				target: "none",
+			},
+			runner: mockRunner,
+		});
+
+		heartbeat.start();
+
+		// Wait a bit — no catch-up should fire
+		await new Promise((r) => setTimeout(r, 200));
+
+		// executeMock should NOT have been called (no catch-up needed)
+		expect(executeMock).not.toHaveBeenCalled();
+		expect(heartbeat.getState().tickCount).toBe(5); // unchanged
+
+		heartbeat.stop();
 	});
 });

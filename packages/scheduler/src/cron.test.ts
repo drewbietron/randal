@@ -1,5 +1,8 @@
-import { describe, expect, mock, test } from "bun:test";
-import { matchesCronExpression } from "./cron.js";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { matchesCronExpression, setCronStateDir } from "./cron.js";
 
 describe("matchesCronExpression", () => {
 	test("matches every minute (* * * * *)", () => {
@@ -277,6 +280,42 @@ describe("CronScheduler", () => {
 		expect(events.some((e) => e.type === "cron.removed")).toBe(true);
 
 		scheduler.stop();
+	});
+
+	test("persists cron state to custom directory via setCronStateDir", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "randal-cron-dir-test-"));
+		setCronStateDir(tempDir);
+
+		try {
+			const { CronScheduler } = await import("./cron.js");
+
+			const mockRunner = {
+				execute: mock(() => Promise.resolve({})),
+				getJob: mock(() => undefined),
+				getActiveJobs: mock(() => []),
+				stop: mock(() => false),
+			} as unknown as import("@randal/runner").Runner;
+
+			const scheduler = new CronScheduler({
+				jobs: {},
+				runner: mockRunner,
+			});
+
+			scheduler.addJob({
+				name: "dir-test",
+				schedule: { every: "1h" },
+				prompt: "test",
+				execution: "isolated",
+				announce: false,
+			});
+
+			expect(existsSync(join(tempDir, "cron.yaml"))).toBe(true);
+			scheduler.stop();
+		} finally {
+			try {
+				rmSync(tempDir, { recursive: true });
+			} catch {}
+		}
 	});
 
 	test("main execution mode queues to heartbeat", async () => {
