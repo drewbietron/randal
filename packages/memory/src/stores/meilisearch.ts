@@ -36,6 +36,15 @@ export class MeilisearchStore implements MemoryStore {
 	private semanticRatio: number;
 	private logger = createLogger({ context: { component: "meilisearch-store" } });
 
+	// Write-ahead queue for failed writes
+	private writeQueue: Array<{ doc: Record<string, unknown>; queuedAt: number }> = [];
+	private static readonly MAX_QUEUE_SIZE = 100;
+
+	/** Number of documents waiting in the write-ahead queue. */
+	get pendingWrites(): number {
+		return this.writeQueue.length;
+	}
+
 	constructor(options: MeilisearchStoreOptions) {
 		this.client = new MeiliSearch({
 			host: options.url,
@@ -208,6 +217,12 @@ export class MeilisearchStore implements MemoryStore {
 		for (let attempt = 1; attempt <= MeilisearchStore.INDEX_MAX_RETRIES; attempt++) {
 			try {
 				await idx.addDocuments([fullDoc]);
+				// Fire-and-forget: drain queued writes on success
+				this.drainQueue().catch((err) => {
+					this.logger.warn("drainQueue error (non-blocking)", {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				});
 				return { status: "success" };
 			} catch (err) {
 				lastError = err instanceof Error ? err.message : String(err);
@@ -221,8 +236,49 @@ export class MeilisearchStore implements MemoryStore {
 			}
 		}
 
-		this.logger.error("index() failed after all retries", { error: lastError });
-		return { status: "failed", error: lastError };
+		// All retries exhausted — queue for later retry if space available
+		if (this.writeQueue.length < MeilisearchStore.MAX_QUEUE_SIZE) {
+			this.writeQueue.push({ doc: fullDoc as unknown as Record<string, unknown>, queuedAt: Date.now() });
+			this.logger.warn("index() queued for later retry", {
+				queueDepth: this.writeQueue.length,
+				error: lastError,
+			});
+			return { status: "queued", reason: lastError };
+		}
+
+		this.logger.error("index() failed and write queue is full", {
+			error: lastError,
+			queueDepth: this.writeQueue.length,
+		});
+		return { status: "failed", error: `Write queue full (${MeilisearchStore.MAX_QUEUE_SIZE}): ${lastError}` };
+	}
+
+	/**
+	 * Drain up to 10 queued writes opportunistically.
+	 * Called after a successful addDocuments() to flush pending items.
+	 */
+	private async drainQueue(): Promise<void> {
+		if (this.writeQueue.length === 0) return;
+
+		const idx = this.client.index(this.indexName);
+		const batch = this.writeQueue.splice(0, 10);
+		const failed: typeof batch = [];
+
+		for (const item of batch) {
+			try {
+				await idx.addDocuments([item.doc]);
+			} catch {
+				failed.push(item);
+			}
+		}
+
+		// Re-queue failures at the front
+		if (failed.length > 0) {
+			this.writeQueue.unshift(...failed);
+			this.logger.warn(`drainQueue: ${failed.length}/${batch.length} items still failing`);
+		} else if (batch.length > 0) {
+			this.logger.info(`drainQueue: flushed ${batch.length} queued writes`);
+		}
 	}
 
 	/**
