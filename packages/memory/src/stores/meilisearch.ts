@@ -239,10 +239,13 @@ export class MeilisearchStore implements MemoryStore {
 				return { status: "success" };
 			} catch (err) {
 				lastError = err instanceof Error ? err.message : String(err);
-				this.logger.warn(`index() attempt ${attempt}/${MeilisearchStore.INDEX_MAX_RETRIES} failed`, {
-					error: lastError,
-					docCategory: doc.category,
-				});
+				this.logger.warn(
+					`index() attempt ${attempt}/${MeilisearchStore.INDEX_MAX_RETRIES} failed`,
+					{
+						error: lastError,
+						docCategory: doc.category,
+					},
+				);
 				if (attempt < MeilisearchStore.INDEX_MAX_RETRIES) {
 					await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
 				}
@@ -251,7 +254,10 @@ export class MeilisearchStore implements MemoryStore {
 
 		// All retries exhausted — queue for later retry if space available
 		if (this.writeQueue.length < MeilisearchStore.MAX_QUEUE_SIZE) {
-			this.writeQueue.push({ doc: fullDoc as unknown as Record<string, unknown>, queuedAt: Date.now() });
+			this.writeQueue.push({
+				doc: fullDoc as unknown as Record<string, unknown>,
+				queuedAt: Date.now(),
+			});
 			this.logger.warn("index() queued for later retry", {
 				queueDepth: this.writeQueue.length,
 				error: lastError,
@@ -263,7 +269,10 @@ export class MeilisearchStore implements MemoryStore {
 			error: lastError,
 			queueDepth: this.writeQueue.length,
 		});
-		return { status: "failed", error: `Write queue full (${MeilisearchStore.MAX_QUEUE_SIZE}): ${lastError}` };
+		return {
+			status: "failed",
+			error: `Write queue full (${MeilisearchStore.MAX_QUEUE_SIZE}): ${lastError}`,
+		};
 	}
 
 	/**
@@ -347,21 +356,21 @@ export class MeilisearchStore implements MemoryStore {
 			]);
 			await index.updateSortableAttributes(["timestamp"]);
 
-		// Re-register userProvided embedder if applicable
-		if (this.embeddingService) {
-			try {
-				await index.updateEmbedders({
-					[EMBEDDER_NAME]: {
-						source: "userProvided",
-						dimensions: this.embeddingService.dimensions,
-					},
-				});
-			} catch (err) {
-				this.logger.warn("Failed to re-register embedder after recovery", {
-					error: err instanceof Error ? err.message : String(err),
-				});
+			// Re-register userProvided embedder if applicable
+			if (this.embeddingService) {
+				try {
+					await index.updateEmbedders({
+						[EMBEDDER_NAME]: {
+							source: "userProvided",
+							dimensions: this.embeddingService.dimensions,
+						},
+					});
+				} catch (err) {
+					this.logger.warn("Failed to re-register embedder after recovery", {
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
 			}
-		}
 
 			this.logger.info("Re-initialized indexes after health recovery");
 
