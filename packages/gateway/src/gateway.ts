@@ -22,9 +22,8 @@ import { Scheduler } from "@randal/scheduler";
 import { MeiliSearch } from "meilisearch";
 import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
-import { DiscordChannel } from "./channels/discord.js";
+import { DependencyError, createChannel } from "./channels/factory.js";
 import { createHttpApp } from "./channels/http.js";
-import { IMessageChannel } from "./channels/imessage.js";
 import { EventBus } from "./events.js";
 import { listJobs, saveJob, updateJob } from "./jobs.js";
 
@@ -362,26 +361,33 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		onUpdate: options.onUpdate,
 	};
 	for (const channelConfig of config.gateway.channels) {
+		if (channelConfig.type === "http") continue; // Handled by createHttpApp above
+
 		try {
-			if (channelConfig.type === "discord") {
-				const adapter = new DiscordChannel(channelConfig, channelDeps);
-				await adapter.start();
-				channelAdapters.push(adapter);
-				logger.info("Discord channel started");
-			} else if (channelConfig.type === "imessage") {
-				const adapter = new IMessageChannel(channelConfig, channelDeps);
-				// Mount webhook route before start so it's ready for BlueBubbles
-				app.route("/webhooks/imessage", adapter.getWebhookRouter());
-				await adapter.start();
-				channelAdapters.push(adapter);
-				logger.info("iMessage channel started", { provider: channelConfig.provider });
+			const { adapter, webhookRouter } = await createChannel(channelConfig, channelDeps);
+
+			// Mount webhook routes before start() so endpoints are ready
+			if (webhookRouter) {
+				app.route(webhookRouter.path, webhookRouter.router);
 			}
+
+			await adapter.start();
+			channelAdapters.push(adapter);
+			logger.info("Channel started", { type: channelConfig.type });
 		} catch (err) {
-			// Non-fatal — HTTP and other channels continue working
-			logger.error("Channel failed to start", {
-				type: channelConfig.type,
-				error: err instanceof Error ? err.message : String(err),
-			});
+			if (err instanceof DependencyError) {
+				logger.warn("Channel skipped — missing dependency", {
+					type: channelConfig.type,
+					package: err.packageName,
+					install: `bun add ${err.packageName}`,
+				});
+			} else {
+				// Non-fatal — HTTP and other channels continue working
+				logger.error("Channel failed to start", {
+					type: channelConfig.type,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
 		}
 	}
 
