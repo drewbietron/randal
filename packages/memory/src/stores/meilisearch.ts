@@ -3,7 +3,7 @@ import type { MemoryDoc } from "@randal/core";
 import { createLogger } from "@randal/core";
 import { MeiliSearch } from "meilisearch";
 import type { EmbeddingService } from "../embedding.js";
-import type { MemorySearchOptions, MemoryStore } from "./index.js";
+import type { IndexResult, MemorySearchOptions, MemoryStore } from "./index.js";
 
 export interface EmbedderConfig {
 	type: string;
@@ -158,12 +158,14 @@ export class MeilisearchStore implements MemoryStore {
 		return undefined;
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
-		try {
-			const idx = this.client.index(this.indexName);
+	private static readonly INDEX_MAX_RETRIES = 3;
 
-			// Deduplicate: skip if a doc with the same contentHash already exists
-			if (doc.contentHash) {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<IndexResult> {
+		const idx = this.client.index(this.indexName);
+
+		// Deduplicate: skip if a doc with the same contentHash already exists
+		if (doc.contentHash) {
+			try {
 				const existing = await idx.search("", {
 					filter: `contentHash = "${doc.contentHash}"`,
 					limit: 1,
@@ -172,34 +174,55 @@ export class MeilisearchStore implements MemoryStore {
 					this.logger.info("Skipping duplicate memory", {
 						contentHash: doc.contentHash,
 					});
-					return;
+					return { status: "duplicate", contentHash: doc.contentHash };
 				}
+			} catch (err) {
+				// Dedup check failed — continue with indexing attempt
+				this.logger.warn("Dedup check failed, proceeding with index", {
+					error: err instanceof Error ? err.message : String(err),
+				});
 			}
-
-			// Assign default scope if not explicitly set
-			const scope = doc.scope ?? this.defaultScopeForCategory(doc.category);
-
-			// Try to generate an embedding for the document content
-			let vectors: Record<string, number[]> | undefined;
-			if (this.embeddingService) {
-				const embedding = await this.embeddingService.embed(doc.content);
-				if (embedding) {
-					vectors = { [EMBEDDER_NAME]: embedding };
-				}
-			}
-
-			const fullDoc = {
-				...doc,
-				scope,
-				id: randomUUID(),
-				...(vectors ? { _vectors: vectors } : {}),
-			};
-			await idx.addDocuments([fullDoc]);
-		} catch (err) {
-			this.logger.error("Meilisearch indexing failed", {
-				error: err instanceof Error ? err.message : String(err),
-			});
 		}
+
+		// Assign default scope if not explicitly set
+		const scope = doc.scope ?? this.defaultScopeForCategory(doc.category);
+
+		// Try to generate an embedding for the document content
+		let vectors: Record<string, number[]> | undefined;
+		if (this.embeddingService) {
+			const embedding = await this.embeddingService.embed(doc.content);
+			if (embedding) {
+				vectors = { [EMBEDDER_NAME]: embedding };
+			}
+		}
+
+		const fullDoc: MemoryDoc = {
+			...doc,
+			scope,
+			id: randomUUID(),
+			...(vectors ? { _vectors: vectors } : {}),
+		};
+
+		// Retry the addDocuments call with exponential backoff
+		let lastError = "";
+		for (let attempt = 1; attempt <= MeilisearchStore.INDEX_MAX_RETRIES; attempt++) {
+			try {
+				await idx.addDocuments([fullDoc]);
+				return { status: "success" };
+			} catch (err) {
+				lastError = err instanceof Error ? err.message : String(err);
+				this.logger.warn(`index() attempt ${attempt}/${MeilisearchStore.INDEX_MAX_RETRIES} failed`, {
+					error: lastError,
+					docCategory: doc.category,
+				});
+				if (attempt < MeilisearchStore.INDEX_MAX_RETRIES) {
+					await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
+				}
+			}
+		}
+
+		this.logger.error("index() failed after all retries", { error: lastError });
+		return { status: "failed", error: lastError };
 	}
 
 	/**
