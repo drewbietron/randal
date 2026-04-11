@@ -275,4 +275,13 @@ export class SignalChannel implements ChannelAdapter {
 		}
 		this.logger.info("Signal channel stopped");
 	}
+
+	/**
+	 * Send a Signal message to a phone number.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 * Target should be a phone number (e.g., "+1234567890").
+	 */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
+	}
 }
