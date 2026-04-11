@@ -170,6 +170,42 @@
 		/* Empty State */
 		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
 
+		/* Hamburger Toggle */
+		.nav-toggle { display: none; background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; flex-direction: column; gap: 4px; align-items: center; justify-content: center; width: 40px; height: 36px; }
+		.nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text); border-radius: 1px; transition: transform 0.2s, opacity 0.2s; }
+		.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+		.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+		.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+		/* Mobile Responsive — 768px breakpoint */
+		@media (max-width: 768px) {
+			.nav-toggle { display: flex; margin-bottom: 12px; }
+			nav { display: none; flex-direction: column; gap: 2px; }
+			nav.open { display: flex; }
+			nav button { text-align: left; padding: 10px 12px; border-radius: 4px; border-bottom: none; }
+			nav button.active { border-bottom: none; background: rgba(59,130,246,0.1); }
+			.container { padding: 12px; }
+			header { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 0; }
+			header h1 { font-size: 20px; }
+			.job-grid { grid-template-columns: 1fr; }
+			.gauge-grid { grid-template-columns: 1fr; }
+			.mesh-grid { grid-template-columns: 1fr; }
+			.new-job .controls { flex-wrap: wrap; }
+			.memory-search { flex-direction: column; }
+			.context-input { flex-direction: column; }
+			table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+		}
+
+		/* Extra small — 480px breakpoint */
+		@media (max-width: 480px) {
+			header h1 { font-size: 18px; }
+			.job-card { padding: 12px; }
+			.job-card h3 { font-size: 13px; }
+			.section h2 { font-size: 16px; }
+			th, td { padding: 8px 6px; font-size: 12px; }
+			.toast { max-width: calc(100vw - 24px); }
+		}
+
 		/* Toast Notifications */
 		.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.25s ease-out; }
 		.toast.error { border-left: 3px solid var(--danger); }
@@ -192,6 +228,10 @@
 			</div>
 			<span class="instance-status idle" id="instance-status">idle</span>
 		</header>
+
+		<button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav">
+			<span></span><span></span><span></span>
+		</button>
 
 		<nav id="nav">
 			<button class="active" data-page="home">Home</button>
@@ -427,8 +467,31 @@
 		var currentJobId = null;
 
 		// Navigation
-		document.getElementById('nav').addEventListener('click', function(e) {
-			if (e.target.tagName === 'BUTTON') showPage(e.target.dataset.page);
+		var navEl = document.getElementById('nav');
+		var navToggle = document.getElementById('nav-toggle');
+
+		navEl.addEventListener('click', function(e) {
+			if (e.target.tagName === 'BUTTON') {
+				showPage(e.target.dataset.page);
+				// Close mobile nav after selecting a page
+				navEl.classList.remove('open');
+				navToggle.setAttribute('aria-expanded', 'false');
+			}
+		});
+
+		// Mobile hamburger toggle
+		navToggle.addEventListener('click', function() {
+			var isOpen = navEl.classList.toggle('open');
+			navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+		});
+
+		// Close mobile nav on Escape key
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && navEl.classList.contains('open')) {
+				navEl.classList.remove('open');
+				navToggle.setAttribute('aria-expanded', 'false');
+				navToggle.focus();
+			}
 		});
 
 		function showPage(name) {
