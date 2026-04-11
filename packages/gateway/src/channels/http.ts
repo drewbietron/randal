@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
@@ -134,6 +134,22 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	const brainEventLastEmit = new Map<string, number>();
 	const BRAIN_EVENT_RATE_LIMIT_MS = 10_000; // 1 per type per 10 seconds
 
+	// Session store for cookie-based auth (avoids token in SSE query params)
+	const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+	const sessions = new Map<string, { createdAt: number }>();
+
+	// Periodic session cleanup (every 30 minutes)
+	const sessionCleanupInterval = setInterval(() => {
+		const now = Date.now();
+		for (const [id, session] of sessions) {
+			if (now - session.createdAt > SESSION_TTL_MS) {
+				sessions.delete(id);
+			}
+		}
+	}, 30 * 60 * 1000);
+	// Don't prevent process exit
+	if (sessionCleanupInterval.unref) sessionCleanupInterval.unref();
+
 	// CORS — configurable origin
 	const httpChannel = config.gateway.channels.find((c) => c.type === "http");
 	const corsOrigin = httpChannel?.type === "http" ? httpChannel.corsOrigin : undefined;
@@ -166,7 +182,19 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return next();
 		}
 		if (authToken) {
-			// Support both Authorization header and ?token= query param (for EventSource/SSE which can't send headers)
+			// 1. Try session cookie first (no token in URL — preferred for SSE)
+			const cookieHeader = c.req.header("Cookie") ?? "";
+			const sessionMatch = cookieHeader.match(/randal_session=([^;]+)/);
+			if (sessionMatch) {
+				const sessionId = sessionMatch[1];
+				const session = sessions.get(sessionId);
+				if (session && Date.now() - session.createdAt < SESSION_TTL_MS) {
+					return next();
+				}
+				// Expired or invalid session — fall through to token auth
+			}
+
+			// 2. Authorization header or ?token= query param
 			const header = c.req.header("Authorization");
 			const headerToken = header?.replace("Bearer ", "");
 			const queryToken = new URL(c.req.url).searchParams.get("token");
@@ -186,6 +214,28 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			version: RANDAL_VERSION,
 			updateChannel: config.updates.channel,
 		});
+	});
+
+	// Session-based auth — exchange Bearer token for an HttpOnly session cookie
+	// This allows SSE/EventSource to connect without exposing the token in the URL
+	app.post("/auth/session", async (c) => {
+		if (!authToken) {
+			return c.json({ error: "Auth not configured" }, 400);
+		}
+		const header = c.req.header("Authorization");
+		const bearerToken = header?.replace("Bearer ", "");
+		if (!bearerToken || !safeCompare(bearerToken, authToken)) {
+			return c.json({ error: "Unauthorized" }, 401);
+		}
+
+		const sessionId = randomUUID();
+		sessions.set(sessionId, { createdAt: Date.now() });
+
+		c.header(
+			"Set-Cookie",
+			`randal_session=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${c.req.header("X-Forwarded-Proto") === "https" ? "; Secure" : ""}`,
+		);
+		return c.json({ ok: true, expiresIn: SESSION_TTL_MS / 1000 });
 	});
 
 	// Ambient auth audit

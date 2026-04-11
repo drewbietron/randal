@@ -667,9 +667,42 @@
 			} catch(e) { console.error(e); }
 		}
 
-		// SSE (EventSource can't send Authorization headers, so pass token as query param)
-		var evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
+		// SSE setup — prefer cookie-based auth to avoid exposing the token in the URL
+		// (query params appear in server logs, browser history, and proxy logs).
+		// Falls back to query-param auth for backward compatibility.
+		var evtSource;
 		var eventsLog = document.getElementById('events-log');
+
+		async function setupSSE() {
+			try {
+				// Attempt to exchange the Bearer token for an HttpOnly session cookie
+				var resp = await fetch('/auth/session', {
+					method: 'POST',
+					headers: headers,
+					credentials: 'same-origin'
+				});
+				if (resp.ok) {
+					// Cookie is now set — connect SSE without token in URL
+					evtSource = new EventSource('/events');
+				} else {
+					throw new Error('Session setup failed');
+				}
+			} catch(e) {
+				// Fallback: gateway may not support cookie auth yet
+				evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
+			}
+
+			['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
+				evtSource.addEventListener(type, function(e) {
+					addEvent(type, e.data);
+					if (currentJobId) loadJobDetail(currentJobId);
+				});
+			});
+
+			evtSource.onerror = function() {
+				addEvent('system', 'SSE connection lost — reconnecting...');
+			};
+		}
 
 		function addEvent(type, data) {
 			var line = document.createElement('div');
@@ -679,17 +712,6 @@
 			if (eventsLog.children.length > 100) eventsLog.lastChild.remove();
 			refreshJobs();
 		}
-
-		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
-			evtSource.addEventListener(type, function(e) {
-				addEvent(type, e.data);
-				if (currentJobId) loadJobDetail(currentJobId);
-			});
-		});
-
-		evtSource.onerror = function() {
-			addEvent('system', 'SSE connection lost — reconnecting...');
-		};
 
 		// Voice functions
 		async function loadVoiceSessions() {
@@ -928,6 +950,7 @@
 		// Init
 		loadInstance();
 		refreshJobs();
+		setupSSE();
 		setInterval(refreshJobs, 10000);
 	</script>
 </body>
