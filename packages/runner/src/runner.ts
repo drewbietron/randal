@@ -1,13 +1,22 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Job, JobOrigin, RunnerEvent, RunnerEventType, SkillDeployment } from "@randal/core";
+import type {
+	Annotation,
+	Job,
+	JobOrigin,
+	ReliabilityScore,
+	RunnerEvent,
+	RunnerEventType,
+	SkillDeployment,
+} from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
+import { getPrimaryDomain } from "@randal/analytics";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
 import { syncJobToLoopState } from "./loop-state.js";
-import { buildSystemPrompt } from "./prompt-assembly.js";
+import { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
 import { detectFatalError } from "./struggle.js";
@@ -30,6 +39,10 @@ export interface RunnerOptions {
 	onEvent?: EventHandler;
 	memorySearch?: (query: string) => Promise<string[]>;
 	skillSearch?: (query: string) => Promise<SkillDeployment[]>;
+	analyticsData?: () => Promise<{
+		scores: ReliabilityScore[];
+		annotations: Annotation[];
+	}>;
 }
 
 export interface JobRequest {
@@ -207,6 +220,10 @@ export class Runner {
 	private onEvent: EventHandler;
 	private memorySearch?: (query: string) => Promise<string[]>;
 	private skillSearch?: (query: string) => Promise<SkillDeployment[]>;
+	private analyticsData?: () => Promise<{
+		scores: ReliabilityScore[];
+		annotations: Annotation[];
+	}>;
 	private activeJobs: Map<
 		string,
 		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
@@ -219,6 +236,7 @@ export class Runner {
 		this.onEvent = options.onEvent ?? (() => {});
 		this.memorySearch = options.memorySearch;
 		this.skillSearch = options.skillSearch;
+		this.analyticsData = options.analyticsData;
 	}
 
 	private emit(type: RunnerEventType, job: Job, data: RunnerEvent["data"] = {}): void {
@@ -394,11 +412,28 @@ export class Runner {
 				this.emit("job.context_injected", job, { contextText: injectedContext });
 			}
 
-			// Build minimal prompt — brain has its own persona/rules/knowledge.
-			// Only channel context is injected (if any).
-			const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
-				injectedContext: injectedContext ?? undefined,
-			});
+		// Build minimal prompt — brain has its own persona/rules/knowledge.
+		// Only channel context and analytics feedback are injected (if applicable).
+		let feedbackInjection: BuildSystemPromptOptions["feedbackInjection"];
+		if (this.config.analytics.feedbackInjection && this.analyticsData) {
+			try {
+				const { scores, annotations } = await this.analyticsData();
+				const domain = getPrimaryDomain(
+					job.prompt,
+					this.config.analytics.domainKeywords,
+				);
+				feedbackInjection = { enabled: true, scores, annotations, taskDomain: domain };
+			} catch (err) {
+				this.logger.warn("Failed to load analytics for feedback injection", {
+					error: String(err),
+				});
+			}
+		}
+
+		const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
+			injectedContext: injectedContext ?? undefined,
+			feedbackInjection,
+		});
 
 			const prompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${job.prompt}` : job.prompt;
 
