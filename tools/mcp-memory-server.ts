@@ -67,6 +67,7 @@ import type { RegistryClient, SummaryGeneratorOptions } from "@randal/memory";
 import { checkHealth, routeTask } from "@randal/mesh";
 import type { RoutingContext } from "@randal/mesh";
 import { checkStruggle } from "@randal/runner";
+import { z } from "zod";
 import { MeiliSearch } from "meilisearch";
 
 // ---------------------------------------------------------------------------
@@ -1019,6 +1020,122 @@ class ToolError extends Error {
 }
 
 /**
+ * Validate tool handler params against a Zod schema.
+ * Throws ToolError with descriptive Zod messages on validation failure.
+ */
+function validateParams<T>(params: Record<string, unknown>, schema: z.ZodType<T>): T {
+	const result = schema.safeParse(params);
+	if (!result.success) {
+		const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+		throw new ToolError(`Invalid parameters: ${issues}`);
+	}
+	return result.data;
+}
+
+// ── Zod schemas for tool handler params ─────────────────────
+const MemorySearchParamsSchema = z.object({
+	query: z.string(),
+	limit: z.number().optional(),
+	category: z.string().optional(),
+	scope: z.string().optional(),
+});
+
+const MemoryStoreParamsSchema = z.object({
+	content: z.string(),
+	category: z.string(),
+	source: z.string().optional(),
+	scope: z.string().optional(),
+});
+
+const MemoryRecentParamsSchema = z.object({
+	limit: z.number().optional(),
+});
+
+const ChatSearchParamsSchema = z.object({
+	query: z.string(),
+	limit: z.number().optional(),
+	scope: z.string().optional(),
+});
+
+const ChatThreadParamsSchema = z.object({
+	threadId: z.string(),
+	limit: z.number().optional(),
+});
+
+const ChatRecentParamsSchema = z.object({
+	limit: z.number().optional(),
+});
+
+const ChatLogParamsSchema = z.object({
+	content: z.string(),
+	speaker: z.string().optional(),
+	threadId: z.string().optional(),
+	scope: z.string().optional(),
+	channel: z.string().optional(),
+});
+
+const StruggleCheckParamsSchema = z.object({
+	iterations_without_progress: z.number(),
+	recent_errors: z.number(),
+	identical_output_count: z.number().optional(),
+	token_burn_ratio: z.number().optional(),
+});
+
+const ContextCheckParamsSchema = z.object({
+	workdir: z.string().optional(),
+});
+
+const ReliabilityScoresParamsSchema = z.object({
+	dimension: z.string().optional(),
+	agingHalfLife: z.number().optional(),
+});
+
+const GetFeedbackParamsSchema = z.object({
+	domain: z.string(),
+});
+
+const AnnotateParamsSchema = z.object({
+	jobId: z.string(),
+	verdict: z.enum(["pass", "fail", "partial"]),
+	feedback: z.string().optional(),
+	categories: z.array(z.string()).optional(),
+	agent: z.string().optional(),
+	model: z.string().optional(),
+	prompt: z.string().optional(),
+	domain: z.string().optional(),
+	iterationCount: z.number().optional(),
+	tokenCost: z.number().optional(),
+	duration: z.number().optional(),
+	filesChanged: z.array(z.string()).optional(),
+});
+
+const DelegateTaskParamsSchema = z.object({
+	task: z.string(),
+	target: z.string().optional(),
+	domain: z.string().optional(),
+	model: z.string().optional(),
+	async: z.boolean().optional(),
+});
+
+const PosseMemorySearchParamsSchema = z.object({
+	query: z.string(),
+	limit: z.number().optional(),
+});
+
+const ChannelSendParamsSchema = z.object({
+	channel: z.string(),
+	target: z.string(),
+	message: z.string(),
+});
+
+const EmitEventParamsSchema = z.object({
+	type: z.enum(["notification", "alert", "progress"]),
+	message: z.string().max(2000),
+	severity: z.enum(["info", "warning", "critical"]).optional(),
+	channel: z.string().optional(),
+});
+
+/**
  * Resolve the scope for a search request.
  * - If explicit scope is provided, use it.
  * - Otherwise, use the auto-detected project scope (includes global + project).
@@ -1052,13 +1169,8 @@ function resolveStoreScope(category: string, explicitScope: string | undefined):
 }
 
 async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
-	const query = params.query as string;
-	if (!query) {
-		throw new ToolError("Missing required parameter: query");
-	}
-
-	const limit = typeof params.limit === "number" ? params.limit : 10;
-	const scope = resolveSearchScope(params.scope as string | undefined);
+	const { query, limit = 10, scope: explicitScope } = validateParams(params, MemorySearchParamsSchema);
+	const scope = resolveSearchScope(explicitScope);
 
 	if (!(await ensureStore())) {
 		const error = getStoreError();
@@ -1086,17 +1198,7 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
-	const content = params.content as string;
-	const category = params.category as string;
-	const source = (params.source as string) || "self";
-	const explicitScope = params.scope as string | undefined;
-
-	if (!content) {
-		throw new ToolError("Missing required parameter: content");
-	}
-	if (!category) {
-		throw new ToolError("Missing required parameter: category");
-	}
+	const { content, category, source = "self", scope: explicitScope } = validateParams(params, MemoryStoreParamsSchema);
 
 	if (!(await ensureStore())) {
 		const error = getStoreError();
@@ -1137,7 +1239,7 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
-	const limit = typeof params.limit === "number" ? params.limit : 10;
+	const { limit = 10 } = validateParams(params, MemoryRecentParamsSchema);
 
 	if (!(await ensureStore())) {
 		const error = getStoreError();
@@ -1169,13 +1271,7 @@ async function handleMemoryRecent(params: Record<string, unknown>): Promise<unkn
 // ---------------------------------------------------------------------------
 
 async function handleChatSearch(params: Record<string, unknown>): Promise<unknown> {
-	const query = params.query as string;
-	if (!query) {
-		throw new ToolError("Missing required parameter: query");
-	}
-
-	const limit = typeof params.limit === "number" ? params.limit : 10;
-	const scope = params.scope as string | undefined;
+	const { query, limit = 10, scope } = validateParams(params, ChatSearchParamsSchema);
 
 	if (!(await ensureMessages())) {
 		const error = getMessagesError();
@@ -1225,12 +1321,7 @@ async function handleChatSearch(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatThread(params: Record<string, unknown>): Promise<unknown> {
-	const threadId = params.threadId as string;
-	if (!threadId) {
-		throw new ToolError("Missing required parameter: threadId");
-	}
-
-	const limit = typeof params.limit === "number" ? params.limit : 50;
+	const { threadId, limit = 50 } = validateParams(params, ChatThreadParamsSchema);
 
 	if (!(await ensureMessages())) {
 		const error = getMessagesError();
@@ -1258,7 +1349,7 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatRecent(params: Record<string, unknown>): Promise<unknown> {
-	const limit = typeof params.limit === "number" ? params.limit : 10;
+	const { limit = 10 } = validateParams(params, ChatRecentParamsSchema);
 
 	if (!(await ensureMessages())) {
 		const error = getMessagesError();
@@ -1287,15 +1378,12 @@ async function handleChatRecent(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatLog(params: Record<string, unknown>): Promise<unknown> {
-	const content = params.content as string;
-	if (!content) {
-		throw new ToolError("Missing required parameter: content");
-	}
-
-	const speaker = (params.speaker as string) || "randal";
-	const threadId = (params.threadId as string) || randomUUID();
-	const scope = (params.scope as string) || defaultScope;
-	const channel = (params.channel as string) || "opencode";
+	const validated = validateParams(params, ChatLogParamsSchema);
+	const content = validated.content;
+	const speaker = validated.speaker || "randal";
+	const threadId = validated.threadId || randomUUID();
+	const scope = validated.scope || defaultScope;
+	const channel = validated.channel || "opencode";
 
 	if (!(await ensureMessages())) {
 		const error = getMessagesError();
@@ -1331,16 +1419,17 @@ async function handleChatLog(params: Record<string, unknown>): Promise<unknown> 
 // ---------------------------------------------------------------------------
 
 async function handleStruggleCheck(params: Record<string, unknown>): Promise<unknown> {
+	const validated = validateParams(params, StruggleCheckParamsSchema);
 	return checkStruggle({
-		iterations_without_progress: (params.iterations_without_progress as number) ?? 0,
-		recent_errors: (params.recent_errors as number) ?? 0,
-		identical_output_count: (params.identical_output_count as number) ?? 0,
-		token_burn_ratio: (params.token_burn_ratio as number) ?? 1.0,
+		iterations_without_progress: validated.iterations_without_progress,
+		recent_errors: validated.recent_errors,
+		identical_output_count: validated.identical_output_count ?? 0,
+		token_burn_ratio: validated.token_burn_ratio ?? 1.0,
 	});
 }
 
 async function handleContextCheck(params: Record<string, unknown>): Promise<unknown> {
-	const workdir = (params.workdir as string) || process.cwd();
+	const { workdir = process.cwd() } = validateParams(params, ContextCheckParamsSchema);
 	const contextPath = join(workdir, "context.md");
 
 	try {
@@ -1401,9 +1490,7 @@ async function handleReliabilityScores(params: Record<string, unknown>): Promise
 	}
 
 	try {
-		const dimension = params.dimension as string | undefined;
-		const agingHalfLife =
-			typeof params.agingHalfLife === "number" ? params.agingHalfLife : undefined;
+		const { dimension, agingHalfLife } = validateParams(params, ReliabilityScoresParamsSchema);
 
 		const { annotations, scores, insufficientData } = await getAnnotationsAndScores(agingHalfLife);
 		const trends = computeTrends(annotations);
@@ -1448,10 +1535,7 @@ async function handleRecommendations(_params: Record<string, unknown>): Promise<
 }
 
 async function handleGetFeedback(params: Record<string, unknown>): Promise<unknown> {
-	const domain = params.domain as string;
-	if (!domain) {
-		throw new ToolError("Missing required parameter: domain");
-	}
+	const { domain } = validateParams(params, GetFeedbackParamsSchema);
 
 	if (!ANALYTICS_ENABLED) {
 		return { message: "Analytics not enabled", feedback: "", domain };
@@ -1473,17 +1557,7 @@ async function handleGetFeedback(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleAnnotate(params: Record<string, unknown>): Promise<unknown> {
-	const jobId = params.jobId as string;
-	const verdict = params.verdict as string;
-
-	if (!jobId) {
-		throw new ToolError("Missing required parameter: jobId");
-	}
-	if (!verdict || !["pass", "fail", "partial"].includes(verdict)) {
-		throw new ToolError(
-			'Missing or invalid parameter: verdict (must be "pass", "fail", or "partial")',
-		);
-	}
+	const validated = validateParams(params, AnnotateParamsSchema);
 
 	if (!ANALYTICS_ENABLED) {
 		return { success: false, message: "Analytics not enabled" };
@@ -1494,22 +1568,22 @@ async function handleAnnotate(params: Record<string, unknown>): Promise<unknown>
 	}
 
 	try {
-		const prompt = (params.prompt as string) || "";
-		const domain = (params.domain as string) || (prompt ? getPrimaryDomain(prompt) : "general");
+		const prompt = validated.prompt || "";
+		const domain = validated.domain || (prompt ? getPrimaryDomain(prompt) : "general");
 
 		const annotation: Annotation = {
 			id: randomUUID(),
-			jobId,
-			verdict: verdict as AnnotationVerdict,
-			feedback: (params.feedback as string) || undefined,
-			categories: (params.categories as string[]) || undefined,
-			agent: (params.agent as string) || "opencode",
-			model: (params.model as string) || "unknown",
+			jobId: validated.jobId,
+			verdict: validated.verdict as AnnotationVerdict,
+			feedback: validated.feedback || undefined,
+			categories: validated.categories || undefined,
+			agent: validated.agent || "opencode",
+			model: validated.model || "unknown",
 			domain,
-			iterationCount: typeof params.iterationCount === "number" ? params.iterationCount : 1,
-			tokenCost: typeof params.tokenCost === "number" ? params.tokenCost : 0,
-			duration: typeof params.duration === "number" ? params.duration : 0,
-			filesChanged: (params.filesChanged as string[]) || [],
+			iterationCount: validated.iterationCount ?? 1,
+			tokenCost: validated.tokenCost ?? 0,
+			duration: validated.duration ?? 0,
+			filesChanged: validated.filesChanged || [],
 			prompt,
 			timestamp: new Date().toISOString(),
 		};
@@ -1573,19 +1647,13 @@ const DELEGATE_POLL_INTERVAL_MS = 3000;
 const DELEGATE_HTTP_TIMEOUT_MS = 30_000;
 
 async function handleDelegateTask(params: Record<string, unknown>): Promise<unknown> {
-	const task = params.task as string;
-	if (!task) {
-		throw new ToolError("Missing required parameter: task");
-	}
+	const validated = validateParams(params, DelegateTaskParamsSchema);
+	const { task, target, domain, model } = validated;
+	const isAsync = validated.async === true;
 
 	if (!ensurePosse()) {
 		return { delegated: false, message: POSSE_NOT_CONFIGURED };
 	}
-
-	const target = params.target as string | undefined;
-	const domain = params.domain as string | undefined;
-	const model = params.model as string | undefined;
-	const isAsync = params.async === true;
 
 	// Guard: reject self-delegation
 	if (target && target === RANDAL_SELF_NAME) {
@@ -1782,10 +1850,7 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handlePosseMemorySearch(params: Record<string, unknown>): Promise<unknown> {
-	const query = params.query as string;
-	if (!query) {
-		throw new ToolError("Missing required parameter: query");
-	}
+	const { query, limit = 5 } = validateParams(params, PosseMemorySearchParamsSchema);
 
 	if (!ensurePosse()) {
 		return { results: [], message: POSSE_NOT_CONFIGURED };
@@ -1800,8 +1865,6 @@ async function handlePosseMemorySearch(params: Record<string, unknown>): Promise
 				"No cross-agent indexes configured. Set RANDAL_CROSS_AGENT_READ_FROM (comma-separated index names).",
 		};
 	}
-
-	const limit = typeof params.limit === "number" ? params.limit : 5;
 
 	try {
 		const docs = await searchCrossAgent(query, config, limit);
@@ -1879,13 +1942,7 @@ async function handleChannelList(_params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
-	const channel = params.channel as string;
-	const target = params.target as string;
-	const message = params.message as string;
-
-	if (!channel) throw new ToolError("Missing required parameter: channel");
-	if (!target) throw new ToolError("Missing required parameter: target");
-	if (!message) throw new ToolError("Missing required parameter: message");
+	const { channel, target, message } = validateParams(params, ChannelSendParamsSchema);
 
 	if (!RANDAL_GATEWAY_URL) {
 		return { sent: false, message: "No gateway connection (interactive mode)" };
@@ -1906,14 +1963,7 @@ async function handleChannelSend(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown> {
-	const type = params.type as string;
-	const message = params.message as string;
-	const severity = params.severity as string | undefined;
-	const channel = params.channel as string | undefined;
-
-	if (!type || !message) {
-		throw new ToolError("Missing required parameters: type and message");
-	}
+	const { type, message, severity, channel } = validateParams(params, EmitEventParamsSchema);
 
 	if (!RANDAL_JOB_ID) {
 		// Interactive mode — log the event but don't try to route it
