@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
 import { describe, expect, mock, test } from "bun:test";
+import { createHmac } from "node:crypto";
 import type { ChannelDeps } from "./channel.js";
 import { WhatsAppChannel } from "./whatsapp.js";
 
@@ -168,7 +168,7 @@ describe("WhatsApp webhook signature validation", () => {
 			headers: {
 				"Content-Type": "application/x-www-form-urlencoded",
 				"X-Twilio-Signature": signature,
-				"Host": "example.com",
+				Host: "example.com",
 			},
 			body: makeFormBody(params),
 		});
@@ -196,7 +196,7 @@ describe("WhatsApp webhook signature validation", () => {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/x-www-form-urlencoded",
-				"Host": "example.com",
+				Host: "example.com",
 				// No X-Twilio-Signature header
 			},
 			body: makeFormBody(params),
@@ -224,7 +224,7 @@ describe("WhatsApp webhook signature validation", () => {
 			headers: {
 				"Content-Type": "application/x-www-form-urlencoded",
 				"X-Twilio-Signature": "forged-invalid-signature-base64==",
-				"Host": "example.com",
+				Host: "example.com",
 			},
 			body: makeFormBody(params),
 		});

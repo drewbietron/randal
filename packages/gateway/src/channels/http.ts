@@ -139,14 +139,17 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	const sessions = new Map<string, { createdAt: number }>();
 
 	// Periodic session cleanup (every 30 minutes)
-	const sessionCleanupInterval = setInterval(() => {
-		const now = Date.now();
-		for (const [id, session] of sessions) {
-			if (now - session.createdAt > SESSION_TTL_MS) {
-				sessions.delete(id);
+	const sessionCleanupInterval = setInterval(
+		() => {
+			const now = Date.now();
+			for (const [id, session] of sessions) {
+				if (now - session.createdAt > SESSION_TTL_MS) {
+					sessions.delete(id);
+				}
 			}
-		}
-	}, 30 * 60 * 1000);
+		},
+		30 * 60 * 1000,
+	);
 	// Don't prevent process exit
 	if (sessionCleanupInterval.unref) sessionCleanupInterval.unref();
 

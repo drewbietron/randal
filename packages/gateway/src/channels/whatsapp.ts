@@ -76,10 +76,7 @@ function validateTwilioSignature(
  * Derive the full webhook URL from the request for Twilio signature validation.
  * Prefers the configured webhookUrl. Falls back to request headers.
  */
-function deriveWebhookUrl(
-	configuredUrl: string | undefined,
-	rawReq: Request,
-): string {
+function deriveWebhookUrl(configuredUrl: string | undefined, rawReq: Request): string {
 	if (configuredUrl) return configuredUrl;
 
 	// Derive from request headers
@@ -117,32 +114,36 @@ export class WhatsAppChannel implements ChannelAdapter {
 					return c.text("Bad request", 400);
 				}
 
-			// Validate Twilio request signature if authToken is configured
-			if (this.channelConfig.authToken) {
-				const twilioSignature = c.req.header("X-Twilio-Signature");
-				if (!twilioSignature) {
-					this.logger.warn("Missing Twilio signature");
-					return c.text("Unauthorized", 401);
-				}
+				// Validate Twilio request signature if authToken is configured
+				if (this.channelConfig.authToken) {
+					const twilioSignature = c.req.header("X-Twilio-Signature");
+					if (!twilioSignature) {
+						this.logger.warn("Missing Twilio signature");
+						return c.text("Unauthorized", 401);
+					}
 
-				const webhookUrl = deriveWebhookUrl(
-					this.channelConfig.webhookUrl,
-					c.req.raw,
-				);
+					const webhookUrl = deriveWebhookUrl(this.channelConfig.webhookUrl, c.req.raw);
 
-				// Extract POST params as Record<string, string> for signature validation
-				const params: Record<string, string> = {};
-				for (const [key, value] of Object.entries(body)) {
-					if (typeof value === "string") {
-						params[key] = value;
+					// Extract POST params as Record<string, string> for signature validation
+					const params: Record<string, string> = {};
+					for (const [key, value] of Object.entries(body)) {
+						if (typeof value === "string") {
+							params[key] = value;
+						}
+					}
+
+					if (
+						!validateTwilioSignature(
+							this.channelConfig.authToken,
+							webhookUrl,
+							params,
+							twilioSignature,
+						)
+					) {
+						this.logger.warn("Invalid Twilio signature");
+						return c.text("Forbidden", 403);
 					}
 				}
-
-				if (!validateTwilioSignature(this.channelConfig.authToken, webhookUrl, params, twilioSignature)) {
-					this.logger.warn("Invalid Twilio signature");
-					return c.text("Forbidden", 403);
-				}
-			}
 
 				// Process in background — return 200 immediately to Twilio
 				this.handleIncoming(payload).catch((err) => {
