@@ -10,7 +10,10 @@ set -e
 
 RANDAL_DIR="${RANDAL_DIR:-$HOME/randal}"
 REPO_URL="https://github.com/drewbietron/randal.git"
-IS_MACOS=$([[ "$(uname)" == "Darwin" ]] && echo true || echo false)
+case "$(uname)" in
+  Darwin) IS_MACOS=true ;;
+  *)      IS_MACOS=false ;;
+esac
 
 echo ""
 echo "  🤠 Randal Installer"
