@@ -62,11 +62,11 @@ export class MemoryManager {
 
 	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
 		// Assign default scope if not explicitly provided by the caller.
-		// preference/fact → global; everything else → global (callers with project
-		// context should set scope explicitly before calling index).
+		// preference/fact → global; everything else → undefined (defers to caller
+		// or store layer). The MCP server sets scope via resolveStoreScope().
 		const scopedDoc: Omit<MemoryDoc, "id"> = doc.scope
 			? doc
-			: { ...doc, scope: GLOBAL_SCOPE_CATEGORIES.has(doc.category) ? "global" : "global" };
+			: { ...doc, scope: GLOBAL_SCOPE_CATEGORIES.has(doc.category) ? "global" : undefined };
 
 		await this.store.index(scopedDoc);
 

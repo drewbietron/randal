@@ -386,15 +386,16 @@ export class MeilisearchStore implements MemoryStore {
 	/**
 	 * Determine default scope for a memory category.
 	 * `preference` and `fact` are global (cross-project).
-	 * All other categories default to "global" unless a project scope is provided at call time.
+	 * All other categories get "unscoped" — callers with project context
+	 * (e.g. the MCP server via resolveStoreScope()) should set scope explicitly.
+	 * Using "unscoped" rather than undefined ensures the field is always a string
+	 * (required by Meilisearch filterable attributes).
 	 */
 	private defaultScopeForCategory(category: string): string {
 		if (GLOBAL_SCOPE_CATEGORIES.has(category)) {
 			return "global";
 		}
-		// Without project context at this layer, default to "global".
-		// Callers (MemoryManager, MCP server) should set scope explicitly for project-scoped memories.
-		return "global";
+		return "unscoped";
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {
