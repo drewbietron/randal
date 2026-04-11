@@ -32,11 +32,11 @@ export const _toastErrorTimestamps: Record<string, number> = {};
  * @param duration - Auto-dismiss delay in ms (default: 5000, 8000 for errors)
  */
 export function showToast(message: string, type?: string, duration?: number): void {
-	type = type || "info";
-	duration = duration || (type === "error" ? 8000 : 5000);
+	const _type = type || "info";
+	const _duration = duration || (_type === "error" ? 8000 : 5000);
 
 	// Deduplicate: suppress repeat error toasts for the same message within 30s
-	if (type === "error") {
+	if (_type === "error") {
 		const now = Date.now();
 		if (_toastErrorTimestamps[message] && now - _toastErrorTimestamps[message] < 30000) return;
 		_toastErrorTimestamps[message] = now;
@@ -46,14 +46,11 @@ export function showToast(message: string, type?: string, duration?: number): vo
 	if (!container) return;
 
 	const toast = document.createElement("div");
-	toast.className = `toast ${type}`;
-	toast.setAttribute("role", type === "error" ? "alert" : "status");
-	toast.innerHTML =
-		`<span class="toast-msg">${escapeHtml(message)}</span>` +
-		'<button class="toast-close" aria-label="Dismiss notification">&times;</button>';
+	toast.className = `toast ${_type}`;
+	toast.setAttribute("role", _type === "error" ? "alert" : "status");
+	toast.innerHTML = `<span class="toast-msg">${escapeHtml(message)}</span><button class="toast-close" aria-label="Dismiss notification">&times;</button>`;
 
 	const closeBtn = toast.querySelector(".toast-close") as HTMLButtonElement;
-	let timer: ReturnType<typeof setTimeout>;
 
 	function dismiss() {
 		clearTimeout(timer);
@@ -66,7 +63,7 @@ export function showToast(message: string, type?: string, duration?: number): vo
 	}
 
 	closeBtn.addEventListener("click", dismiss);
-	timer = setTimeout(dismiss, duration);
+	const timer = setTimeout(dismiss, _duration);
 
 	container.appendChild(toast);
 }
