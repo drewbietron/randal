@@ -233,4 +233,13 @@ export class WhatsAppChannel implements ChannelAdapter {
 		}
 		this.logger.info("WhatsApp channel stopped");
 	}
+
+	/**
+	 * Send a message to a WhatsApp number via Twilio.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 * Target should be a phone number (with or without "whatsapp:" prefix).
+	 */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
+	}
 }
