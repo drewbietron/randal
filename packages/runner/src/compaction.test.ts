@@ -425,4 +425,36 @@ describe("compactContext", () => {
 
 		expect(result.compactedContext).toContain("[!] Broken task");
 	});
+
+	test("truncates older summary when exceeding maxSummaryTokens", () => {
+		// Create iterations with very long summaries to exceed a small maxSummaryTokens
+		const iterations = Array.from({ length: 6 }, (_, i) =>
+			makeIteration({
+				number: i + 1,
+				summary: `Iteration ${i + 1}: ${Array(200).fill("detailed context about the work performed").join(" ")}`,
+				filesChanged: Array.from({ length: 5 }, (_, j) => `src/module${i}/file${j}.ts`),
+				tokens: { input: 5000, output: 1200 },
+				progress: `Progress for iteration ${i + 1}: ${Array(50).fill("progress note").join(" ")}`,
+			}),
+		);
+
+		const result = compactContext({
+			iterations,
+			plan: [makePlanTask()],
+			delegations: [],
+			compactionConfig: {
+				enabled: true,
+				threshold: 0.8,
+				model: "unused",
+				maxSummaryTokens: 500, // Very small budget to force truncation
+			},
+		});
+
+		// Should have compacted 4 older iterations (6 - 2 recent)
+		expect(result.iterationsCompacted).toBe(4);
+		// The compacted output should contain truncation marker
+		expect(result.compactedContext).toContain("(truncated)");
+		// Compacted tokens should be less than or equal to original
+		expect(result.compactedTokens).toBeLessThanOrEqual(result.originalTokens);
+	});
 });
