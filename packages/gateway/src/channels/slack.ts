@@ -326,4 +326,18 @@ export class SlackChannel implements ChannelAdapter {
 		}
 		this.logger.info("Slack channel stopped");
 	}
+
+	/**
+	 * Send a message to a Slack channel/thread by ID.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 */
+	async send(target: string, message: string): Promise<void> {
+		if (!this.app) {
+			throw new Error("Slack app not connected");
+		}
+		await this.app.client.chat.postMessage({
+			channel: target,
+			text: message,
+		});
+	}
 }
