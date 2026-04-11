@@ -2,6 +2,30 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ChannelDeps } from "./channel.js";
 import { SlackChannel } from "./slack.js";
 
+// ── Mock @slack/bolt ────────────────────────────────────────
+// When @slack/bolt is installed as an optional dependency, the real App
+// constructor fires async API calls (auth.test) with our fake tokens,
+// producing unhandled errors. We mock the module so the dynamic import
+// in SlackChannel.connect() gets a controllable stub instead.
+
+const mockBoltApp = {
+	event: mock(() => {}),
+	command: mock(() => {}),
+	start: mock(() => Promise.resolve()),
+	stop: mock(() => Promise.resolve()),
+	client: { chat: { postMessage: mock(() => Promise.resolve()) } },
+};
+
+mock.module("@slack/bolt", () => ({
+	App: class MockApp {
+		event = mockBoltApp.event;
+		command = mockBoltApp.command;
+		start = mockBoltApp.start;
+		stop = mockBoltApp.stop;
+		client = mockBoltApp.client;
+	},
+}));
+
 // ── Helpers ─────────────────────────────────────────────────
 
 function makeMockDeps(overrides: Partial<ChannelDeps> = {}): ChannelDeps {
