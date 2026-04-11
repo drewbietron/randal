@@ -458,3 +458,69 @@ describe("compactContext", () => {
 		expect(result.compactedTokens).toBeLessThanOrEqual(result.originalTokens);
 	});
 });
+
+// ── compaction integration ──────────────────────────────────
+
+describe("compaction integration", () => {
+	test("shouldCompact triggers compaction that reduces context size", () => {
+		// Create enough iterations to trigger compaction
+		const iterations = Array.from({ length: 8 }, (_, i) =>
+			makeIteration({
+				number: i + 1,
+				summary: `Iteration ${i + 1}: performed extensive work. ${Array(100).fill("word").join(" ")}`,
+				filesChanged: [`src/file${i}.ts`, `src/test${i}.ts`, `src/helper${i}.ts`],
+				tokens: { input: 10000, output: 3000 },
+			}),
+		);
+
+		// Estimate total tokens (rough: sum of input+output across iterations)
+		const estimatedTokens = iterations.reduce(
+			(sum, iter) => sum + iter.tokens.input + iter.tokens.output,
+			0,
+		);
+
+		const maxContextWindow = 128000;
+		const threshold = 0.8;
+
+		// Verify threshold is reached (104000 >= 102400)
+		expect(shouldCompact(estimatedTokens, threshold, maxContextWindow)).toBe(true);
+
+		// Run compaction
+		const result = compactContext({
+			iterations,
+			plan: [makePlanTask({ task: "Build feature", status: "in_progress" })],
+			delegations: [],
+			compactionConfig: {
+				enabled: true,
+				threshold,
+				model: "unused",
+				maxSummaryTokens: 10000,
+			},
+		});
+
+		// Verify compaction occurred and reduced size
+		expect(result.iterationsCompacted).toBe(6); // 8 - 2 recent
+		expect(result.compactedTokens).toBeLessThan(result.originalTokens);
+		// Verify recent iterations are preserved in full
+		expect(result.compactedContext).toContain("## Iteration 7");
+		expect(result.compactedContext).toContain("## Iteration 8");
+		// Verify older iterations are summarized (not in full format)
+		expect(result.compactedContext).not.toContain("## Iteration 1");
+		expect(result.compactedContext).toContain("Compacted History");
+	});
+
+	test("shouldCompact returns false when under threshold — no compaction needed", () => {
+		const iterations = [
+			makeIteration({ number: 1, tokens: { input: 1000, output: 200 } }),
+			makeIteration({ number: 2, tokens: { input: 1000, output: 200 } }),
+			makeIteration({ number: 3, tokens: { input: 1000, output: 200 } }),
+		];
+
+		const estimatedTokens = iterations.reduce(
+			(sum, iter) => sum + iter.tokens.input + iter.tokens.output,
+			0,
+		); // 3600
+
+		expect(shouldCompact(estimatedTokens, 0.8, 128000)).toBe(false);
+	});
+});
