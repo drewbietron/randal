@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createLogger } from "@randal/core";
 import type { RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";
@@ -32,7 +33,7 @@ export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 		const authHeader = c.req.header("Authorization");
 		const headerToken = authHeader?.replace("Bearer ", "") ?? c.req.header("x-randal-token");
 
-		if (headerToken !== token) {
+		if (!tokensMatch(headerToken, token)) {
 			return c.json({ error: "Invalid hook token" }, 401);
 		}
 
@@ -159,4 +160,17 @@ function emitEvent(
 		timestamp: new Date().toISOString(),
 		data: data as RunnerEvent["data"],
 	});
+}
+
+/**
+ * Timing-safe token comparison.
+ * Returns true only if both strings are defined, non-empty, and equal.
+ * Uses fixed-length comparison to prevent length-based timing leaks.
+ */
+function tokensMatch(a: string | undefined, b: string | undefined): boolean {
+	if (!a || !b) return false;
+	const aBuf = Buffer.from(a, "utf-8");
+	const bBuf = Buffer.from(b, "utf-8");
+	if (aBuf.length !== bBuf.length) return false;
+	return timingSafeEqual(aBuf, bBuf);
 }
