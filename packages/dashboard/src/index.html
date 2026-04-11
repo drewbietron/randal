@@ -23,6 +23,8 @@
 			--danger-bg: #3a1a1a;
 		}
 		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+		.skip-link { position: absolute; left: -9999px; top: 0; z-index: 2000; padding: 8px 16px; background: var(--accent); color: #fff; font-size: 14px; border-radius: 0 0 4px 0; }
+		.skip-link:focus { left: 0; }
 		a { color: var(--accent); text-decoration: none; }
 		a:hover { text-decoration: underline; }
 
@@ -169,9 +171,58 @@
 
 		/* Empty State */
 		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
+
+		/* Hamburger Toggle */
+		.nav-toggle { display: none; background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; flex-direction: column; gap: 4px; align-items: center; justify-content: center; width: 40px; height: 36px; }
+		.nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text); border-radius: 1px; transition: transform 0.2s, opacity 0.2s; }
+		.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+		.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+		.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+		/* Mobile Responsive — 768px breakpoint */
+		@media (max-width: 768px) {
+			.nav-toggle { display: flex; margin-bottom: 12px; }
+			nav { display: none; flex-direction: column; gap: 2px; }
+			nav.open { display: flex; }
+			nav button { text-align: left; padding: 10px 12px; border-radius: 4px; border-bottom: none; }
+			nav button.active { border-bottom: none; background: rgba(59,130,246,0.1); }
+			.container { padding: 12px; }
+			header { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 0; }
+			header h1 { font-size: 20px; }
+			.job-grid { grid-template-columns: 1fr; }
+			.gauge-grid { grid-template-columns: 1fr; }
+			.mesh-grid { grid-template-columns: 1fr; }
+			.new-job .controls { flex-wrap: wrap; }
+			.memory-search { flex-direction: column; }
+			.context-input { flex-direction: column; }
+			table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+		}
+
+		/* Extra small — 480px breakpoint */
+		@media (max-width: 480px) {
+			header h1 { font-size: 18px; }
+			.job-card { padding: 12px; }
+			.job-card h3 { font-size: 13px; }
+			.section h2 { font-size: 16px; }
+			th, td { padding: 8px 6px; font-size: 12px; }
+			.toast { max-width: calc(100vw - 24px); }
+		}
+
+		/* Toast Notifications */
+		.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.25s ease-out; }
+		.toast.error { border-left: 3px solid var(--danger); }
+		.toast.success { border-left: 3px solid var(--success); }
+		.toast.info { border-left: 3px solid var(--accent); }
+		.toast .toast-msg { flex: 1; }
+		.toast .toast-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1; }
+		.toast .toast-close:hover { color: var(--text); }
+		.toast.fade-out { animation: toast-out 0.3s ease-in forwards; }
+		@keyframes toast-in { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+		@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
 	</style>
 </head>
 <body>
+	<a href="#main-content" class="skip-link">Skip to content</a>
 	<div class="container">
 		<header>
 			<div>
@@ -181,23 +232,28 @@
 			<span class="instance-status idle" id="instance-status">idle</span>
 		</header>
 
-		<nav id="nav">
-			<button class="active" data-page="home">Home</button>
-			<button data-page="history">History</button>
-			<button data-page="memory">Memory</button>
-			<button data-page="voice">Voice</button>
-			<button data-page="mesh">Mesh</button>
-			<button data-page="analytics">Analytics</button>
-			<button data-page="posse" id="nav-posse" style="display:none">Posse</button>
-			<button data-page="settings">Settings</button>
+		<button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav">
+			<span></span><span></span><span></span>
+		</button>
+
+		<nav id="nav" aria-label="Main navigation" role="tablist">
+			<button class="active" data-page="home" role="tab" aria-selected="true" aria-controls="page-home" id="tab-home">Home</button>
+			<button data-page="history" role="tab" aria-selected="false" aria-controls="page-history" id="tab-history">History</button>
+			<button data-page="memory" role="tab" aria-selected="false" aria-controls="page-memory" id="tab-memory">Memory</button>
+			<button data-page="voice" role="tab" aria-selected="false" aria-controls="page-voice" id="tab-voice">Voice</button>
+			<button data-page="mesh" role="tab" aria-selected="false" aria-controls="page-mesh" id="tab-mesh">Mesh</button>
+			<button data-page="analytics" role="tab" aria-selected="false" aria-controls="page-analytics" id="tab-analytics">Analytics</button>
+			<button data-page="posse" id="nav-posse" style="display:none" role="tab" aria-selected="false" aria-controls="page-posse">Posse</button>
+			<button data-page="settings" role="tab" aria-selected="false" aria-controls="page-settings" id="tab-settings">Settings</button>
 		</nav>
 
+		<main id="main-content">
 		<!-- Home Page -->
-		<div class="page active" id="page-home">
+		<div class="page active" id="page-home" role="tabpanel" aria-labelledby="tab-home">
 			<div class="section">
 				<h2>New Job</h2>
 				<div class="new-job">
-					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..."></textarea>
+					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..." aria-label="Job prompt"></textarea>
 					<div class="controls">
 						<button class="btn" onclick="submitJob()">Submit Job</button>
 					</div>
@@ -205,18 +261,18 @@
 			</div>
 			<div class="section">
 				<h2>Active Jobs</h2>
-				<div class="job-grid" id="active-jobs">
+				<div class="job-grid" id="active-jobs" aria-live="polite">
 					<div class="empty">No active jobs</div>
 				</div>
 			</div>
 			<div class="section">
 				<h2>Events</h2>
-				<div class="events-log" id="events-log"></div>
+				<div class="events-log" id="events-log" aria-live="polite" aria-label="Event log"></div>
 			</div>
 		</div>
 
 		<!-- Job Detail Page -->
-		<div class="page" id="page-job-detail">
+		<div class="page" id="page-job-detail" role="tabpanel">
 			<div class="section">
 				<button class="btn" onclick="showPage('home')" style="margin-bottom: 16px;">Back</button>
 				<h2 id="job-detail-title">Job Detail</h2>
@@ -240,7 +296,7 @@
 			<div class="section">
 				<h2>Inject Context</h2>
 				<div class="context-input">
-					<input type="text" id="context-text" placeholder="Type context to inject..." />
+					<input type="text" id="context-text" placeholder="Type context to inject..." aria-label="Context to inject" />
 					<button class="btn" onclick="injectContext()">Inject</button>
 				</div>
 			</div>
@@ -250,7 +306,7 @@
 		</div>
 
 		<!-- History Page -->
-		<div class="page" id="page-history">
+		<div class="page" id="page-history" role="tabpanel" aria-labelledby="tab-history">
 			<div class="section">
 				<h2>Job History</h2>
 				<table id="history-table">
@@ -263,12 +319,12 @@
 		</div>
 
 		<!-- Memory Page -->
-		<div class="page" id="page-memory">
+		<div class="page" id="page-memory" role="tabpanel" aria-labelledby="tab-memory">
 			<div class="section">
 				<h2>Memory Search</h2>
 				<div class="memory-search">
-					<input type="text" id="memory-query" placeholder="Search memories..." />
-					<select id="memory-scope" style="display:none">
+					<input type="text" id="memory-query" placeholder="Search memories..." aria-label="Search memories" />
+					<select id="memory-scope" style="display:none" aria-label="Memory search scope">
 						<option value="self" selected>Self</option>
 						<option value="shared">Shared</option>
 						<option value="all">All</option>
@@ -280,7 +336,7 @@
 		</div>
 
 		<!-- Voice Page -->
-		<div class="page" id="page-voice">
+		<div class="page" id="page-voice" role="tabpanel" aria-labelledby="tab-voice">
 			<div class="section">
 				<h2>Active Voice Sessions</h2>
 				<div id="voice-sessions">
@@ -290,7 +346,7 @@
 		</div>
 
 		<!-- Mesh Page -->
-		<div class="page" id="page-mesh">
+		<div class="page" id="page-mesh" role="tabpanel" aria-labelledby="tab-mesh">
 			<div class="section">
 				<h2>Mesh Instances</h2>
 				<div class="mesh-grid" id="mesh-instances">
@@ -304,7 +360,7 @@
 		</div>
 
 		<!-- Analytics Page -->
-		<div class="page" id="page-analytics">
+		<div class="page" id="page-analytics" role="tabpanel" aria-labelledby="tab-analytics">
 			<div class="section">
 				<h2>Reliability Scores</h2>
 				<div class="gauge-grid" id="analytics-scores">
@@ -330,7 +386,7 @@
 		</div>
 
 		<!-- Posse Page -->
-		<div class="page" id="page-posse">
+		<div class="page" id="page-posse" role="tabpanel" aria-labelledby="nav-posse">
 			<div class="section">
 				<h2>Posse Agents</h2>
 				<div id="posse-agents"></div>
@@ -338,8 +394,8 @@
 			<div class="section">
 				<h2>Posse Memory Search</h2>
 				<div class="memory-search">
-					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." />
-					<select id="posse-scope">
+					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." aria-label="Search posse memory" />
+					<select id="posse-scope" aria-label="Posse memory search scope">
 						<option value="all" selected>All</option>
 						<option value="self">Self</option>
 						<option value="shared">Shared</option>
@@ -355,39 +411,128 @@
 		</div>
 
 		<!-- Settings Page -->
-		<div class="page" id="page-settings">
+		<div class="page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings">
 			<div class="section">
 				<h2>Settings</h2>
 				<div id="settings-content"></div>
 			</div>
 		</div>
+		</main>
 	</div>
 
-	<script>
-		// HTML sanitization — escape characters that enable XSS in innerHTML assignments
-		function sanitizeHtml(str) {
-			if (str === null || str === undefined) return '';
-			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-		}
+	<div id="toast-container" aria-live="polite" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:400px;pointer-events:none;"></div>
 
+	<script>
 		// Auth
 		var API_TOKEN = localStorage.getItem('randal_token') || prompt('Enter API token:') || '';
 		if (API_TOKEN) localStorage.setItem('randal_token', API_TOKEN);
 		var headers = { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' };
 
+		// HTML sanitization — prevents XSS from API data injected into innerHTML
+		// Canonical source: src/utils.ts — keep in sync
+		function escapeHtml(str) {
+			if (str == null) return '';
+			var div = document.createElement('div');
+			div.appendChild(document.createTextNode(String(str)));
+			return div.innerHTML;
+		}
+
+		// Toast notification system — canonical source: src/utils.ts
+		var _toastErrorTimestamps = {};
+		function showToast(message, type, duration) {
+			type = type || 'info';
+			duration = duration || (type === 'error' ? 8000 : 5000);
+
+			// Deduplicate: suppress repeat error toasts for the same message within 30s
+			if (type === 'error') {
+				var now = Date.now();
+				if (_toastErrorTimestamps[message] && now - _toastErrorTimestamps[message] < 30000) return;
+				_toastErrorTimestamps[message] = now;
+			}
+
+			var container = document.getElementById('toast-container');
+			var toast = document.createElement('div');
+			toast.className = 'toast ' + type;
+			toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+			toast.innerHTML = '<span class="toast-msg">' + escapeHtml(message) + '</span>' +
+				'<button class="toast-close" aria-label="Dismiss notification">&times;</button>';
+
+			var closeBtn = toast.querySelector('.toast-close');
+			var timer;
+			function dismiss() {
+				clearTimeout(timer);
+				toast.classList.add('fade-out');
+				toast.addEventListener('animationend', function() { toast.remove(); });
+			}
+			closeBtn.addEventListener('click', dismiss);
+			timer = setTimeout(dismiss, duration);
+
+			container.appendChild(toast);
+		}
+
 		var currentJobId = null;
 
 		// Navigation
-		document.getElementById('nav').addEventListener('click', function(e) {
-			if (e.target.tagName === 'BUTTON') showPage(e.target.dataset.page);
+		var navEl = document.getElementById('nav');
+		var navToggle = document.getElementById('nav-toggle');
+
+		navEl.addEventListener('click', function(e) {
+			if (e.target.tagName === 'BUTTON') {
+				showPage(e.target.dataset.page);
+				// Close mobile nav after selecting a page
+				navEl.classList.remove('open');
+				navToggle.setAttribute('aria-expanded', 'false');
+			}
 		});
+
+		// Mobile hamburger toggle
+		navToggle.addEventListener('click', function() {
+			var isOpen = navEl.classList.toggle('open');
+			navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+		});
+
+		// Close mobile nav on Escape key
+		document.addEventListener('keydown', function(e) {
+			if (e.key === 'Escape' && navEl.classList.contains('open')) {
+				navEl.classList.remove('open');
+				navToggle.setAttribute('aria-expanded', 'false');
+				navToggle.focus();
+			}
+		});
+
+		var _lastFocusedJobCard = null; // for focus restoration on Back
 
 		function showPage(name) {
 			document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-			document.querySelectorAll('nav button').forEach(function(b) { b.classList.remove('active'); });
+			document.querySelectorAll('nav button').forEach(function(b) {
+				b.classList.remove('active');
+				b.setAttribute('aria-selected', 'false');
+			});
 			document.getElementById('page-' + name).classList.add('active');
 			var navBtn = document.querySelector('nav button[data-page="' + name + '"]');
-			if (navBtn) navBtn.classList.add('active');
+			if (navBtn) {
+				navBtn.classList.add('active');
+				navBtn.setAttribute('aria-selected', 'true');
+			}
+
+			// Focus management: move focus to the page heading
+			var page = document.getElementById('page-' + name);
+			if (page) {
+				// Restore focus to previously clicked job card when returning to home
+				if (name === 'home' && _lastFocusedJobCard) {
+					setTimeout(function() {
+						var card = document.querySelector('.job-card[data-job-id="' + _lastFocusedJobCard + '"]');
+						if (card) { card.focus(); }
+						_lastFocusedJobCard = null;
+					}, 50);
+				} else {
+					var heading = page.querySelector('h2');
+					if (heading) {
+						heading.setAttribute('tabindex', '-1');
+						heading.focus();
+					}
+				}
+			}
 
 			if (name === 'history') loadHistory();
 			if (name === 'settings') loadSettings();
@@ -398,6 +543,7 @@
 		}
 
 		function showJobDetail(id) {
+			_lastFocusedJobCard = id; // store for focus restoration
 			currentJobId = id;
 			showPage('job-detail');
 			loadJobDetail(id);
@@ -414,7 +560,7 @@
 				statusEl.textContent = data.status;
 				statusEl.className = 'instance-status ' + data.status;
 				checkPosse(data);
-			} catch(e) {}
+			} catch(e) { showToast('Failed to load instance info', 'error'); }
 		}
 
 		// Submit job
@@ -424,8 +570,9 @@
 			try {
 				await fetch('/job', { method: 'POST', headers: headers, body: JSON.stringify({ prompt: prompt }) });
 				document.getElementById('prompt-input').value = '';
+				showToast('Job submitted', 'success');
 				refreshJobs();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to submit job', 'error'); }
 		}
 
 		// Refresh active jobs
@@ -439,32 +586,48 @@
 					container.innerHTML = '<div class="empty">No active jobs</div>';
 					return;
 				}
-			container.innerHTML = active.map(function(j) {
-				var pct = (j.iterations.current / j.maxIterations) * 100;
-				var preview = sanitizeHtml(j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : ''));
-				var planInfo = '';
-				if (j.plan && j.plan.length > 0) {
-					var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
-					planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
-				}
-				return '<div class="job-card" onclick="showJobDetail(\'' + sanitizeHtml(j.id) + '\')">' +
-					'<h3>' + preview + '</h3>' +
-					'<div class="meta"><span class="badge ' + sanitizeHtml(j.status) + '">' + sanitizeHtml(j.status) + '</span>' +
-					'<span>' + sanitizeHtml(j.agent) + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
-					planInfo +
-					'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
-					'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
-			}).join('');
+				container.innerHTML = active.map(function(j) {
+					var pct = (j.iterations.current / j.maxIterations) * 100;
+					var preview = escapeHtml(j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : ''));
+					var planInfo = '';
+					if (j.plan && j.plan.length > 0) {
+						var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
+						planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
+					}
+					return '<div class="job-card" tabindex="0" role="link" data-job-id="' + escapeHtml(j.id) + '" aria-label="Job: ' + preview + ' — ' + escapeHtml(j.status) + '">' +
+						'<h3>' + preview + '</h3>' +
+						'<div class="meta"><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span>' +
+						'<span>' + escapeHtml(j.agent) + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
+						planInfo +
+						'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
+						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
+				}).join('');
 				loadInstance();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to refresh jobs', 'error'); }
 		}
+
+		// Delegated click/keyboard handler for job cards
+		(function() {
+			function handleJobCardActivation(e) {
+				var card = e.target.closest('.job-card[data-job-id]');
+				if (card) showJobDetail(card.dataset.jobId);
+			}
+			var jobGrid = document.getElementById('active-jobs');
+			jobGrid.addEventListener('click', handleJobCardActivation);
+			jobGrid.addEventListener('keydown', function(e) {
+				if (e.key === 'Enter' || e.key === ' ') {
+					var card = e.target.closest('.job-card[data-job-id]');
+					if (card) { e.preventDefault(); showJobDetail(card.dataset.jobId); }
+				}
+			});
+		})();
 
 		// Load job detail
 		async function loadJobDetail(id) {
 			try {
 				var res = await fetch('/job/' + id, { headers: headers });
 				var job = await res.json();
-				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + sanitizeHtml(job.status) + '">' + sanitizeHtml(job.status) + '</span> Job ' + sanitizeHtml(job.id);
+				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + escapeHtml(job.status) + '">' + escapeHtml(job.status) + '</span> Job ' + escapeHtml(job.id);
 				document.getElementById('job-spec').textContent = job.spec ? job.spec.content || job.prompt : job.prompt;
 
 				// Plan
@@ -473,11 +636,11 @@
 					var completedCount = job.plan.filter(function(p) { return p.status === 'completed'; }).length;
 					planHtml = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-muted)">' + completedCount + '/' + job.plan.length + ' tasks complete</div>';
 					planHtml += '<table><thead><tr><th>Task</th><th>Status</th><th>Iteration</th></tr></thead><tbody>';
-				planHtml += job.plan.map(function(p) {
-					var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
-					var iterInfo = p.iterationNumber ? '#' + sanitizeHtml(p.iterationNumber) : '-';
-					return '<tr><td>' + icon + ' ' + sanitizeHtml(p.task) + '</td><td><span class="badge ' + sanitizeHtml(p.status) + '">' + sanitizeHtml(p.status) + '</span></td><td>' + iterInfo + '</td></tr>';
-				}).join('');
+					planHtml += job.plan.map(function(p) {
+						var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
+						var iterInfo = p.iterationNumber ? '#' + p.iterationNumber : '-';
+						return '<tr><td>' + icon + ' ' + escapeHtml(p.task) + '</td><td><span class="badge ' + escapeHtml(p.status) + '">' + escapeHtml(p.status) + '</span></td><td>' + iterInfo + '</td></tr>';
+					}).join('');
 					planHtml += '</tbody></table>';
 				} else {
 					planHtml = '<div class="empty">No plan extracted</div>';
@@ -489,10 +652,10 @@
 				if (delegationsEl) {
 					if (job.delegations && job.delegations.length > 0) {
 						var delHtml = '<table><thead><tr><th>Task</th><th>Status</th><th>Job ID</th><th>Duration</th></tr></thead><tbody>';
-					delHtml += job.delegations.map(function(d) {
-						return '<tr><td>' + sanitizeHtml(d.task) + '</td><td><span class="badge ' + sanitizeHtml(d.status) + '">' + sanitizeHtml(d.status) + '</span></td>' +
-							'<td>' + sanitizeHtml(d.jobId) + '</td><td>' + sanitizeHtml(d.duration) + 's</td></tr>';
-					}).join('');
+						delHtml += job.delegations.map(function(d) {
+							return '<tr><td>' + escapeHtml(d.task) + '</td><td><span class="badge ' + escapeHtml(d.status) + '">' + escapeHtml(d.status) + '</span></td>' +
+								'<td>' + escapeHtml(d.jobId) + '</td><td>' + d.duration + 's</td></tr>';
+						}).join('');
 						delHtml += '</tbody></table>';
 						delegationsEl.innerHTML = delHtml;
 					} else {
@@ -501,14 +664,14 @@
 				}
 
 				// Timeline
-			var timelineHtml = job.iterations.history.length > 0 ?
-				job.iterations.history.map(function(h) {
-					return '<div class="timeline-item"><span class="iter-num">Iter ' + sanitizeHtml(h.number) + '</span>' +
-						'<span class="iter-duration">' + sanitizeHtml(h.duration) + 's</span>' +
-						'<span class="iter-summary">' + sanitizeHtml(h.summary || 'No summary') + '</span></div>';
-				}).join('') : '<div class="empty">No iterations yet</div>';
+				var timelineHtml = job.iterations.history.length > 0 ?
+					job.iterations.history.map(function(h) {
+						return '<div class="timeline-item"><span class="iter-num">Iter ' + h.number + '</span>' +
+							'<span class="iter-duration">' + h.duration + 's</span>' +
+							'<span class="iter-summary">' + escapeHtml(h.summary || 'No summary') + '</span></div>';
+					}).join('') : '<div class="empty">No iterations yet</div>';
 				document.getElementById('job-timeline').innerHTML = timelineHtml;
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load job details', 'error'); }
 		}
 
 		// Inject context
@@ -521,7 +684,8 @@
 					method: 'POST', headers: headers, body: JSON.stringify({ text: text })
 				});
 				document.getElementById('context-text').value = '';
-			} catch(e) { console.error(e); }
+				showToast('Context injected', 'success');
+			} catch(e) { showToast('Failed to inject context', 'error'); }
 		}
 
 		// Stop job
@@ -530,9 +694,10 @@
 			if (!confirm('Stop this job?')) return;
 			try {
 				await fetch('/job/' + currentJobId, { method: 'DELETE', headers: headers });
+				showToast('Job stopped', 'success');
 				showPage('home');
 				refreshJobs();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to stop job', 'error'); }
 		}
 
 		// History
@@ -541,40 +706,56 @@
 				var res = await fetch('/jobs', { headers: headers });
 				var jobs = await res.json();
 				var body = document.getElementById('history-body');
-			body.innerHTML = jobs.map(function(j) {
-				var safeId = sanitizeHtml(j.id);
-				var actions = '';
-				if (j.status === 'complete' || j.status === 'failed') {
-					actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + safeId + '\')">Annotate</button>' +
-						'<div id="annotate-form-' + safeId + '" style="display:none"></div>';
-				}
-				return '<tr onclick="showJobDetail(\'' + safeId + '\')" style="cursor:pointer">' +
-					'<td>' + safeId + '</td>' +
-					'<td><span class="badge ' + sanitizeHtml(j.status) + '">' + sanitizeHtml(j.status) + '</span></td>' +
-					'<td>' + sanitizeHtml(j.agent) + '</td>' +
-					'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
-					'<td>' + sanitizeHtml(j.duration || '-') + 's</td>' +
-					'<td>' + sanitizeHtml(j.prompt.slice(0, 50)) + '</td>' +
-					'<td>' + actions + '</td></tr>';
-			}).join('');
-			} catch(e) { console.error(e); }
+				body.innerHTML = jobs.map(function(j) {
+					var actions = '';
+					if (j.status === 'complete' || j.status === 'failed') {
+						actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + escapeHtml(j.id) + '\')">Annotate</button>' +
+							'<div id="annotate-form-' + escapeHtml(j.id) + '" style="display:none"></div>';
+					}
+					return '<tr tabindex="0" data-job-id="' + escapeHtml(j.id) + '" style="cursor:pointer">' +
+						'<td>' + escapeHtml(j.id) + '</td>' +
+						'<td><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span></td>' +
+						'<td>' + escapeHtml(j.agent) + '</td>' +
+						'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
+						'<td>' + (j.duration || '-') + 's</td>' +
+						'<td>' + escapeHtml(j.prompt.slice(0, 50)) + '</td>' +
+						'<td>' + actions + '</td></tr>';
+				}).join('');
+			} catch(e) { showToast('Failed to load history', 'error'); }
 		}
+
+		// Delegated click/keyboard handler for history rows
+		(function() {
+			var histBody = document.getElementById('history-body');
+			function handleHistoryRowActivation(e) {
+				if (e.target.closest('button')) return; // don't intercept Annotate button clicks
+				var row = e.target.closest('tr[data-job-id]');
+				if (row) showJobDetail(row.dataset.jobId);
+			}
+			histBody.addEventListener('click', handleHistoryRowActivation);
+			histBody.addEventListener('keydown', function(e) {
+				if (e.key === 'Enter' || e.key === ' ') {
+					if (e.target.closest('button')) return;
+					var row = e.target.closest('tr[data-job-id]');
+					if (row) { e.preventDefault(); showJobDetail(row.dataset.jobId); }
+				}
+			});
+		})();
 
 		// Annotate form
 		function showAnnotateForm(jobId) {
-			var safeJobId = sanitizeHtml(jobId);
 			var el = document.getElementById('annotate-form-' + jobId);
 			if (!el) return;
 			if (el.style.display !== 'none') { el.style.display = 'none'; return; }
 			el.style.display = 'block';
 			el.innerHTML = '<div class="annotate-form">' +
-				'<select id="annotate-verdict-' + safeJobId + '">' +
+				'<select id="annotate-verdict-' + jobId + '">' +
 				'<option value="correct">Correct</option>' +
 				'<option value="partial">Partial</option>' +
 				'<option value="incorrect">Incorrect</option>' +
 				'<option value="unsure">Unsure</option></select>' +
-				'<input type="text" id="annotate-feedback-' + safeJobId + '" placeholder="Feedback (optional)" />' +
-				'<button class="btn sm" onclick="submitAnnotation(\'' + safeJobId + '\')">Submit</button></div>';
+				'<input type="text" id="annotate-feedback-' + jobId + '" placeholder="Feedback (optional)" />' +
+				'<button class="btn sm" onclick="submitAnnotation(\'' + jobId + '\')">Submit</button></div>';
 		}
 
 		async function submitAnnotation(jobId) {
@@ -593,7 +774,7 @@
 					var err = await res.json();
 					alert('Annotation failed: ' + (err.error || 'Unknown error'));
 				}
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to submit annotation', 'error'); }
 		}
 
 		// Memory
@@ -610,11 +791,11 @@
 					container.innerHTML = '<div class="empty">No results</div>';
 					return;
 				}
-			container.innerHTML = docs.map(function(d) {
-				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' +
-					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
-			}).join('');
-			} catch(e) { console.error(e); }
+				container.innerHTML = docs.map(function(d) {
+					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' +
+						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
+				}).join('');
+			} catch(e) { showToast('Memory search failed', 'error'); }
 		}
 
 		// Settings
@@ -622,96 +803,109 @@
 			try {
 				var res = await fetch('/config', { headers: headers });
 				var cfg = await res.json();
-			var html = '<div class="settings-group"><h3>Instance</h3>' +
-				'<div class="setting-row"><span class="label">Name</span><span class="value">' + sanitizeHtml(cfg.name) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Version</span><span class="value">' + sanitizeHtml(cfg.version) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Posse</span><span class="value">' + sanitizeHtml(cfg.posse || '-') + '</span></div></div>';
+				var html = '<div class="settings-group"><h3>Instance</h3>' +
+					'<div class="setting-row"><span class="label">Name</span><span class="value">' + escapeHtml(cfg.name) + '</span></div>' +
+					'<div class="setting-row"><span class="label">Version</span><span class="value">' + escapeHtml(cfg.version) + '</span></div>' +
+					'<div class="setting-row"><span class="label">Posse</span><span class="value">' + escapeHtml(cfg.posse || '-') + '</span></div></div>';
 
-			html += '<div class="settings-group"><h3>Runner</h3>' +
-				'<div class="setting-row"><span class="label">Agent</span><span class="value">' + sanitizeHtml(cfg.runner.defaultAgent) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Model</span><span class="value">' + sanitizeHtml(cfg.runner.defaultModel) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + sanitizeHtml(cfg.runner.defaultMaxIterations) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + sanitizeHtml(cfg.runner.workdir) + '</span></div></div>';
+				html += '<div class="settings-group"><h3>Runner</h3>' +
+					'<div class="setting-row"><span class="label">Agent</span><span class="value">' + escapeHtml(cfg.runner.defaultAgent) + '</span></div>' +
+					'<div class="setting-row"><span class="label">Model</span><span class="value">' + escapeHtml(cfg.runner.defaultModel) + '</span></div>' +
+					'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + cfg.runner.defaultMaxIterations + '</span></div>' +
+					'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + escapeHtml(cfg.runner.workdir) + '</span></div></div>';
 
-			html += '<div class="settings-group"><h3>Memory</h3>' +
-				'<div class="setting-row"><span class="label">Store</span><span class="value">' + sanitizeHtml(cfg.memory.store) + '</span></div>' +
-				'<div class="setting-row"><span class="label">Index</span><span class="value">' + sanitizeHtml(cfg.memory.index || '-') + '</span></div></div>';
+				html += '<div class="settings-group"><h3>Memory</h3>' +
+					'<div class="setting-row"><span class="label">Store</span><span class="value">' + escapeHtml(cfg.memory.store) + '</span></div>' +
+					'<div class="setting-row"><span class="label">Index</span><span class="value">' + escapeHtml(cfg.memory.index || '-') + '</span></div></div>';
 
 				html += '<div class="settings-group"><h3>Credentials</h3>';
-			if (cfg.credentials.loaded) {
-				cfg.credentials.loaded.forEach(function(k) {
-					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value cred-loaded">loaded</span></div>';
-				});
-			}
-			if (cfg.credentials.missing) {
-				cfg.credentials.missing.forEach(function(k) {
-					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value cred-missing">missing</span></div>';
-				});
-			}
-			if (cfg.credentials.inherited) {
-				cfg.credentials.inherited.forEach(function(k) {
-					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value">inherited</span></div>';
-				});
-			}
+				if (cfg.credentials.loaded) {
+					cfg.credentials.loaded.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value cred-loaded">loaded</span></div>';
+					});
+				}
+				if (cfg.credentials.missing) {
+					cfg.credentials.missing.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value cred-missing">missing</span></div>';
+					});
+				}
+				if (cfg.credentials.inherited) {
+					cfg.credentials.inherited.forEach(function(k) {
+						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value">inherited</span></div>';
+					});
+				}
 				html += '</div>';
 
 				if (cfg.tools && cfg.tools.length > 0) {
 					html += '<div class="settings-group"><h3>Tools</h3>';
-				cfg.tools.forEach(function(t) {
-					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(t.name) + '</span><span class="value">' + sanitizeHtml(t.binary) + '</span></div>';
-				});
+					cfg.tools.forEach(function(t) {
+						html += '<div class="setting-row"><span class="label">' + escapeHtml(t.name) + '</span><span class="value">' + escapeHtml(t.binary) + '</span></div>';
+					});
 					html += '</div>';
 				}
 
 				document.getElementById('settings-content').innerHTML = html;
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load settings', 'error'); }
 		}
 
-		// SSE setup — prefer cookie-based auth to avoid exposing the token in the URL
-		// (query params appear in server logs, browser history, and proxy logs).
-		// Falls back to query-param auth for backward compatibility.
-		var evtSource;
-		var eventsLog = document.getElementById('events-log');
+		// Polling state machine — canonical source: src/utils.ts
+		var sseConnected = false;
+		var pollInterval = null;
 
-		async function setupSSE() {
-			try {
-				// Attempt to exchange the Bearer token for an HttpOnly session cookie
-				var resp = await fetch('/auth/session', {
-					method: 'POST',
-					headers: headers,
-					credentials: 'same-origin'
-				});
-				if (resp.ok) {
-					// Cookie is now set — connect SSE without token in URL
-					evtSource = new EventSource('/events');
-				} else {
-					throw new Error('Session setup failed');
-				}
-			} catch(e) {
-				// Fallback: gateway may not support cookie auth yet
-				evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
+		function startPolling() {
+			if (pollInterval) return;
+			pollInterval = setInterval(refreshJobs, 10000);
+		}
+
+		function stopPolling() {
+			if (pollInterval) {
+				clearInterval(pollInterval);
+				pollInterval = null;
 			}
-
-			['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
-				evtSource.addEventListener(type, function(e) {
-					addEvent(type, e.data);
-					if (currentJobId) loadJobDetail(currentJobId);
-				});
-			});
-
-			evtSource.onerror = function() {
-				addEvent('system', 'SSE connection lost — reconnecting...');
-			};
 		}
+
+		// Pause polling when tab is hidden, resume when visible (if SSE not connected)
+		document.addEventListener('visibilitychange', function() {
+			if (document.hidden) {
+				stopPolling();
+			} else if (!sseConnected) {
+				startPolling();
+				refreshJobs(); // immediate refresh on tab focus
+			}
+		});
+
+		// SSE (EventSource can't send Authorization headers, so pass token as query param)
+		var evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
+		var eventsLog = document.getElementById('events-log');
 
 		function addEvent(type, data) {
 			var line = document.createElement('div');
 			line.className = 'event-line';
-			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + sanitizeHtml(type) + '</span> ' + sanitizeHtml(data);
+			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + escapeHtml(type) + '</span> ' + escapeHtml(data);
 			eventsLog.prepend(line);
 			if (eventsLog.children.length > 100) eventsLog.lastChild.remove();
 			refreshJobs();
 		}
+
+		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
+			evtSource.addEventListener(type, function(e) {
+				// SSE is delivering events — stop redundant polling
+				if (!sseConnected) { sseConnected = true; stopPolling(); }
+				addEvent(type, e.data);
+				if (currentJobId) loadJobDetail(currentJobId);
+			});
+		});
+
+		evtSource.onopen = function() {
+			sseConnected = true;
+			stopPolling();
+		};
+
+		evtSource.onerror = function() {
+			sseConnected = false;
+			startPolling(); // fallback to polling when SSE drops
+			addEvent('system', 'SSE connection lost — reconnecting...');
+		};
 
 		// Voice functions
 		async function loadVoiceSessions() {
@@ -727,18 +921,18 @@
 					container.innerHTML = '<div class="empty">No active voice sessions</div>';
 					return;
 				}
-			container.innerHTML = data.sessions.map(function(s) {
-				var mins = Math.floor(s.duration / 60);
-				var secs = Math.round(s.duration % 60);
-				return '<div class="voice-card"><h4>Session ' + sanitizeHtml(s.id.slice(0, 8)) + '</h4>' +
-					'<div class="voice-meta">' +
-					'<span>Call: ' + sanitizeHtml(s.callId) + '</span>' +
-					'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + sanitizeHtml(s.status) + '</span>' +
-					'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
-					'<span>Transcript: ' + sanitizeHtml(s.transcriptLength) + ' chars</span>' +
-					'</div>' +
-					'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + sanitizeHtml(new Date(s.startedAt).toLocaleString()) + '</div></div>';
-			}).join('');
+				container.innerHTML = data.sessions.map(function(s) {
+					var mins = Math.floor(s.duration / 60);
+					var secs = Math.round(s.duration % 60);
+					return '<div class="voice-card"><h4>Session ' + escapeHtml(s.id.slice(0, 8)) + '</h4>' +
+						'<div class="voice-meta">' +
+						'<span>Call: ' + escapeHtml(s.callId) + '</span>' +
+						'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + s.status + '</span>' +
+						'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
+						'<span>Transcript: ' + s.transcriptLength + ' chars</span>' +
+						'</div>' +
+						'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + new Date(s.startedAt).toLocaleString() + '</div></div>';
+				}).join('');
 			} catch(e) {
 				document.getElementById('voice-sessions').innerHTML = '<div class="empty">Failed to load voice sessions</div>';
 			}
@@ -754,18 +948,18 @@
 					container.innerHTML = '<div class="empty">No mesh instances found</div>';
 					return;
 				}
-			container.innerHTML = data.instances.map(function(inst) {
-				var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
-				var loadPct = Math.round(inst.load * 100);
-				var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
-				return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '"></span>' + sanitizeHtml(inst.name) + '</h4>' +
-					'<div class="mesh-meta">' +
-					'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + sanitizeHtml(inst.status) + '</span></div>' +
-					'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
-					'<div style="margin-top:4px">Specialization: ' + sanitizeHtml(inst.specialization || '-') + '</div>' +
-					'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + sanitizeHtml(inst.lastSeen) + '</div>' +
-					'</div></div>';
-			}).join('');
+				container.innerHTML = data.instances.map(function(inst) {
+					var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
+					var loadPct = Math.round(inst.load * 100);
+					var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
+					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '" aria-label="Health: ' + escapeHtml(inst.health) + '"></span>' + escapeHtml(inst.name) + '</h4>' +
+						'<div class="mesh-meta">' +
+						'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + escapeHtml(inst.status) + '</span></div>' +
+						'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
+						'<div style="margin-top:4px">Specialization: ' + escapeHtml(inst.specialization || '-') + '</div>' +
+						'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + escapeHtml(inst.lastSeen) + '</div>' +
+						'</div></div>';
+				}).join('');
 			} catch(e) {
 				document.getElementById('mesh-instances').innerHTML = '<div class="empty">Failed to load mesh status</div>';
 			}
@@ -788,9 +982,9 @@
 				// Overall score gauge
 				var overallPct = Math.round((data.overall || 0) * 100);
 				var overallClass = overallPct >= 80 ? 'good' : overallPct >= 50 ? 'warn' : 'bad';
-			var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
-				'<div class="gauge-value">' + sanitizeHtml(overallPct) + '%</div>' +
-				'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
+				var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
+					'<div class="gauge-value">' + overallPct + '%</div>' +
+					'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
 
 				scoresEl.innerHTML = html;
 
@@ -819,9 +1013,9 @@
 			for (var key in scores) {
 				var pct = Math.round(scores[key] * 100);
 				var cls = pct >= 80 ? 'good' : pct >= 50 ? 'warn' : 'bad';
-			html += '<div class="gauge-card"><div class="gauge-label">' + sanitizeHtml(key) + '</div>' +
-				'<div class="gauge-value">' + sanitizeHtml(pct) + '%</div>' +
-				'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
+				html += '<div class="gauge-card"><div class="gauge-label">' + escapeHtml(key) + '</div>' +
+					'<div class="gauge-value">' + pct + '%</div>' +
+					'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
 			}
 			html += '</div>';
 			return html;
@@ -836,13 +1030,13 @@
 					container.innerHTML = '<div class="empty">No recommendations at this time</div>';
 					return;
 				}
-			container.innerHTML = data.recommendations.map(function(rec) {
-				return '<div class="rec-card ' + sanitizeHtml(rec.severity) + '">' +
-					'<div class="rec-severity ' + sanitizeHtml(rec.severity) + '">' + sanitizeHtml(rec.severity) + '</div>' +
-					'<div style="font-size:13px">' + sanitizeHtml(rec.message) + '</div>' +
-					(rec.action ? '<div class="rec-action">Action: ' + sanitizeHtml(rec.action) + '</div>' : '') +
-					'</div>';
-			}).join('');
+				container.innerHTML = data.recommendations.map(function(rec) {
+					return '<div class="rec-card ' + escapeHtml(rec.severity) + '">' +
+						'<div class="rec-severity ' + escapeHtml(rec.severity) + '">' + escapeHtml(rec.severity) + '</div>' +
+						'<div style="font-size:13px">' + escapeHtml(rec.message) + '</div>' +
+						(rec.action ? '<div class="rec-action">Action: ' + escapeHtml(rec.action) + '</div>' : '') +
+						'</div>';
+				}).join('');
 			} catch(e) {
 				document.getElementById('analytics-recommendations').innerHTML = '<div class="empty">Failed to load recommendations</div>';
 			}
@@ -858,13 +1052,13 @@
 					return;
 				}
 				var html = '<table><thead><tr><th>Job</th><th>Verdict</th><th>Feedback</th><th>Time</th></tr></thead><tbody>';
-			html += data.annotations.slice(0, 50).map(function(a) {
-				var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
-				return '<tr><td>' + sanitizeHtml(a.jobId || '-') + '</td>' +
-					'<td><span class="badge ' + verdictClass + '">' + sanitizeHtml(a.verdict) + '</span></td>' +
-					'<td>' + sanitizeHtml(a.feedback || '-') + '</td>' +
-					'<td>' + (a.timestamp ? sanitizeHtml(new Date(a.timestamp).toLocaleString()) : '-') + '</td></tr>';
-			}).join('');
+				html += data.annotations.slice(0, 50).map(function(a) {
+					var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
+					return '<tr><td>' + escapeHtml(a.jobId || '-') + '</td>' +
+						'<td><span class="badge ' + verdictClass + '">' + escapeHtml(a.verdict) + '</span></td>' +
+						'<td>' + escapeHtml(a.feedback || '-') + '</td>' +
+						'<td>' + (a.timestamp ? new Date(a.timestamp).toLocaleString() : '-') + '</td></tr>';
+				}).join('');
 				html += '</tbody></table>';
 				container.innerHTML = html;
 			} catch(e) {
@@ -894,16 +1088,16 @@
 					container.innerHTML = '<div class="empty">No agents registered</div>';
 					return;
 				}
-			container.innerHTML = data.agents.map(function(a) {
-				var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
-				var heartbeat = a.lastHeartbeat ? sanitizeHtml(new Date(a.lastHeartbeat).toLocaleString()) : '-';
-				return '<div class="job-card"><h3>' + sanitizeHtml(a.name) + (a.name === data.self ? ' (self)' : '') + '</h3>' +
-					'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + sanitizeHtml(a.status) + '</span>' +
-					'<span>' + sanitizeHtml(a.agent) + '</span>' +
-					'<span>v' + sanitizeHtml(a.version) + '</span></div>' +
-					'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
-			}).join('');
-			} catch(e) { console.error(e); }
+				container.innerHTML = data.agents.map(function(a) {
+					var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
+					var heartbeat = a.lastHeartbeat ? new Date(a.lastHeartbeat).toLocaleString() : '-';
+					return '<div class="job-card"><h3>' + escapeHtml(a.name) + (a.name === data.self ? ' (self)' : '') + '</h3>' +
+						'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + escapeHtml(a.status) + '</span>' +
+						'<span>' + escapeHtml(a.agent) + '</span>' +
+						'<span>v' + escapeHtml(a.version) + '</span></div>' +
+						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
+				}).join('');
+			} catch(e) { showToast('Failed to load posse agents', 'error'); }
 		}
 
 		async function searchPosseMemory() {
@@ -918,15 +1112,15 @@
 					container.innerHTML = '<div class="empty">No results</div>';
 					return;
 				}
-			container.innerHTML = docs.map(function(d) {
-				var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + sanitizeHtml(d.source) + ')</span>' : '';
-				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' + sourceTag +
-					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
-			}).join('');
-		} catch(e) { console.error(e); }
-	}
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + escapeHtml(d.source) + ')</span>' : '';
+					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' + sourceTag +
+						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
+				}).join('');
+			} catch(e) { showToast('Posse memory search failed', 'error'); }
+		}
 
-	async function loadPosseRecent() {
+		async function loadPosseRecent() {
 			if (!isPosseMember) return;
 			try {
 				var res = await fetch('/posse/memory/recent?scope=all&limit=10', { headers: headers });
@@ -937,21 +1131,20 @@
 					container.innerHTML = '<div class="empty">No recent activity</div>';
 					return;
 				}
-			container.innerHTML = docs.map(function(d) {
-				var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + sanitizeHtml(d.source) + ')</span>' : '';
-				var time = d.timestamp ? sanitizeHtml(new Date(d.timestamp).toLocaleString()) : '';
-				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' + sourceTag +
-					'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
-					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
-			}).join('');
-			} catch(e) { console.error(e); }
+				container.innerHTML = docs.map(function(d) {
+					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + escapeHtml(d.source) + ')</span>' : '';
+					var time = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
+					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' + sourceTag +
+						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
+						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
+				}).join('');
+			} catch(e) { showToast('Failed to load posse activity', 'error'); }
 		}
 
 		// Init
 		loadInstance();
 		refreshJobs();
-		setupSSE();
-		setInterval(refreshJobs, 10000);
+		startPolling(); // SSE will disable this once connected
 	</script>
 </body>
 </html>

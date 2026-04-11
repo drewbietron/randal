@@ -1,5 +1,6 @@
 [test]
 timeout = 30000
+preload = ["./packages/dashboard/src/__tests__/setup.ts"]
 
 [install]
 peer = false
