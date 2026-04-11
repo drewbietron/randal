@@ -9,6 +9,8 @@ type WhatsAppChannelConfig = Extract<
 	{ type: "whatsapp" }
 >;
 
+const WHATSAPP_MAX_LENGTH = 1600;
+
 // ── Twilio WhatsApp webhook types ───────────────────────────
 
 interface TwilioWhatsAppPayload {
@@ -33,6 +35,36 @@ function normalizePhone(phone: string): string {
 		return `+${cleaned.slice(1).replace(/\D/g, "")}`;
 	}
 	return cleaned.replace(/\D/g, "");
+}
+
+/**
+ * Split a message into chunks that fit within the given max length.
+ * Splits on newline boundaries, falling back to hard splits for long lines.
+ */
+function splitMessage(text: string, maxLength: number): string[] {
+	if (text.length <= maxLength) return [text];
+
+	const chunks: string[] = [];
+	let current = "";
+
+	for (const line of text.split("\n")) {
+		if (current.length + line.length + 1 > maxLength) {
+			if (current) {
+				chunks.push(current);
+				current = "";
+			}
+			if (line.length > maxLength) {
+				for (let i = 0; i < line.length; i += maxLength) {
+					chunks.push(line.slice(i, i + maxLength));
+				}
+				continue;
+			}
+		}
+		current = current ? `${current}\n${line}` : line;
+	}
+	if (current) chunks.push(current);
+
+	return chunks;
 }
 
 export class WhatsAppChannel implements ChannelAdapter {
@@ -161,7 +193,7 @@ export class WhatsAppChannel implements ChannelAdapter {
 	}
 
 	/**
-	 * Send a message via Twilio WhatsApp API.
+	 * Send a message via Twilio WhatsApp API, splitting long messages.
 	 */
 	private async sendMessage(to: string, text: string): Promise<void> {
 		const accountSid = this.channelConfig.accountSid;
@@ -176,35 +208,38 @@ export class WhatsAppChannel implements ChannelAdapter {
 		const from = fromNumber.startsWith("whatsapp:") ? fromNumber : `whatsapp:${fromNumber}`;
 		const toFormatted = to.startsWith("whatsapp:") ? to : `whatsapp:${to}`;
 
-		try {
-			const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-			const body = new URLSearchParams({
-				From: from,
-				To: toFormatted,
-				Body: text,
-			});
+		const chunks = splitMessage(text, WHATSAPP_MAX_LENGTH);
+		for (const chunk of chunks) {
+			try {
+				const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+				const body = new URLSearchParams({
+					From: from,
+					To: toFormatted,
+					Body: chunk,
+				});
 
-			const resp = await fetch(url, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded",
-					Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
-				},
-				body: body.toString(),
-			});
+				const resp = await fetch(url, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+					},
+					body: body.toString(),
+				});
 
-			if (!resp.ok) {
-				const respBody = await resp.text();
-				this.logger.warn("Twilio API error", {
-					status: resp.status,
-					body: respBody.slice(0, 200),
+				if (!resp.ok) {
+					const respBody = await resp.text();
+					this.logger.warn("Twilio API error", {
+						status: resp.status,
+						body: respBody.slice(0, 200),
+					});
+				}
+			} catch (err) {
+				this.logger.warn("Failed to send WhatsApp message", {
+					error: err instanceof Error ? err.message : String(err),
+					to,
 				});
 			}
-		} catch (err) {
-			this.logger.warn("Failed to send WhatsApp message", {
-				error: err instanceof Error ? err.message : String(err),
-				to,
-			});
 		}
 	}
 
