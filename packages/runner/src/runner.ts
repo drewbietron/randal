@@ -1,13 +1,24 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Job, JobOrigin, RunnerEvent, RunnerEventType, SkillDeployment } from "@randal/core";
+import { getPrimaryDomain } from "@randal/analytics";
+import type {
+	Annotation,
+	AnnotationVerdict,
+	Job,
+	JobOrigin,
+	ReliabilityScore,
+	RunnerEvent,
+	RunnerEventType,
+	SkillDeployment,
+} from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
+import { compactContext, shouldCompact } from "./compaction.js";
 import { readAndClearContext } from "./context.js";
 import { syncJobToLoopState } from "./loop-state.js";
-import { buildSystemPrompt } from "./prompt-assembly.js";
+import { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
 import { detectFatalError } from "./struggle.js";
@@ -30,6 +41,11 @@ export interface RunnerOptions {
 	onEvent?: EventHandler;
 	memorySearch?: (query: string) => Promise<string[]>;
 	skillSearch?: (query: string) => Promise<SkillDeployment[]>;
+	analyticsData?: () => Promise<{
+		scores: ReliabilityScore[];
+		annotations: Annotation[];
+	}>;
+	addAnnotation?: (annotation: Omit<Annotation, "id" | "timestamp">) => Promise<void>;
 }
 
 export interface JobRequest {
@@ -207,6 +223,11 @@ export class Runner {
 	private onEvent: EventHandler;
 	private memorySearch?: (query: string) => Promise<string[]>;
 	private skillSearch?: (query: string) => Promise<SkillDeployment[]>;
+	private analyticsData?: () => Promise<{
+		scores: ReliabilityScore[];
+		annotations: Annotation[];
+	}>;
+	private addAnnotation?: (annotation: Omit<Annotation, "id" | "timestamp">) => Promise<void>;
 	private activeJobs: Map<
 		string,
 		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
@@ -219,6 +240,44 @@ export class Runner {
 		this.onEvent = options.onEvent ?? (() => {});
 		this.memorySearch = options.memorySearch;
 		this.skillSearch = options.skillSearch;
+		this.analyticsData = options.analyticsData;
+		this.addAnnotation = options.addAnnotation;
+	}
+
+	private async autoAnnotate(job: Job): Promise<void> {
+		if (!this.config.analytics.autoAnnotationPrompt) return;
+		if (!this.addAnnotation) return;
+
+		try {
+			const verdict: AnnotationVerdict =
+				job.status === "complete" ? "pass" : job.status === "failed" ? "fail" : "partial";
+
+			const totalFiles = new Set(job.iterations.history.flatMap((iter) => iter.filesChanged));
+
+			await this.addAnnotation({
+				jobId: job.id,
+				verdict,
+				agent: job.agent,
+				model: job.model,
+				domain: getPrimaryDomain(job.prompt, this.config.analytics.domainKeywords),
+				iterationCount: job.iterations.current,
+				tokenCost: job.cost.totalTokens.input + job.cost.totalTokens.output,
+				duration: job.duration ?? 0,
+				filesChanged: [...totalFiles],
+				prompt: job.prompt.slice(0, 500), // Truncate for storage
+				feedback: job.error ?? undefined,
+			});
+
+			this.logger.info("Auto-annotation created", {
+				jobId: job.id,
+				verdict,
+			});
+		} catch (err) {
+			this.logger.warn("Failed to auto-annotate job", {
+				jobId: job.id,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	private emit(type: RunnerEventType, job: Job, data: RunnerEvent["data"] = {}): void {
@@ -394,13 +453,59 @@ export class Runner {
 				this.emit("job.context_injected", job, { contextText: injectedContext });
 			}
 
+			// Context compaction for resumed jobs with iteration history
+			let compactedContextText: string | undefined;
+			const compactionCfg = this.config.runner.compaction;
+			if (compactionCfg.enabled && job.iterations.history.length > 2) {
+				// Estimate current context size from iteration history
+				const estimatedTokens = job.iterations.history.reduce(
+					(sum, iter) => sum + iter.tokens.input + iter.tokens.output,
+					0,
+				);
+				// Use a reasonable default for maxContextWindow based on model
+				const maxContextWindow = 128000; // TODO: derive from model config
+				if (shouldCompact(estimatedTokens, compactionCfg.threshold, maxContextWindow)) {
+					const result = compactContext({
+						iterations: job.iterations.history,
+						plan: job.plan,
+						delegations: job.delegations,
+						injectedContext: injectedContext ? [injectedContext] : undefined,
+						compactionConfig: compactionCfg,
+					});
+					compactedContextText = result.compactedContext;
+					this.emit("job.compacted", job, {
+						iterationsCompacted: result.iterationsCompacted,
+						originalTokens: result.originalTokens,
+						compactedTokens: result.compactedTokens,
+					});
+				}
+			}
+
 			// Build minimal prompt — brain has its own persona/rules/knowledge.
-			// Only channel context is injected (if any).
+			// Only channel context and analytics feedback are injected (if applicable).
+			let feedbackInjection: BuildSystemPromptOptions["feedbackInjection"];
+			if (this.config.analytics.feedbackInjection && this.analyticsData) {
+				try {
+					const { scores, annotations } = await this.analyticsData();
+					const domain = getPrimaryDomain(job.prompt, this.config.analytics.domainKeywords);
+					feedbackInjection = { enabled: true, scores, annotations, taskDomain: domain };
+				} catch (err) {
+					this.logger.warn("Failed to load analytics for feedback injection", {
+						error: String(err),
+					});
+				}
+			}
+
 			const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
 				injectedContext: injectedContext ?? undefined,
+				feedbackInjection,
 			});
 
-			const prompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${job.prompt}` : job.prompt;
+			const prompt = compactedContextText
+				? `${systemPrompt}\n\n## Resumed Context (Compacted)\n${compactedContextText}\n\n---\n\n${job.prompt}`
+				: systemPrompt
+					? `${systemPrompt}\n\n---\n\n${job.prompt}`
+					: job.prompt;
 
 			const args = adapter.buildCommand({
 				prompt,
@@ -544,6 +649,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -557,6 +663,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -569,6 +676,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -580,6 +688,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -593,6 +702,7 @@ export class Runner {
 			job.duration = duration;
 			syncJobToLoopState(job);
 			this.emit("job.failed", job, { error: job.error });
+			await this.autoAnnotate(job);
 			return job;
 		} finally {
 			cleanupTempHome(tempHome);

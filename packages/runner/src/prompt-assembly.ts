@@ -1,7 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { DelegationResult, JobPlanTask, PromptContext, RandalConfig } from "@randal/core";
+import { generateFeedback } from "@randal/analytics";
+import type {
+	Annotation,
+	DelegationResult,
+	JobPlanTask,
+	PromptContext,
+	RandalConfig,
+	ReliabilityScore,
+} from "@randal/core";
 import { createLogger, resolvePromptValue } from "@randal/core";
 
 const logger = createLogger({ context: { component: "prompt-assembly" } });
@@ -229,12 +237,20 @@ export function assemblePrompt(parts: PromptParts): string {
  * The brain owns its own identity, rules, knowledge, and skills.
  * This function only injects channel context (if any).
  */
+export interface BuildSystemPromptOptions {
+	injectedContext?: string;
+	feedbackInjection?: {
+		enabled: boolean;
+		scores: ReliabilityScore[];
+		annotations: Annotation[];
+		taskDomain?: string;
+	};
+}
+
 export async function buildSystemPrompt(
 	_config: RandalConfig,
 	_basePath: string,
-	options: {
-		injectedContext?: string;
-	} = {},
+	options: BuildSystemPromptOptions = {},
 ): Promise<string> {
 	// Brain session is the only execution path. The brain owns its own
 	// identity, rules, knowledge, and skills. Runner only passes channel
@@ -243,6 +259,16 @@ export async function buildSystemPrompt(
 	const sections: string[] = [];
 	if (options.injectedContext) {
 		sections.push(`## Channel Context\n${options.injectedContext.trim()}`);
+	}
+	if (options.feedbackInjection?.enabled) {
+		const feedback = generateFeedback(
+			options.feedbackInjection.scores,
+			options.feedbackInjection.annotations,
+			options.feedbackInjection.taskDomain,
+		);
+		if (feedback) {
+			sections.push(feedback);
+		}
 	}
 	return sections.join("\n\n");
 }

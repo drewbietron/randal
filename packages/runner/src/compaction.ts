@@ -15,6 +15,7 @@ export interface CompactionResult {
 export interface CompactionConfig {
 	enabled: boolean;
 	threshold: number;
+	/** Reserved for future LLM-based compaction. Currently unused — compaction is rule-based. */
 	model: string;
 	maxSummaryTokens: number;
 }
