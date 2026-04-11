@@ -83,21 +83,15 @@ describe("isAllowed", () => {
 
 	// Phone mode
 	test("phone mode normalizes both sides", () => {
-		expect(
-			isAllowed("+15551234567", ["+1 (555) 123-4567"], "phone"),
-		).toBe(true);
+		expect(isAllowed("+15551234567", ["+1 (555) 123-4567"], "phone")).toBe(true);
 	});
 
 	test("phone mode handles whatsapp prefix", () => {
-		expect(
-			isAllowed("whatsapp:+15551234567", ["+15551234567"], "phone"),
-		).toBe(true);
+		expect(isAllowed("whatsapp:+15551234567", ["+15551234567"], "phone")).toBe(true);
 	});
 
 	test("phone mode rejects non-matching", () => {
-		expect(
-			isAllowed("+15559999999", ["+15551111111"], "phone"),
-		).toBe(false);
+		expect(isAllowed("+15559999999", ["+15551111111"], "phone")).toBe(false);
 	});
 
 	// ID mode
@@ -119,22 +113,16 @@ describe("isAllowed", () => {
 
 	// Email mode
 	test("email mode is case-insensitive", () => {
-		expect(
-			isAllowed("User@Example.COM", ["user@example.com"], "email"),
-		).toBe(true);
+		expect(isAllowed("User@Example.COM", ["user@example.com"], "email")).toBe(true);
 	});
 
 	test("email mode rejects non-matching", () => {
-		expect(
-			isAllowed("other@example.com", ["user@example.com"], "email"),
-		).toBe(false);
+		expect(isAllowed("other@example.com", ["user@example.com"], "email")).toBe(false);
 	});
 
 	// Multiple entries
 	test("matches any entry in allowFrom list (phone)", () => {
-		expect(
-			isAllowed("+15559999999", ["+15551111111", "+15559999999"], "phone"),
-		).toBe(true);
+		expect(isAllowed("+15559999999", ["+15551111111", "+15559999999"], "phone")).toBe(true);
 	});
 
 	test("matches any entry in allowFrom list (id)", () => {
@@ -142,9 +130,7 @@ describe("isAllowed", () => {
 	});
 
 	test("rejects when no entry matches in multi-entry list", () => {
-		expect(
-			isAllowed("U_DAVE", ["U_ALICE", "U_BOB", "U_CAROL"], "id"),
-		).toBe(false);
+		expect(isAllowed("U_DAVE", ["U_ALICE", "U_BOB", "U_CAROL"], "id")).toBe(false);
 	});
 });
 
@@ -180,7 +166,7 @@ describe("splitMessage", () => {
 	});
 
 	test("no chunk exceeds maxLength", () => {
-		const text = "short\n" + "a".repeat(50) + "\nmedium line\n" + "b".repeat(100);
+		const text = `short\n${"a".repeat(50)}\nmedium line\n${"b".repeat(100)}`;
 		const result = splitMessage(text, 30);
 		for (const chunk of result) {
 			expect(chunk.length).toBeLessThanOrEqual(30);

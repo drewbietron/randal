@@ -15,7 +15,6 @@ import {
 import { listJobs, loadJob } from "../jobs.js";
 import { parseCommand } from "../router.js";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
-import { splitMessage } from "./utils.js";
 import {
 	type DiscordServerConfig,
 	SLASH_COMMANDS,
@@ -34,6 +33,7 @@ import {
 	buildThreadName,
 	parseButtonId,
 } from "./discord-components.js";
+import { splitMessage } from "./utils.js";
 
 /** Minimal sendable channel interface (avoids discord.js PartialGroupDMChannel issues) */
 interface SendableChannel {

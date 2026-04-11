@@ -41,13 +41,9 @@ export function isAllowed(
 
 	switch (mode) {
 		case "phone":
-			return allowFrom.some(
-				(entry) => normalizePhone(entry) === normalizePhone(sender),
-			);
+			return allowFrom.some((entry) => normalizePhone(entry) === normalizePhone(sender));
 		case "email":
-			return allowFrom.some(
-				(entry) => entry.toLowerCase() === sender.toLowerCase(),
-			);
+			return allowFrom.some((entry) => entry.toLowerCase() === sender.toLowerCase());
 		case "id":
 			return allowFrom.includes(sender);
 	}
