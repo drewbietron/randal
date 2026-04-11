@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { z } from "zod";
+import { type ZodError, z } from "zod";
 
 // ---- Sub-schemas ----
 
@@ -590,6 +590,32 @@ function deepFreeze<T extends object>(obj: T): T {
 	return obj;
 }
 
+// ---- Zod error formatting ----
+
+/**
+ * Format a ZodError into a human-readable multi-line string.
+ *
+ * Instead of dumping raw JSON issues, produces output like:
+ *   Config validation failed:
+ *     - runner.workdir: Required (expected string, got undefined)
+ *     - runner.defaultAgent: Invalid enum value (valid: opencode, mock)
+ */
+export function formatZodError(err: ZodError): string {
+	const lines = err.issues.map((issue) => {
+		const path = issue.path.length > 0 ? issue.path.join(".") : "(root)";
+		let msg = `  - ${path}: ${issue.message}`;
+		if (issue.code === "invalid_enum_value") {
+			msg += ` (valid: ${(issue as { options: unknown[] }).options.join(", ")})`;
+		}
+		if (issue.code === "invalid_type") {
+			const typed = issue as { expected: string; received: string };
+			msg += ` (expected ${typed.expected}, got ${typed.received})`;
+		}
+		return msg;
+	});
+	return `Config validation failed:\n${lines.join("\n")}`;
+}
+
 // ---- Config resolution paths ----
 
 const CONFIG_FILENAMES = ["randal.config.yaml", "randal.config.yml", "randal.yaml"];
@@ -621,8 +647,11 @@ function loadConfigFromFile(filePath: string): RandalConfig {
 	const raw = readFileSync(filePath, "utf-8");
 	const parsed = parseYaml(raw);
 	const substituted = substituteEnvVars(parsed);
-	const validated = configSchema.parse(substituted);
-	return deepFreeze(validated) as RandalConfig;
+	const result = configSchema.safeParse(substituted);
+	if (!result.success) {
+		throw new Error(formatZodError(result.error));
+	}
+	return deepFreeze(result.data) as RandalConfig;
 }
 
 /**
@@ -675,9 +704,11 @@ export function loadConfig(pathOrExplicit?: string): RandalConfig {
 export function parseConfig(yamlContent: string): RandalConfig {
 	const parsed = parseYaml(yamlContent);
 	const substituted = substituteEnvVars(parsed);
-	const validated = configSchema.parse(substituted);
-
-	return deepFreeze(validated) as RandalConfig;
+	const result = configSchema.safeParse(substituted);
+	if (!result.success) {
+		throw new Error(formatZodError(result.error));
+	}
+	return deepFreeze(result.data) as RandalConfig;
 }
 
 // ---- Config validation and merging ----
@@ -696,7 +727,11 @@ export interface ConfigValidation {
  */
 export function mergePartialConfig(partial: Record<string, unknown>): RandalConfig {
 	const substituted = substituteEnvVars(partial);
-	return deepFreeze(configSchema.parse(substituted)) as RandalConfig;
+	const result = configSchema.safeParse(substituted);
+	if (!result.success) {
+		throw new Error(formatZodError(result.error));
+	}
+	return deepFreeze(result.data) as RandalConfig;
 }
 
 /**

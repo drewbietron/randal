@@ -2,9 +2,23 @@ import { RANDAL_VERSION, loadConfig } from "@randal/core";
 import type { RandalConfig } from "@randal/core";
 
 export interface CliContext {
-	config: RandalConfig;
+	config: RandalConfig | null;
 	configPath?: string;
 	url?: string;
+}
+
+/**
+ * Guard that asserts config is loaded. Use at the top of commands that
+ * require a config file. Exits with a clear error if config is null.
+ */
+export function requireConfig(ctx: CliContext): RandalConfig {
+	if (!ctx.config) {
+		console.error(
+			"Error: this command requires a config file. Run `randal init` or pass --config.",
+		);
+		process.exit(1);
+	}
+	return ctx.config;
 }
 
 function printHelp(): void {
@@ -107,7 +121,7 @@ export async function run(argv: string[]): Promise<void> {
 	if (command === "audit") {
 		// Audit can run without config (it probes the host, not the config)
 		const { auditCommand } = await import("./commands/audit.js");
-		const ctx: CliContext = { config: null as unknown as RandalConfig, configPath, url };
+		const ctx: CliContext = { config: null, configPath, url };
 		await auditCommand(args.slice(1), ctx);
 		return;
 	}
@@ -115,13 +129,13 @@ export async function run(argv: string[]): Promise<void> {
 	if (command === "update") {
 		// Update doesn't need config
 		const { updateCommand } = await import("./commands/update.js");
-		const ctx: CliContext = { config: null as unknown as RandalConfig, configPath, url };
+		const ctx: CliContext = { config: null, configPath, url };
 		await updateCommand(args.slice(1), ctx);
 		return;
 	}
 
 	// Load config for commands that need it
-	let config: RandalConfig;
+	let config: RandalConfig | null;
 	try {
 		config = loadConfig(configPath);
 	} catch (err) {
@@ -147,7 +161,7 @@ export async function run(argv: string[]): Promise<void> {
 				"gateway",
 			].includes(command)
 		) {
-			config = null as unknown as RandalConfig;
+			config = null;
 		} else {
 			console.error(`Error: ${err instanceof Error ? err.message : "Failed to load config"}`);
 			process.exit(1);
