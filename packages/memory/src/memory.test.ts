@@ -3,7 +3,7 @@ import type { MemoryDoc } from "@randal/core";
 import { parseConfig } from "@randal/core";
 import type { StoreFactory } from "./cross-agent.js";
 import { MemoryManager } from "./memory.js";
-import type { MemoryStore } from "./stores/index.js";
+import type { IndexResult, MemoryStore } from "./stores/index.js";
 
 /**
  * In-memory mock store for testing MemoryManager without Meilisearch.
@@ -18,8 +18,9 @@ class MockStore implements MemoryStore {
 		return this.docs.filter((d) => d.content.toLowerCase().includes(lower)).slice(0, limit);
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<IndexResult> {
 		this.docs.push({ ...doc, id: `mock-${Date.now()}-${Math.random()}` });
+		return { status: "success" };
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {

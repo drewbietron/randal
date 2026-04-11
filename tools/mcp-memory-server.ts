@@ -1107,7 +1107,7 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 		const contentHash = createHash("sha256").update(content).digest("hex");
 		const scope = resolveStoreScope(category, explicitScope);
 
-		await store.index({
+		const result = await store.index({
 			type: "learning",
 			file: "",
 			content,
@@ -1124,12 +1124,33 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 			scope,
 		});
 
-		return {
-			stored: true,
-			contentHash,
-			scope,
-			message: "Memory stored successfully",
-		};
+		switch (result.status) {
+			case "success":
+				return { stored: true, contentHash, scope, message: "Memory stored successfully" };
+			case "duplicate":
+				return {
+					stored: true,
+					contentHash,
+					scope,
+					message: "Memory already exists (deduplicated)",
+					duplicate: true,
+				};
+			case "queued":
+				return {
+					stored: false,
+					queued: true,
+					contentHash,
+					scope,
+					message: `Write queued for retry: ${result.reason}`,
+				};
+			case "failed":
+				return {
+					stored: false,
+					contentHash,
+					scope,
+					message: `Store failed: ${result.error}`,
+				};
+		}
 	} catch (err) {
 		log("error", `memory_store failed: ${err instanceof Error ? err.message : String(err)}`);
 		return { stored: false, message: "Store operation failed" };

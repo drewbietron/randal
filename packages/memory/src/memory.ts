@@ -6,7 +6,7 @@ import {
 	publishToShared,
 	searchCrossAgent,
 } from "./cross-agent.js";
-import type { MemorySearchOptions, MemoryStore } from "./stores/index.js";
+import type { IndexResult, MemorySearchOptions, MemoryStore } from "./stores/index.js";
 import type { EmbedderConfig } from "./stores/meilisearch.js";
 import { MeilisearchStore } from "./stores/meilisearch.js";
 
@@ -60,7 +60,7 @@ export class MemoryManager {
 		return this.store.search(query, limit ?? this.config.memory.autoInject.maxResults, options);
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<IndexResult> {
 		// Assign default scope if not explicitly provided by the caller.
 		// preference/fact → global; everything else → undefined (defers to caller
 		// or store layer). The MCP server sets scope via resolveStoreScope().
@@ -68,10 +68,10 @@ export class MemoryManager {
 			? doc
 			: { ...doc, scope: GLOBAL_SCOPE_CATEGORIES.has(doc.category) ? "global" : undefined };
 
-		await this.store.index(scopedDoc);
+		const result = await this.store.index(scopedDoc);
 
-		// Publish to shared index if configured (R1.2)
-		if (this.config.memory.sharing.publishTo) {
+		// Only publish to shared index on success (R1.2)
+		if (result.status === "success" && this.config.memory.sharing.publishTo) {
 			try {
 				await publishToShared(scopedDoc, this.config, this.storeFactory);
 			} catch (err) {
@@ -80,6 +80,8 @@ export class MemoryManager {
 				});
 			}
 		}
+
+		return result;
 	}
 
 	async recent(limit?: number): Promise<MemoryDoc[]> {
