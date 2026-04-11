@@ -25,8 +25,7 @@ export const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
 
 export const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || "openai/text-embedding-3-small";
-export const EMBEDDING_URL =
-	process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
+export const EMBEDDING_URL = process.env.EMBEDDING_URL || "https://openrouter.ai/api/v1/embeddings";
 export const SEMANTIC_RATIO = Number.parseFloat(process.env.SEMANTIC_RATIO || "0.7");
 export const SUMMARY_MODEL = process.env.SUMMARY_MODEL || "anthropic/claude-haiku-3";
 

@@ -81,13 +81,7 @@ export interface DispatcherConfig {
  * Returns `null` for notifications (no response needed).
  */
 export function createDispatcher(config: DispatcherConfig) {
-	const {
-		serverName,
-		serverVersion,
-		protocolVersion = "2024-11-05",
-		tools,
-		handlers,
-	} = config;
+	const { serverName, serverVersion, protocolVersion = "2024-11-05", tools, handlers } = config;
 
 	return async function dispatch(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 		const { id, method, params } = req;

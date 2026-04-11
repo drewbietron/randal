@@ -4,7 +4,7 @@
  * Tests createDispatcher() and processLine() in isolation — no subprocess needed.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
 	type JsonRpcRequest,
 	type JsonRpcResponse,
@@ -32,7 +32,9 @@ const SAMPLE_TOOL = {
 	},
 };
 
-function makeDispatcher(handlerOverrides: Record<string, (p: Record<string, unknown>) => Promise<unknown>> = {}) {
+function makeDispatcher(
+	handlerOverrides: Record<string, (p: Record<string, unknown>) => Promise<unknown>> = {},
+) {
 	return createDispatcher({
 		serverName: "test-server",
 		serverVersion: "1.0.0",
@@ -44,7 +46,11 @@ function makeDispatcher(handlerOverrides: Record<string, (p: Record<string, unkn
 	});
 }
 
-function makeRequest(method: string, params?: Record<string, unknown>, id: string | number = 1): JsonRpcRequest {
+function makeRequest(
+	method: string,
+	params?: Record<string, unknown>,
+	id: string | number = 1,
+): JsonRpcRequest {
 	return { jsonrpc: "2.0", id, method, params };
 }
 
@@ -82,7 +88,7 @@ describe("createDispatcher", () => {
 			const resp = await dispatch(makeRequest("initialize"));
 
 			expect(resp).not.toBeNull();
-			const result = resp!.result as {
+			const result = resp?.result as {
 				protocolVersion: string;
 				serverInfo: { name: string; version: string };
 				capabilities: { tools: { listChanged: boolean } };
@@ -108,7 +114,7 @@ describe("createDispatcher", () => {
 			const resp = await dispatch(makeRequest("ping"));
 
 			expect(resp).not.toBeNull();
-			expect(resp!.result).toEqual({});
+			expect(resp?.result).toEqual({});
 		});
 	});
 
@@ -118,7 +124,7 @@ describe("createDispatcher", () => {
 			const resp = await dispatch(makeRequest("tools/list"));
 
 			expect(resp).not.toBeNull();
-			const result = resp!.result as { tools: Array<{ name: string }> };
+			const result = resp?.result as { tools: Array<{ name: string }> };
 			expect(result.tools).toHaveLength(1);
 			expect(result.tools[0].name).toBe("echo");
 		});
@@ -132,8 +138,8 @@ describe("createDispatcher", () => {
 			);
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeUndefined();
-			const result = resp!.result as { content: Array<{ type: string; text: string }> };
+			expect(resp?.error).toBeUndefined();
+			const result = resp?.result as { content: Array<{ type: string; text: string }> };
 			expect(result.content).toHaveLength(1);
 			expect(result.content[0].type).toBe("text");
 			const parsed = JSON.parse(result.content[0].text);
@@ -145,9 +151,9 @@ describe("createDispatcher", () => {
 			const resp = await dispatch(makeRequest("tools/call", {}));
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeDefined();
-			expect(resp!.error!.code).toBe(RPC_INVALID_PARAMS);
-			expect(resp!.error!.message).toContain("Missing tool name");
+			expect(resp?.error).toBeDefined();
+			expect(resp?.error?.code).toBe(RPC_INVALID_PARAMS);
+			expect(resp?.error?.message).toContain("Missing tool name");
 		});
 
 		test("returns RPC_METHOD_NOT_FOUND for unknown tool", async () => {
@@ -157,37 +163,37 @@ describe("createDispatcher", () => {
 			);
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeDefined();
-			expect(resp!.error!.code).toBe(RPC_METHOD_NOT_FOUND);
-			expect(resp!.error!.message).toContain("Unknown tool: nonexistent");
+			expect(resp?.error).toBeDefined();
+			expect(resp?.error?.code).toBe(RPC_METHOD_NOT_FOUND);
+			expect(resp?.error?.message).toContain("Unknown tool: nonexistent");
 		});
 
 		test("wraps ToolError in isError content response", async () => {
 			const dispatch = makeDispatcher({
-				echo: async () => { throw new ToolError("Bad input"); },
+				echo: async () => {
+					throw new ToolError("Bad input");
+				},
 			});
-			const resp = await dispatch(
-				makeRequest("tools/call", { name: "echo", arguments: {} }),
-			);
+			const resp = await dispatch(makeRequest("tools/call", { name: "echo", arguments: {} }));
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeUndefined();
-			const result = resp!.result as { content: Array<{ text: string }>; isError: boolean };
+			expect(resp?.error).toBeUndefined();
+			const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toBe("Error: Bad input");
 		});
 
 		test("wraps non-ToolError in isError with 'Internal error' prefix", async () => {
 			const dispatch = makeDispatcher({
-				echo: async () => { throw new Error("kaboom"); },
+				echo: async () => {
+					throw new Error("kaboom");
+				},
 			});
-			const resp = await dispatch(
-				makeRequest("tools/call", { name: "echo", arguments: {} }),
-			);
+			const resp = await dispatch(makeRequest("tools/call", { name: "echo", arguments: {} }));
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeUndefined();
-			const result = resp!.result as { content: Array<{ text: string }>; isError: boolean };
+			expect(resp?.error).toBeUndefined();
+			const result = resp?.result as { content: Array<{ text: string }>; isError: boolean };
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toBe("Internal error: kaboom");
 		});
@@ -196,11 +202,9 @@ describe("createDispatcher", () => {
 			const dispatch = makeDispatcher({
 				echo: async () => "plain string result",
 			});
-			const resp = await dispatch(
-				makeRequest("tools/call", { name: "echo", arguments: {} }),
-			);
+			const resp = await dispatch(makeRequest("tools/call", { name: "echo", arguments: {} }));
 
-			const result = resp!.result as { content: Array<{ text: string }> };
+			const result = resp?.result as { content: Array<{ text: string }> };
 			expect(result.content[0].text).toBe("plain string result");
 		});
 	});
@@ -211,9 +215,9 @@ describe("createDispatcher", () => {
 			const resp = await dispatch(makeRequest("foo/bar"));
 
 			expect(resp).not.toBeNull();
-			expect(resp!.error).toBeDefined();
-			expect(resp!.error!.code).toBe(RPC_METHOD_NOT_FOUND);
-			expect(resp!.error!.message).toContain("Unknown method: foo/bar");
+			expect(resp?.error).toBeDefined();
+			expect(resp?.error?.code).toBe(RPC_METHOD_NOT_FOUND);
+			expect(resp?.error?.message).toContain("Unknown method: foo/bar");
 		});
 	});
 });
@@ -235,40 +239,34 @@ describe("processLine", () => {
 
 		const resp = await captureProcessLine(req, dispatch);
 		expect(resp).not.toBeNull();
-		expect(resp!.id).toBe(42);
-		expect(resp!.error).toBeUndefined();
+		expect(resp?.id).toBe(42);
+		expect(resp?.error).toBeUndefined();
 	});
 
 	test("returns RPC_PARSE_ERROR for invalid JSON", async () => {
 		const resp = await captureProcessLine("{not valid json}", dispatch);
 
 		expect(resp).not.toBeNull();
-		expect(resp!.id).toBeNull();
-		expect(resp!.error).toBeDefined();
-		expect(resp!.error!.code).toBe(RPC_PARSE_ERROR);
-		expect(resp!.error!.message).toBe("Invalid JSON");
+		expect(resp?.id).toBeNull();
+		expect(resp?.error).toBeDefined();
+		expect(resp?.error?.code).toBe(RPC_PARSE_ERROR);
+		expect(resp?.error?.message).toBe("Invalid JSON");
 	});
 
 	test("returns RPC_INVALID_REQUEST for missing jsonrpc field", async () => {
-		const resp = await captureProcessLine(
-			JSON.stringify({ id: 1, method: "ping" }),
-			dispatch,
-		);
+		const resp = await captureProcessLine(JSON.stringify({ id: 1, method: "ping" }), dispatch);
 
 		expect(resp).not.toBeNull();
-		expect(resp!.error).toBeDefined();
-		expect(resp!.error!.code).toBe(RPC_INVALID_REQUEST);
+		expect(resp?.error).toBeDefined();
+		expect(resp?.error?.code).toBe(RPC_INVALID_REQUEST);
 	});
 
 	test("returns RPC_INVALID_REQUEST for missing method", async () => {
-		const resp = await captureProcessLine(
-			JSON.stringify({ jsonrpc: "2.0", id: 1 }),
-			dispatch,
-		);
+		const resp = await captureProcessLine(JSON.stringify({ jsonrpc: "2.0", id: 1 }), dispatch);
 
 		expect(resp).not.toBeNull();
-		expect(resp!.error).toBeDefined();
-		expect(resp!.error!.code).toBe(RPC_INVALID_REQUEST);
+		expect(resp?.error).toBeDefined();
+		expect(resp?.error?.code).toBe(RPC_INVALID_REQUEST);
 	});
 
 	test("does not send response for notifications (no id)", async () => {
@@ -302,9 +300,9 @@ describe("processLine", () => {
 		);
 
 		expect(resp).not.toBeNull();
-		expect(resp!.id).toBe(99);
-		expect(resp!.error).toBeDefined();
-		expect(resp!.error!.code).toBe(RPC_INTERNAL_ERROR);
-		expect(resp!.error!.message).toBe("dispatch exploded");
+		expect(resp?.id).toBe(99);
+		expect(resp?.error).toBeDefined();
+		expect(resp?.error?.code).toBe(RPC_INTERNAL_ERROR);
+		expect(resp?.error?.message).toBe("dispatch exploded");
 	});
 });

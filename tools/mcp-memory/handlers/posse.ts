@@ -5,11 +5,7 @@
  * and polling for completion.
  */
 
-import {
-	queryPosseMembers,
-	registryDocToMeshInstance,
-	searchCrossAgent,
-} from "@randal/memory";
+import { queryPosseMembers, registryDocToMeshInstance, searchCrossAgent } from "@randal/memory";
 import type { RegistryClient } from "@randal/memory";
 import { checkHealth, routeTask } from "@randal/mesh";
 import type { RoutingContext } from "@randal/mesh";
@@ -17,12 +13,7 @@ import { MeiliSearch } from "meilisearch";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
 import { buildPosseConfigStub, ensurePosse } from "../init.js";
-import {
-	MEILI_MASTER_KEY,
-	MEILI_URL,
-	RANDAL_PEER_AUTH_TOKEN,
-	RANDAL_SELF_NAME,
-} from "../types.js";
+import { MEILI_MASTER_KEY, MEILI_URL, RANDAL_PEER_AUTH_TOKEN, RANDAL_SELF_NAME } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Constants

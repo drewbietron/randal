@@ -6,15 +6,9 @@
  * retryInit() for background backoff and ensure*() guards for lazy init.
  */
 
-import {
-	MeilisearchAnnotationStore,
-} from "@randal/analytics";
+import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { RandalConfig } from "@randal/core";
-import {
-	EmbeddingService,
-	MeilisearchStore,
-	MessageManager,
-} from "@randal/memory";
+import { EmbeddingService, MeilisearchStore, MessageManager } from "@randal/memory";
 import type { SummaryGeneratorOptions } from "@randal/memory";
 import { MeiliSearch } from "meilisearch";
 import { log } from "../lib/mcp-transport.js";
