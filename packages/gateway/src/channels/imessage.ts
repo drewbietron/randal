@@ -318,4 +318,13 @@ export class IMessageChannel implements ChannelAdapter {
 		}
 		this.logger.info("iMessage channel stopped");
 	}
+
+	/**
+	 * Send an iMessage to a chat GUID.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 * Target is a BlueBubbles chat GUID (e.g., "iMessage;-;+1234567890").
+	 */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
+	}
 }
