@@ -88,7 +88,7 @@ const emailChannelSchema = z.object({
 
 const whatsappChannelSchema = z.object({
 	type: z.literal("whatsapp"),
-	provider: z.enum(["twilio", "baileys"]).default("twilio"),
+	provider: z.enum(["twilio"]).default("twilio"),
 	accountSid: z.string().optional(),
 	authToken: z.string().optional(),
 	phoneNumber: z.string().optional(),
