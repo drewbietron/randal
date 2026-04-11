@@ -1,6 +1,7 @@
 services:
   randal:
     build: .
+    restart: unless-stopped
     ports:
       - "7600:7600"
     volumes:
