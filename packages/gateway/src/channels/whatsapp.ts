@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { Hono } from "hono";
@@ -35,6 +36,56 @@ function normalizePhone(phone: string): string {
 	return cleaned.replace(/\D/g, "");
 }
 
+/**
+ * Validate a Twilio webhook request signature using HMAC-SHA1.
+ *
+ * Algorithm (per Twilio docs):
+ * 1. Take the full URL of the request
+ * 2. Sort POST parameters alphabetically by key
+ * 3. Concatenate each key-value pair to the URL (no separator)
+ * 4. HMAC-SHA1 the result with the auth token, then base64 encode
+ * 5. Compare to the X-Twilio-Signature header value
+ */
+function validateTwilioSignature(
+	authToken: string,
+	url: string,
+	params: Record<string, string>,
+	signature: string,
+): boolean {
+	// Build the data string: URL + sorted key-value pairs
+	const sortedKeys = Object.keys(params).sort();
+	let data = url;
+	for (const key of sortedKeys) {
+		data += key + params[key];
+	}
+
+	const computed = createHmac("sha1", authToken).update(data).digest("base64");
+
+	// Timing-safe comparison
+	try {
+		const sigBuf = Buffer.from(signature, "utf8");
+		const computedBuf = Buffer.from(computed, "utf8");
+		if (sigBuf.length !== computedBuf.length) return false;
+		return timingSafeEqual(sigBuf, computedBuf);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Derive the full webhook URL from the request for Twilio signature validation.
+ * Prefers the configured webhookUrl. Falls back to request headers.
+ */
+function deriveWebhookUrl(configuredUrl: string | undefined, rawReq: Request): string {
+	if (configuredUrl) return configuredUrl;
+
+	// Derive from request headers
+	const proto = rawReq.headers.get("X-Forwarded-Proto") || "https";
+	const host = rawReq.headers.get("Host") || "localhost";
+	const url = new URL(rawReq.url, `${proto}://${host}`);
+	return `${proto}://${host}${url.pathname}`;
+}
+
 export class WhatsAppChannel implements ChannelAdapter {
 	readonly name = "whatsapp";
 	private unsubscribe?: () => void;
@@ -70,9 +121,28 @@ export class WhatsAppChannel implements ChannelAdapter {
 						this.logger.warn("Missing Twilio signature");
 						return c.text("Unauthorized", 401);
 					}
-					// Note: Full signature validation would require the request URL
-					// and the twilio SDK. For now, we check the header exists.
-					// Production deployments should validate with twilio.validateRequest().
+
+					const webhookUrl = deriveWebhookUrl(this.channelConfig.webhookUrl, c.req.raw);
+
+					// Extract POST params as Record<string, string> for signature validation
+					const params: Record<string, string> = {};
+					for (const [key, value] of Object.entries(body)) {
+						if (typeof value === "string") {
+							params[key] = value;
+						}
+					}
+
+					if (
+						!validateTwilioSignature(
+							this.channelConfig.authToken,
+							webhookUrl,
+							params,
+							twilioSignature,
+						)
+					) {
+						this.logger.warn("Invalid Twilio signature");
+						return c.text("Forbidden", 403);
+					}
 				}
 
 				// Process in background — return 200 immediately to Twilio

@@ -61,6 +61,7 @@
       "name": "@randal/gateway",
       "version": "0.1.0",
       "dependencies": {
+        "@randal/analytics": "workspace:*",
         "@randal/core": "workspace:*",
         "@randal/memory": "workspace:*",
         "@randal/runner": "workspace:*",
@@ -96,6 +97,7 @@
       "name": "@randal/runner",
       "version": "0.1.0",
       "dependencies": {
+        "@randal/analytics": "workspace:*",
         "@randal/core": "workspace:*",
         "@randal/credentials": "workspace:*",
         "@randal/memory": "workspace:*",

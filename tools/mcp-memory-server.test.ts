@@ -177,7 +177,7 @@ describe("delegate_task", () => {
 	test("returns error when task parameter is missing", async () => {
 		const resp = await callTool(proc, "delegate_task", {}, 2);
 		expect(resp.result?.isError).toBe(true);
-		expect(resp.result?.content?.[0]?.text).toContain("Missing required parameter: task");
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
 	});
 });
 
@@ -234,7 +234,7 @@ describe("posse_memory_search", () => {
 	test("returns error when query parameter is missing", async () => {
 		const resp = await callTool(proc, "posse_memory_search", {}, 2);
 		expect(resp.result?.isError).toBe(true);
-		expect(resp.result?.content?.[0]?.text).toContain("Missing required parameter: query");
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
 	});
 });
 
@@ -410,6 +410,68 @@ describe("channel_send — interactive mode", () => {
 	test("validates required parameters", async () => {
 		const resp = await callTool(proc, "channel_send", { channel: "discord" }, 2);
 		expect(resp.result?.isError).toBe(true);
-		expect(resp.result?.content?.[0]?.text).toContain("Missing required parameter: target");
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Input validation — Zod param validation across tool handlers
+// ---------------------------------------------------------------------------
+
+describe("param validation — memory tools", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			RANDAL_POSSE_NAME: "",
+			RANDAL_SELF_NAME: "",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("memory_search with wrong type (query: 123) returns ToolError", async () => {
+		const resp = await callTool(proc, "memory_search", { query: 123 });
+		expect(resp.result?.isError).toBe(true);
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
+		expect(resp.result?.content?.[0]?.text).toContain("query");
+	});
+
+	test("memory_store with missing content returns ToolError", async () => {
+		const resp = await callTool(proc, "memory_store", { category: "fact" }, 2);
+		expect(resp.result?.isError).toBe(true);
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
+		expect(resp.result?.content?.[0]?.text).toContain("content");
+	});
+
+	test("annotate with invalid verdict returns ToolError", async () => {
+		const resp = await callTool(proc, "annotate", { jobId: "job-1", verdict: "wrong" }, 3);
+		expect(resp.result?.isError).toBe(true);
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
+		expect(resp.result?.content?.[0]?.text).toContain("verdict");
+	});
+
+	test("chat_log with valid params succeeds", async () => {
+		const resp = await callTool(proc, "chat_log", { content: "test message" }, 4);
+		// Should not be an error — it may fail to store (no Meili) but validation should pass
+		if (resp.result?.isError) {
+			// If there's an error, it should NOT be a validation error
+			const text = resp.result?.content?.[0]?.text ?? "";
+			expect(text).not.toContain("Invalid parameters");
+		}
+	});
+
+	test("emit_event with message > 2000 chars returns ToolError", async () => {
+		const longMessage = "x".repeat(2001);
+		const resp = await callTool(
+			proc,
+			"emit_event",
+			{ type: "notification", message: longMessage },
+			5,
+		);
+		expect(resp.result?.isError).toBe(true);
+		expect(resp.result?.content?.[0]?.text).toContain("Invalid parameters");
 	});
 });

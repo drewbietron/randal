@@ -92,6 +92,7 @@ const whatsappChannelSchema = z.object({
 	accountSid: z.string().optional(),
 	authToken: z.string().optional(),
 	phoneNumber: z.string().optional(),
+	webhookUrl: z.string().optional(),
 	allowFrom: z.array(z.string()).optional(),
 });
 

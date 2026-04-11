@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { createHmac } from "node:crypto";
 import type { ChannelDeps } from "./channel.js";
 import { WhatsAppChannel } from "./whatsapp.js";
 
@@ -112,5 +113,152 @@ describe("WhatsAppChannel", () => {
 		).handleIncoming(payload);
 
 		expect(deps.runner.submit).not.toHaveBeenCalled();
+	});
+});
+
+// ── Twilio webhook signature validation tests ──────────────
+
+/**
+ * Compute a valid Twilio signature for testing.
+ * Algorithm: HMAC-SHA1(authToken, url + sorted key-value pairs) → base64
+ */
+function computeTwilioSignature(
+	authToken: string,
+	url: string,
+	params: Record<string, string>,
+): string {
+	const sortedKeys = Object.keys(params).sort();
+	let data = url;
+	for (const key of sortedKeys) {
+		data += key + params[key];
+	}
+	return createHmac("sha1", authToken).update(data).digest("base64");
+}
+
+describe("WhatsApp webhook signature validation", () => {
+	const AUTH_TOKEN = "test-auth-token-32chars-abcdef12";
+	// The webhookUrl for signature computation is the full external URL,
+	// but the Hono sub-router only handles "/" (it's mounted at /webhooks/whatsapp externally)
+	const WEBHOOK_URL = "https://example.com/webhooks/whatsapp";
+	const ROUTER_URL = "https://example.com/";
+
+	function makeFormBody(params: Record<string, string>): string {
+		return Object.entries(params)
+			.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+			.join("&");
+	}
+
+	test("valid Twilio signature returns TwiML response", async () => {
+		const deps = makeMockDeps();
+		const config = makeWhatsAppConfig({ authToken: AUTH_TOKEN, webhookUrl: WEBHOOK_URL });
+		const channel = new WhatsAppChannel(config as never, deps);
+		const router = channel.getWebhookRouter();
+
+		const params = {
+			From: "whatsapp:+15559876543",
+			To: "whatsapp:+15551234567",
+			Body: "hello world",
+			MessageSid: "SM_TEST_123",
+		};
+
+		const signature = computeTwilioSignature(AUTH_TOKEN, WEBHOOK_URL, params);
+
+		const req = new Request(ROUTER_URL, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				"X-Twilio-Signature": signature,
+				Host: "example.com",
+			},
+			body: makeFormBody(params),
+		});
+
+		const res = await router.fetch(req);
+		expect(res.status).toBe(200);
+		const text = await res.text();
+		expect(text).toContain("<Response>");
+	});
+
+	test("missing X-Twilio-Signature header returns 401", async () => {
+		const deps = makeMockDeps();
+		const config = makeWhatsAppConfig({ authToken: AUTH_TOKEN, webhookUrl: WEBHOOK_URL });
+		const channel = new WhatsAppChannel(config as never, deps);
+		const router = channel.getWebhookRouter();
+
+		const params = {
+			From: "whatsapp:+15559876543",
+			To: "whatsapp:+15551234567",
+			Body: "hello",
+			MessageSid: "SM_TEST_456",
+		};
+
+		const req = new Request(ROUTER_URL, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				Host: "example.com",
+				// No X-Twilio-Signature header
+			},
+			body: makeFormBody(params),
+		});
+
+		const res = await router.fetch(req);
+		expect(res.status).toBe(401);
+	});
+
+	test("invalid/forged X-Twilio-Signature returns 403", async () => {
+		const deps = makeMockDeps();
+		const config = makeWhatsAppConfig({ authToken: AUTH_TOKEN, webhookUrl: WEBHOOK_URL });
+		const channel = new WhatsAppChannel(config as never, deps);
+		const router = channel.getWebhookRouter();
+
+		const params = {
+			From: "whatsapp:+15559876543",
+			To: "whatsapp:+15551234567",
+			Body: "hello",
+			MessageSid: "SM_TEST_789",
+		};
+
+		const req = new Request(ROUTER_URL, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				"X-Twilio-Signature": "forged-invalid-signature-base64==",
+				Host: "example.com",
+			},
+			body: makeFormBody(params),
+		});
+
+		const res = await router.fetch(req);
+		expect(res.status).toBe(403);
+	});
+
+	test("no authToken configured — webhook processes without signature check", async () => {
+		const deps = makeMockDeps();
+		// No authToken — signature validation should be skipped
+		const config = makeWhatsAppConfig({ authToken: undefined });
+		const channel = new WhatsAppChannel(config as never, deps);
+		const router = channel.getWebhookRouter();
+
+		const params = {
+			From: "whatsapp:+15559876543",
+			To: "whatsapp:+15551234567",
+			Body: "hello no auth",
+			MessageSid: "SM_TEST_NOAUTH",
+		};
+
+		const req = new Request("https://example.com/", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/x-www-form-urlencoded",
+				// No signature header needed
+			},
+			body: makeFormBody(params),
+		});
+
+		const res = await router.fetch(req);
+		expect(res.status).toBe(200);
+		const text = await res.text();
+		expect(text).toContain("<Response>");
 	});
 });
