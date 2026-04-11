@@ -284,7 +284,7 @@ export const configSchema = z.object({
 				enabled: z.boolean().default(false),
 				threshold: z.number().min(0).max(1).default(0.8),
 				/** Reserved for future LLM-based compaction. Not used by the current rule-based implementation. */
-			model: z.string().default("anthropic/claude-haiku-3"),
+				model: z.string().default("anthropic/claude-haiku-3"),
 				maxSummaryTokens: z.number().default(2000),
 			})
 			.default({}),

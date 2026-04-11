@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { getPrimaryDomain } from "@randal/analytics";
 import type {
 	Annotation,
 	AnnotationVerdict,
@@ -12,12 +13,11 @@ import type {
 	SkillDeployment,
 } from "@randal/core";
 import { type RandalConfig, createLogger } from "@randal/core";
-import { getPrimaryDomain } from "@randal/analytics";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
+import { compactContext, shouldCompact } from "./compaction.js";
 import { readAndClearContext } from "./context.js";
 import { syncJobToLoopState } from "./loop-state.js";
-import { compactContext, shouldCompact } from "./compaction.js";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
@@ -250,15 +250,9 @@ export class Runner {
 
 		try {
 			const verdict: AnnotationVerdict =
-				job.status === "complete"
-					? "pass"
-					: job.status === "failed"
-						? "fail"
-						: "partial";
+				job.status === "complete" ? "pass" : job.status === "failed" ? "fail" : "partial";
 
-			const totalFiles = new Set(
-				job.iterations.history.flatMap((iter) => iter.filesChanged),
-			);
+			const totalFiles = new Set(job.iterations.history.flatMap((iter) => iter.filesChanged));
 
 			await this.addAnnotation({
 				jobId: job.id,
@@ -493,10 +487,7 @@ export class Runner {
 			if (this.config.analytics.feedbackInjection && this.analyticsData) {
 				try {
 					const { scores, annotations } = await this.analyticsData();
-					const domain = getPrimaryDomain(
-						job.prompt,
-						this.config.analytics.domainKeywords,
-					);
+					const domain = getPrimaryDomain(job.prompt, this.config.analytics.domainKeywords);
 					feedbackInjection = { enabled: true, scores, annotations, taskDomain: domain };
 				} catch (err) {
 					this.logger.warn("Failed to load analytics for feedback injection", {

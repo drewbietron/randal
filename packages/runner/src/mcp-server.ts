@@ -1,6 +1,5 @@
 import { getPrimaryDomain } from "@randal/analytics";
 import { type RandalConfig, createLogger } from "@randal/core";
-import { type BrowserConfig, BrowserTool } from "./tools/browser.js";
 import type {
 	Annotation,
 	AnnotationVerdict,
@@ -10,6 +9,7 @@ import type {
 	MemoryDoc,
 	SkillDoc,
 } from "@randal/core";
+import { type BrowserConfig, BrowserTool } from "./tools/browser.js";
 
 const logger = createLogger({ context: { component: "mcp-server" } });
 
@@ -540,12 +540,14 @@ export class McpServer {
 
 		this.registerTool({
 			name: "browser_screenshot",
-			description:
-				"Take a screenshot of the current page. Returns base64-encoded image data.",
+			description: "Take a screenshot of the current page. Returns base64-encoded image data.",
 			parameters: {
 				format: { type: "string", description: 'Image format: "png" or "jpeg" (default: "png")' },
 				quality: { type: "number", description: "JPEG quality (1-100, only for jpeg format)" },
-				fullPage: { type: "boolean", description: "Capture the full scrollable page (default: false)" },
+				fullPage: {
+					type: "boolean",
+					description: "Capture the full scrollable page (default: false)",
+				},
 			},
 			handler: async (params) => {
 				const result = await browser.screenshot({
@@ -561,7 +563,11 @@ export class McpServer {
 			name: "browser_click",
 			description: "Click an element matching the given CSS selector.",
 			parameters: {
-				selector: { type: "string", description: "CSS selector for the element to click", required: true },
+				selector: {
+					type: "string",
+					description: "CSS selector for the element to click",
+					required: true,
+				},
 			},
 			handler: async (params) => {
 				await browser.click(params.selector as string);
@@ -573,7 +579,11 @@ export class McpServer {
 			name: "browser_type",
 			description: "Type text into an element matching the given CSS selector.",
 			parameters: {
-				selector: { type: "string", description: "CSS selector for the input element", required: true },
+				selector: {
+					type: "string",
+					description: "CSS selector for the input element",
+					required: true,
+				},
 				text: { type: "string", description: "Text to type", required: true },
 			},
 			handler: async (params) => {
@@ -587,7 +597,10 @@ export class McpServer {
 			description:
 				"Get text content from the page. Returns textContent of the selector, or the full page body text if no selector.",
 			parameters: {
-				selector: { type: "string", description: "CSS selector (optional — omit for full page text)" },
+				selector: {
+					type: "string",
+					description: "CSS selector (optional — omit for full page text)",
+				},
 			},
 			handler: async (params) => {
 				const content = await browser.getContent(params.selector as string | undefined);

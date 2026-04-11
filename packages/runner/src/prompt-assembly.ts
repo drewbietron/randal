@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { glob } from "node:fs/promises";
 import { resolve } from "node:path";
+import { generateFeedback } from "@randal/analytics";
 import type {
 	Annotation,
 	DelegationResult,
@@ -10,7 +11,6 @@ import type {
 	ReliabilityScore,
 } from "@randal/core";
 import { createLogger, resolvePromptValue } from "@randal/core";
-import { generateFeedback } from "@randal/analytics";
 
 const logger = createLogger({ context: { component: "prompt-assembly" } });
 
