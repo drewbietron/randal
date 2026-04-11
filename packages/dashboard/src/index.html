@@ -169,6 +169,18 @@
 
 		/* Empty State */
 		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
+
+		/* Toast Notifications */
+		.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.25s ease-out; }
+		.toast.error { border-left: 3px solid var(--danger); }
+		.toast.success { border-left: 3px solid var(--success); }
+		.toast.info { border-left: 3px solid var(--accent); }
+		.toast .toast-msg { flex: 1; }
+		.toast .toast-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1; }
+		.toast .toast-close:hover { color: var(--text); }
+		.toast.fade-out { animation: toast-out 0.3s ease-in forwards; }
+		@keyframes toast-in { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+		@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
 	</style>
 </head>
 <body>
@@ -363,6 +375,8 @@
 		</div>
 	</div>
 
+	<div id="toast-container" aria-live="polite" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:400px;pointer-events:none;"></div>
+
 	<script>
 		// Auth
 		var API_TOKEN = localStorage.getItem('randal_token') || prompt('Enter API token:') || '';
@@ -375,6 +389,39 @@
 			var div = document.createElement('div');
 			div.appendChild(document.createTextNode(String(str)));
 			return div.innerHTML;
+		}
+
+		// Toast notification system
+		var _toastErrorTimestamps = {};
+		function showToast(message, type, duration) {
+			type = type || 'info';
+			duration = duration || (type === 'error' ? 8000 : 5000);
+
+			// Deduplicate: suppress repeat error toasts for the same message within 30s
+			if (type === 'error') {
+				var now = Date.now();
+				if (_toastErrorTimestamps[message] && now - _toastErrorTimestamps[message] < 30000) return;
+				_toastErrorTimestamps[message] = now;
+			}
+
+			var container = document.getElementById('toast-container');
+			var toast = document.createElement('div');
+			toast.className = 'toast ' + type;
+			toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+			toast.innerHTML = '<span class="toast-msg">' + escapeHtml(message) + '</span>' +
+				'<button class="toast-close" aria-label="Dismiss notification">&times;</button>';
+
+			var closeBtn = toast.querySelector('.toast-close');
+			var timer;
+			function dismiss() {
+				clearTimeout(timer);
+				toast.classList.add('fade-out');
+				toast.addEventListener('animationend', function() { toast.remove(); });
+			}
+			closeBtn.addEventListener('click', dismiss);
+			timer = setTimeout(dismiss, duration);
+
+			container.appendChild(toast);
 		}
 
 		var currentJobId = null;
@@ -416,7 +463,7 @@
 				statusEl.textContent = data.status;
 				statusEl.className = 'instance-status ' + data.status;
 				checkPosse(data);
-			} catch(e) {}
+			} catch(e) { showToast('Failed to load instance info', 'error'); }
 		}
 
 		// Submit job
@@ -426,8 +473,9 @@
 			try {
 				await fetch('/job', { method: 'POST', headers: headers, body: JSON.stringify({ prompt: prompt }) });
 				document.getElementById('prompt-input').value = '';
+				showToast('Job submitted', 'success');
 				refreshJobs();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to submit job', 'error'); }
 		}
 
 		// Refresh active jobs
@@ -458,7 +506,7 @@
 						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
 				}).join('');
 				loadInstance();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to refresh jobs', 'error'); }
 		}
 
 		// Load job detail
@@ -510,7 +558,7 @@
 							'<span class="iter-summary">' + escapeHtml(h.summary || 'No summary') + '</span></div>';
 					}).join('') : '<div class="empty">No iterations yet</div>';
 				document.getElementById('job-timeline').innerHTML = timelineHtml;
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load job details', 'error'); }
 		}
 
 		// Inject context
@@ -523,7 +571,8 @@
 					method: 'POST', headers: headers, body: JSON.stringify({ text: text })
 				});
 				document.getElementById('context-text').value = '';
-			} catch(e) { console.error(e); }
+				showToast('Context injected', 'success');
+			} catch(e) { showToast('Failed to inject context', 'error'); }
 		}
 
 		// Stop job
@@ -532,9 +581,10 @@
 			if (!confirm('Stop this job?')) return;
 			try {
 				await fetch('/job/' + currentJobId, { method: 'DELETE', headers: headers });
+				showToast('Job stopped', 'success');
 				showPage('home');
 				refreshJobs();
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to stop job', 'error'); }
 		}
 
 		// History
@@ -558,7 +608,7 @@
 						'<td>' + escapeHtml(j.prompt.slice(0, 50)) + '</td>' +
 						'<td>' + actions + '</td></tr>';
 				}).join('');
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load history', 'error'); }
 		}
 
 		// Annotate form
@@ -593,7 +643,7 @@
 					var err = await res.json();
 					alert('Annotation failed: ' + (err.error || 'Unknown error'));
 				}
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to submit annotation', 'error'); }
 		}
 
 		// Memory
@@ -614,7 +664,7 @@
 					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' +
 						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
 				}).join('');
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Memory search failed', 'error'); }
 		}
 
 		// Settings
@@ -664,7 +714,7 @@
 				}
 
 				document.getElementById('settings-content').innerHTML = html;
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load settings', 'error'); }
 		}
 
 		// SSE (EventSource can't send Authorization headers, so pass token as query param)
@@ -881,7 +931,7 @@
 						'<span>v' + escapeHtml(a.version) + '</span></div>' +
 						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
 				}).join('');
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load posse agents', 'error'); }
 		}
 
 		async function searchPosseMemory() {
@@ -901,7 +951,7 @@
 					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' + sourceTag +
 						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
 				}).join('');
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Posse memory search failed', 'error'); }
 		}
 
 		async function loadPosseRecent() {
@@ -922,7 +972,7 @@
 						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
 						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
 				}).join('');
-			} catch(e) { console.error(e); }
+			} catch(e) { showToast('Failed to load posse activity', 'error'); }
 		}
 
 		// Init
