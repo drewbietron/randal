@@ -2,13 +2,21 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { Hono } from "hono";
-import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import {
+	type ChannelAdapter,
+	type ChannelDeps,
+	formatEvent,
+	handleCommand,
+	splitMessage,
+} from "./channel.js";
 
 // Extract whatsapp channel config type from the discriminated union
 type WhatsAppChannelConfig = Extract<
 	RandalConfig["gateway"]["channels"][number],
 	{ type: "whatsapp" }
 >;
+
+const WHATSAPP_MAX_LENGTH = 1600;
 
 // ── Twilio WhatsApp webhook types ───────────────────────────
 
@@ -231,7 +239,7 @@ export class WhatsAppChannel implements ChannelAdapter {
 	}
 
 	/**
-	 * Send a message via Twilio WhatsApp API.
+	 * Send a message via Twilio WhatsApp API, splitting long messages.
 	 */
 	private async sendMessage(to: string, text: string): Promise<void> {
 		const accountSid = this.channelConfig.accountSid;
@@ -246,35 +254,38 @@ export class WhatsAppChannel implements ChannelAdapter {
 		const from = fromNumber.startsWith("whatsapp:") ? fromNumber : `whatsapp:${fromNumber}`;
 		const toFormatted = to.startsWith("whatsapp:") ? to : `whatsapp:${to}`;
 
-		try {
-			const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-			const body = new URLSearchParams({
-				From: from,
-				To: toFormatted,
-				Body: text,
-			});
+		const chunks = splitMessage(text, WHATSAPP_MAX_LENGTH);
+		for (const chunk of chunks) {
+			try {
+				const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+				const body = new URLSearchParams({
+					From: from,
+					To: toFormatted,
+					Body: chunk,
+				});
 
-			const resp = await fetch(url, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/x-www-form-urlencoded",
-					Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
-				},
-				body: body.toString(),
-			});
+				const resp = await fetch(url, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/x-www-form-urlencoded",
+						Authorization: `Basic ${btoa(`${accountSid}:${authToken}`)}`,
+					},
+					body: body.toString(),
+				});
 
-			if (!resp.ok) {
-				const respBody = await resp.text();
-				this.logger.warn("Twilio API error", {
-					status: resp.status,
-					body: respBody.slice(0, 200),
+				if (!resp.ok) {
+					const respBody = await resp.text();
+					this.logger.warn("Twilio API error", {
+						status: resp.status,
+						body: respBody.slice(0, 200),
+					});
+				}
+			} catch (err) {
+				this.logger.warn("Failed to send WhatsApp message", {
+					error: err instanceof Error ? err.message : String(err),
+					to,
 				});
 			}
-		} catch (err) {
-			this.logger.warn("Failed to send WhatsApp message", {
-				error: err instanceof Error ? err.message : String(err),
-				to,
-			});
 		}
 	}
 
@@ -302,5 +313,14 @@ export class WhatsAppChannel implements ChannelAdapter {
 			this.unsubscribe = undefined;
 		}
 		this.logger.info("WhatsApp channel stopped");
+	}
+
+	/**
+	 * Send a message to a WhatsApp number via Twilio.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 * Target should be a phone number (with or without "whatsapp:" prefix).
+	 */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
 	}
 }

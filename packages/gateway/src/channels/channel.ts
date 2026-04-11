@@ -261,3 +261,36 @@ export function formatEvent(event: RunnerEvent): string {
 			return `Event: ${event.type} (job ${event.jobId})`;
 	}
 }
+
+// ── Message splitting utility ───────────────────────────────
+
+/**
+ * Split a message into chunks that fit within the given max length.
+ * Splits on newline boundaries, falling back to hard splits for long lines.
+ * Shared by channel adapters with message length limits.
+ */
+export function splitMessage(text: string, maxLength: number): string[] {
+	if (text.length <= maxLength) return [text];
+
+	const chunks: string[] = [];
+	let current = "";
+
+	for (const line of text.split("\n")) {
+		if (current.length + line.length + 1 > maxLength) {
+			if (current) {
+				chunks.push(current);
+				current = "";
+			}
+			if (line.length > maxLength) {
+				for (let i = 0; i < line.length; i += maxLength) {
+					chunks.push(line.slice(i, i + maxLength));
+				}
+				continue;
+			}
+		}
+		current = current ? `${current}\n${line}` : line;
+	}
+	if (current) chunks.push(current);
+
+	return chunks;
+}

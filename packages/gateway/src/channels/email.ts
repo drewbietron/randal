@@ -385,4 +385,13 @@ export class EmailChannel implements ChannelAdapter {
 		}
 		this.logger.info("Email channel stopped");
 	}
+
+	/**
+	 * Send an email to a recipient address.
+	 * Implements ChannelAdapter.send() for the internal channel API.
+	 * Target is the recipient email address.
+	 */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendReplyEmail(target, "Message from Randal", message);
+	}
 }

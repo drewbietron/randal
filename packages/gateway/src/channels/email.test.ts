@@ -54,6 +54,13 @@ describe("EmailChannel", () => {
 		expect(channel.name).toBe("email");
 	});
 
+	test("has send() method", () => {
+		const config = makeEmailConfig();
+		const deps = makeMockDeps();
+		const channel = new EmailChannel(config as never, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
 	test("start/stop lifecycle", async () => {
 		const unsubscribe = mock(() => {});
 		const subscribe = mock(() => unsubscribe);

@@ -120,6 +120,13 @@ describe("TelegramChannel", () => {
 		expect(replySpy).toHaveBeenCalled();
 	});
 
+	test("has send() method", () => {
+		const config = makeTelegramConfig();
+		const deps = makeMockDeps();
+		const channel = new TelegramChannel(config as never, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
 	test("message commands are routed through handleCommand", async () => {
 		const submitMock = mock(() => ({ jobId: "job-42", done: Promise.resolve() }));
 		const deps = makeMockDeps({

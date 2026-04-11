@@ -61,6 +61,13 @@ describe("IMessageChannel", () => {
 		expect(channel.name).toBe("imessage");
 	});
 
+	test("has send() method", () => {
+		const config = makeChannelConfig();
+		const deps = makeDeps();
+		const channel = new IMessageChannel(config, deps);
+		expect(typeof channel.send).toBe("function");
+	});
+
 	test("getWebhookRouter returns a Hono app", () => {
 		const config = makeChannelConfig();
 		const deps = makeDeps();

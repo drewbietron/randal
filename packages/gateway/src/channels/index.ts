@@ -11,4 +11,7 @@ export { SignalChannel } from "./signal.js";
 export { VoiceChannel } from "./voice.js";
 
 export type { ChannelAdapter, ChannelDeps } from "./channel.js";
-export { handleCommand, formatEvent } from "./channel.js";
+export { handleCommand, formatEvent, splitMessage } from "./channel.js";
+
+export { createChannel, DependencyError } from "./factory.js";
+export type { ChannelCreateResult } from "./factory.js";
