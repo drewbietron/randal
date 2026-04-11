@@ -1,5 +1,6 @@
 import { getPrimaryDomain } from "@randal/analytics";
 import { type RandalConfig, createLogger } from "@randal/core";
+import { type BrowserConfig, BrowserTool } from "./tools/browser.js";
 import type {
 	Annotation,
 	AnnotationVerdict,
@@ -69,6 +70,7 @@ export interface McpServiceHooks {
 	getJob?: (jobId: string) => Job | undefined;
 	searchSkills?: (query: string, limit: number) => Promise<SkillDoc[]>;
 	addAnnotation?: (annotation: Omit<Annotation, "id" | "timestamp">) => Promise<Annotation>;
+	browserConfig?: BrowserConfig;
 }
 
 // ---- JSON-RPC error codes ----
@@ -87,6 +89,7 @@ export class McpServer {
 	private config: McpServerConfig;
 	private hooks: McpServiceHooks;
 	private connections = 0;
+	private browser: BrowserTool | null = null;
 
 	constructor(config: McpServerConfig, hooks: McpServiceHooks = {}) {
 		this.config = config;
@@ -134,6 +137,8 @@ export class McpServer {
 	}
 
 	async stop(): Promise<void> {
+		await this.browser?.close();
+		this.browser = null;
 		if (this.server) {
 			this.server.stop();
 			this.server = null;
@@ -504,6 +509,112 @@ export class McpServer {
 
 				return { success: true, annotationId: annotation.id };
 			},
+		});
+
+		// Browser tools (opt-in via config)
+		if (this.hooks.browserConfig?.enabled) {
+			this.browser = BrowserTool.fromConfig(this.hooks.browserConfig);
+			this.registerBrowserTools();
+		}
+	}
+
+	// ---- Browser tools ----
+
+	private registerBrowserTools(): void {
+		if (!this.browser) return;
+		const browser = this.browser;
+
+		this.registerTool({
+			name: "browser_navigate",
+			description: "Navigate the browser to a URL. Launches the browser if not already running.",
+			parameters: {
+				url: { type: "string", description: "The URL to navigate to", required: true },
+			},
+			handler: async (params) => {
+				const url = params.url as string;
+				await browser.launch();
+				const result = await browser.navigate(url);
+				return { success: true, frameId: result.frameId };
+			},
+		});
+
+		this.registerTool({
+			name: "browser_screenshot",
+			description:
+				"Take a screenshot of the current page. Returns base64-encoded image data.",
+			parameters: {
+				format: { type: "string", description: 'Image format: "png" or "jpeg" (default: "png")' },
+				quality: { type: "number", description: "JPEG quality (1-100, only for jpeg format)" },
+				fullPage: { type: "boolean", description: "Capture the full scrollable page (default: false)" },
+			},
+			handler: async (params) => {
+				const result = await browser.screenshot({
+					format: params.format as "png" | "jpeg" | undefined,
+					quality: params.quality as number | undefined,
+					fullPage: params.fullPage as boolean | undefined,
+				});
+				return { data: result.data, format: result.format };
+			},
+		});
+
+		this.registerTool({
+			name: "browser_click",
+			description: "Click an element matching the given CSS selector.",
+			parameters: {
+				selector: { type: "string", description: "CSS selector for the element to click", required: true },
+			},
+			handler: async (params) => {
+				await browser.click(params.selector as string);
+				return { success: true };
+			},
+		});
+
+		this.registerTool({
+			name: "browser_type",
+			description: "Type text into an element matching the given CSS selector.",
+			parameters: {
+				selector: { type: "string", description: "CSS selector for the input element", required: true },
+				text: { type: "string", description: "Text to type", required: true },
+			},
+			handler: async (params) => {
+				await browser.type(params.selector as string, params.text as string);
+				return { success: true };
+			},
+		});
+
+		this.registerTool({
+			name: "browser_content",
+			description:
+				"Get text content from the page. Returns textContent of the selector, or the full page body text if no selector.",
+			parameters: {
+				selector: { type: "string", description: "CSS selector (optional — omit for full page text)" },
+			},
+			handler: async (params) => {
+				const content = await browser.getContent(params.selector as string | undefined);
+				return { content };
+			},
+		});
+
+		this.registerTool({
+			name: "browser_snapshot",
+			description:
+				"Get an accessibility-tree-like snapshot of the page structure. Useful for understanding page layout without screenshots.",
+			parameters: {},
+			handler: async () => {
+				const snapshot = await browser.getSnapshot();
+				return { snapshot };
+			},
+		});
+
+		logger.info("Browser tools registered", {
+			tools: [
+				"browser_navigate",
+				"browser_screenshot",
+				"browser_click",
+				"browser_type",
+				"browser_content",
+				"browser_snapshot",
+			],
 		});
 	}
 
