@@ -12,6 +12,7 @@
 		"test:unit": "bun test packages/",
 		"test:integration": "bun test tests/integration/",
 		"test:e2e": "bun test tests/e2e/",
+		"test:coverage": "bun test --coverage",
 		"test:voice": "bun test packages/voice/",
 		"test:mesh": "bun test packages/mesh/",
 		"test:analytics": "bun test packages/analytics/",
