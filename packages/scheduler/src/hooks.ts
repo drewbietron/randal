@@ -118,7 +118,9 @@ export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 		});
 
 		if (wakeMode === "now") {
-			// Submit directly to runner as isolated job
+			// Submit directly to runner as isolated job with a timeout guard
+			const AGENT_HOOK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 			const jobPromise = runner.execute({
 				prompt: body.message,
 				model: body.model,
@@ -131,12 +133,16 @@ export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 				},
 			});
 
-			// Wait briefly to get the job started
-			await new Promise((r) => setTimeout(r, 50));
+			const timeoutPromise = new Promise<never>((_, reject) => {
+				setTimeout(
+					() => reject(new Error("Hook agent job timed out after 5 minutes")),
+					AGENT_HOOK_TIMEOUT_MS,
+				);
+			});
 
-			// Don't block on job completion
-			jobPromise.catch((err) => {
-				logger.warn("Hook agent job failed", {
+			// Don't block on job completion, but ensure we log timeout/failure
+			Promise.race([jobPromise, timeoutPromise]).catch((err) => {
+				logger.warn("Hook agent job failed or timed out", {
 					error: err instanceof Error ? err.message : String(err),
 				});
 			});
