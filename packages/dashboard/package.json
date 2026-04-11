@@ -5,7 +5,13 @@
 	"type": "module",
 	"main": "src/app.ts",
 	"types": "src/app.ts",
+	"scripts": {
+		"test": "bun test --preload ./src/__tests__/setup.ts src/"
+	},
 	"exports": {
 		".": "./src/app.ts"
+	},
+	"devDependencies": {
+		"happy-dom": "^20.8.9"
 	}
 }

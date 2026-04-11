@@ -429,6 +429,7 @@
 		var headers = { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' };
 
 		// HTML sanitization — prevents XSS from API data injected into innerHTML
+		// Canonical source: src/utils.ts — keep in sync
 		function escapeHtml(str) {
 			if (str == null) return '';
 			var div = document.createElement('div');
@@ -436,7 +437,7 @@
 			return div.innerHTML;
 		}
 
-		// Toast notification system
+		// Toast notification system — canonical source: src/utils.ts
 		var _toastErrorTimestamps = {};
 		function showToast(message, type, duration) {
 			type = type || 'info';
@@ -847,7 +848,7 @@
 			} catch(e) { showToast('Failed to load settings', 'error'); }
 		}
 
-		// Polling state machine — poll as fallback, stop when SSE is active
+		// Polling state machine — canonical source: src/utils.ts
 		var sseConnected = false;
 		var pollInterval = null;
 

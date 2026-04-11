@@ -16,6 +16,7 @@
 		"test:mesh": "bun test packages/mesh/",
 		"test:analytics": "bun test packages/analytics/",
 		"test:channels": "bun test packages/gateway/src/channels/",
+		"test:dashboard": "bun test --preload ./packages/dashboard/src/__tests__/setup.ts packages/dashboard/src/",
 		"typecheck": "bunx tsc --noEmit",
 		"lint": "bunx biome check .",
 		"check": "bun run typecheck && bun run lint && bun run test"
@@ -23,6 +24,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.0",
 		"@types/bun": "^1.2.0",
+		"happy-dom": "^20.8.9",
 		"typescript": "^5.7.0"
 	},
 	"dependencies": {
