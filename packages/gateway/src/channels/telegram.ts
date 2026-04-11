@@ -1,6 +1,7 @@
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { splitMessage } from "./utils.js";
 
 // Extract telegram channel config type from the discriminated union
 type TelegramChannelConfig = Extract<
@@ -220,33 +221,7 @@ export class TelegramChannel implements ChannelAdapter {
 	 * Send a reply, splitting messages that exceed Telegram's 4096 char limit.
 	 */
 	private async sendReply(ctx: TelegrafContext, text: string): Promise<void> {
-		if (text.length <= TELEGRAM_MAX_LENGTH) {
-			await ctx.reply(text);
-			return;
-		}
-
-		// Split on newline boundaries
-		const chunks: string[] = [];
-		let current = "";
-
-		for (const line of text.split("\n")) {
-			if (current.length + line.length + 1 > TELEGRAM_MAX_LENGTH) {
-				if (current) {
-					chunks.push(current);
-					current = "";
-				}
-				// If a single line exceeds the limit, hard-split it
-				if (line.length > TELEGRAM_MAX_LENGTH) {
-					for (let i = 0; i < line.length; i += TELEGRAM_MAX_LENGTH) {
-						chunks.push(line.slice(i, i + TELEGRAM_MAX_LENGTH));
-					}
-					continue;
-				}
-			}
-			current = current ? `${current}\n${line}` : line;
-		}
-		if (current) chunks.push(current);
-
+		const chunks = splitMessage(text, TELEGRAM_MAX_LENGTH);
 		for (const chunk of chunks) {
 			await ctx.reply(chunk);
 		}
@@ -262,31 +237,9 @@ export class TelegramChannel implements ChannelAdapter {
 			const bot = this.bot as unknown as {
 				telegram: { sendMessage(chatId: string, text: string): Promise<unknown> };
 			};
-			if (text.length <= TELEGRAM_MAX_LENGTH) {
-				await bot.telegram.sendMessage(chatId, text);
-			} else {
-				// Split long messages
-				const chunks: string[] = [];
-				let current = "";
-				for (const line of text.split("\n")) {
-					if (current.length + line.length + 1 > TELEGRAM_MAX_LENGTH) {
-						if (current) {
-							chunks.push(current);
-							current = "";
-						}
-						if (line.length > TELEGRAM_MAX_LENGTH) {
-							for (let i = 0; i < line.length; i += TELEGRAM_MAX_LENGTH) {
-								chunks.push(line.slice(i, i + TELEGRAM_MAX_LENGTH));
-							}
-							continue;
-						}
-					}
-					current = current ? `${current}\n${line}` : line;
-				}
-				if (current) chunks.push(current);
-				for (const chunk of chunks) {
-					await bot.telegram.sendMessage(chatId, chunk);
-				}
+			const chunks = splitMessage(text, TELEGRAM_MAX_LENGTH);
+			for (const chunk of chunks) {
+				await bot.telegram.sendMessage(chatId, chunk);
 			}
 		} catch (err) {
 			this.logger.warn("Failed to send Telegram message", {

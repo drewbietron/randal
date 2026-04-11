@@ -88,7 +88,7 @@ const emailChannelSchema = z.object({
 
 const whatsappChannelSchema = z.object({
 	type: z.literal("whatsapp"),
-	provider: z.enum(["twilio", "baileys"]).default("twilio"),
+	provider: z.enum(["twilio"]).default("twilio"),
 	accountSid: z.string().optional(),
 	authToken: z.string().optional(),
 	phoneNumber: z.string().optional(),
@@ -138,6 +138,18 @@ const ollamaEmbedderSchema = z.object({
 	url: z.string().default("http://localhost:11434"),
 });
 
+/**
+ * Embedder configuration for memory search.
+ *
+ * Currently only "openrouter" is fully wired to Meilisearch's REST embedder.
+ * Other types fall back to keyword-only search:
+ * - "builtin": Uses Meilisearch's built-in embedder (requires Meilisearch
+ *   configured with an embedding model — not currently set up in auto-start).
+ * - "openai": Schema accepted but not yet wired to MeilisearchStore.
+ * - "ollama": Schema accepted but not yet wired to MeilisearchStore.
+ *
+ * See memory.ts:resolveEmbedderConfig() for the mapping.
+ */
 const embedderSchema = z.discriminatedUnion("type", [
 	builtinEmbedderSchema,
 	openaiEmbedderSchema,

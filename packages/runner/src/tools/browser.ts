@@ -83,6 +83,19 @@ const CHROME_PATHS: Record<string, string[]> = {
 };
 
 function findChromeBinary(): string | null {
+	// 1. Check CHROME_BIN / CHROMIUM_BIN env var first (Docker/CI convention).
+	//    Matches behavior of Puppeteer, Playwright, and Karma.
+	const envBin = process.env.CHROME_BIN || process.env.CHROMIUM_BIN;
+	if (envBin) {
+		try {
+			const result = Bun.spawnSync({ cmd: ["test", "-x", envBin] });
+			if (result.exitCode === 0) return envBin;
+		} catch {
+			// CHROME_BIN set but not executable — fall through to platform paths
+		}
+	}
+
+	// 2. Platform-specific hardcoded paths
 	const platform = process.platform;
 	const candidates = CHROME_PATHS[platform] ?? [];
 
