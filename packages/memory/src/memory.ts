@@ -162,7 +162,13 @@ export class MemoryManager {
 		}
 
 		// "builtin", "openai", "ollama" — not wired up to MeilisearchStore's REST embedder yet.
-		// The store falls back to keyword-only search when no embedder config is provided.
+		// Users configuring these types will get keyword-only search with no error/warning.
+		// TODO: Wire openai and ollama embedders, or emit a startup warning for unsupported types.
+		if (embedder.type !== "builtin") {
+			this.logger.warn(
+				`Embedder type "${embedder.type}" is not yet wired — falling back to keyword-only search`,
+			);
+		}
 		return undefined;
 	}
 }
