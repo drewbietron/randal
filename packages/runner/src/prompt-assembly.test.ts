@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { Annotation, ReliabilityScore } from "@randal/core";
 import {
 	assemblePrompt,
 	buildProtocolSection,
@@ -490,5 +491,67 @@ describe("buildSystemPrompt", () => {
 		expect(result).not.toContain("## Randal Execution Protocol");
 		expect(result).toContain("## Channel Context");
 		expect(result).toContain("Context here");
+	});
+
+	test("includes analytics feedback when feedbackInjection is enabled", async () => {
+		const scores: ReliabilityScore[] = [
+			{
+				dimension: "domain",
+				value: "backend",
+				passRate: 0.35,
+				totalAnnotations: 10,
+				passCount: 3,
+				failCount: 5,
+				partialCount: 2,
+			},
+		];
+		const annotations: Annotation[] = Array.from({ length: 12 }, (_, i) => ({
+			id: `ann-${i}`,
+			jobId: `job-${i}`,
+			verdict: (i < 5 ? "fail" : "pass") as Annotation["verdict"],
+			agent: "opencode",
+			model: "claude-sonnet",
+			domain: "backend",
+			iterationCount: 5,
+			tokenCost: 1000,
+			duration: 60,
+			filesChanged: [],
+			prompt: "test prompt",
+			timestamp: new Date().toISOString(),
+			feedback: i < 5 ? `Backend error pattern ${i}` : undefined,
+		}));
+
+		const result = await buildSystemPrompt(
+			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
+			"/tmp",
+			{
+				feedbackInjection: {
+					enabled: true,
+					scores,
+					annotations,
+					taskDomain: "backend",
+				},
+			},
+		);
+
+		expect(result).toContain("Empirical Guidance");
+		expect(result).toContain("backend");
+		expect(result).toContain("35%");
+	});
+
+	test("omits analytics feedback when feedbackInjection is disabled", async () => {
+		const result = await buildSystemPrompt(
+			minimalConfig as Parameters<typeof buildSystemPrompt>[0],
+			"/tmp",
+			{
+				feedbackInjection: {
+					enabled: false,
+					scores: [],
+					annotations: [],
+				},
+			},
+		);
+
+		expect(result).toBe("");
 	});
 });
