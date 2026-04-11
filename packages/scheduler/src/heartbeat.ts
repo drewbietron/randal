@@ -240,6 +240,29 @@ export class Heartbeat {
 	start(): void {
 		if (this.timer) return;
 
+		// Missed-tick recovery: if lastTick is stale, schedule one catch-up tick
+		if (this.state.lastTick) {
+			const lastTickTime = new Date(this.state.lastTick).getTime();
+			const gap = Date.now() - lastTickTime;
+			// If gap exceeds 1.5x the expected interval, run one catch-up tick
+			if (gap > this.intervalMs * 1.5) {
+				logger.info("Heartbeat missed-tick recovery: scheduling catch-up tick", {
+					lastTick: this.state.lastTick,
+					gapMs: gap,
+					expectedIntervalMs: this.intervalMs,
+				});
+				// Run catch-up tick asynchronously (don't block start())
+				// Use setTimeout(0) so the interval is already set up first
+				setTimeout(() => {
+					this.tick(true, "Catch-up tick: process was down or paused").catch((err) => {
+						logger.error("Missed-tick recovery failed", {
+							error: err instanceof Error ? err.message : String(err),
+						});
+					});
+				}, 0);
+			}
+		}
+
 		logger.info("Heartbeat started", {
 			every: this.config.every,
 			intervalMs: this.intervalMs,
