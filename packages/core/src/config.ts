@@ -86,40 +86,14 @@ const emailChannelSchema = z.object({
 	allowFrom: z.array(z.string()).optional(),
 });
 
-const whatsappChannelSchema = z
-	.object({
-		type: z.literal("whatsapp"),
-		provider: z.enum(["twilio", "baileys"]).default("twilio"),
-		accountSid: z.string().optional(),
-		authToken: z.string().optional(),
-		phoneNumber: z.string().optional(),
-		allowFrom: z.array(z.string()).optional(),
-	})
-	.superRefine((data, ctx) => {
-		if (data.provider === "twilio") {
-			if (!data.accountSid) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "accountSid is required when provider is 'twilio'",
-					path: ["accountSid"],
-				});
-			}
-			if (!data.authToken) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "authToken is required when provider is 'twilio'",
-					path: ["authToken"],
-				});
-			}
-			if (!data.phoneNumber) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "phoneNumber is required when provider is 'twilio'",
-					path: ["phoneNumber"],
-				});
-			}
-		}
-	});
+const whatsappChannelSchema = z.object({
+	type: z.literal("whatsapp"),
+	provider: z.enum(["twilio", "baileys"]).default("twilio"),
+	accountSid: z.string().optional(),
+	authToken: z.string().optional(),
+	phoneNumber: z.string().optional(),
+	allowFrom: z.array(z.string()).optional(),
+});
 
 const signalChannelSchema = z.object({
 	type: z.literal("signal"),

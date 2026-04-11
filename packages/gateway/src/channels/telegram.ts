@@ -325,7 +325,11 @@ export class TelegramChannel implements ChannelAdapter {
 			this.unsubscribe = undefined;
 		}
 		if (this.bot) {
-			this.bot.stop("SIGTERM");
+			try {
+				this.bot.stop("SIGTERM");
+			} catch {
+				// Bot may not have started polling successfully — safe to ignore
+			}
 			this.bot = undefined;
 		}
 		this.logger.info("Telegram channel stopped");
