@@ -1,4 +1,5 @@
-FROM oven/bun:1.3.11
+# Keep Bun version in sync with .github/workflows/ci.yml
+FROM oven/bun:1.3.12
 WORKDIR /app
 
 # System dependencies (including headless Chromium for agent web browsing)
@@ -23,8 +24,20 @@ ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium"
 ENV CHROMIUM_FLAGS="--no-sandbox --headless --disable-gpu"
 
 # Install Meilisearch (embedded for agent memory)
-RUN curl -L https://install.meilisearch.com | sh && \
-    mv ./meilisearch /usr/local/bin/meilisearch
+# Pin version for reproducible builds — matches install.sh's getmeili/meilisearch:v1.12
+# Override at build time: docker build --build-arg MEILISEARCH_VERSION=v1.13.0 .
+ARG MEILISEARCH_VERSION=v1.12.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) meili_arch="amd64" ;; \
+      arm64) meili_arch="aarch64" ;; \
+      *) echo "Unsupported arch: $arch" && exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/meilisearch \
+      "https://github.com/meilisearch/meilisearch/releases/download/${MEILISEARCH_VERSION}/meilisearch-linux-${meili_arch}"; \
+    chmod +x /usr/local/bin/meilisearch; \
+    meilisearch --version
 
 # Install Claude Code (default agent CLI)
 RUN bun install -g @anthropic-ai/claude-code

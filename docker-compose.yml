@@ -1,16 +1,30 @@
 services:
   randal:
     build: .
+    restart: unless-stopped
     ports:
       - "7600:7600"
+    # Resource limits — tune based on workload. Accounts for Bun (~200MB),
+    # Meilisearch (~500MB-1GB), Chromium (~1-2GB per tab), plus headroom.
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2.0"
+        reservations:
+          memory: 1g
+          cpus: "0.5"
     volumes:
       - ./randal.config.yaml:/app/randal.config.yaml:ro
-      - ./.env:/app/.env:ro
+      - ./.env:/app/.env:ro          # App reads .env from disk (Bun auto-loads it)
       - ./workspace:/app/workspace
-      - meili_data:/app/meili-data
-    env_file:
-      - .env
+      - meili_data:/app/meeli-data
+    # NOTE: No env_file here — .env is mounted as a file above for Bun's built-in
+    # .env loading. Using both env_file and a file mount causes confusing precedence
+    # where env vars and file values can silently diverge. Keep env var overrides
+    # explicit in the environment block below.
     environment:
+      # Explicit overrides — useful in CI where GH_TOKEN is set in host env
       - GH_TOKEN=${GH_TOKEN:-}
 
 volumes:

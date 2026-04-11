@@ -10,7 +10,10 @@ set -e
 
 RANDAL_DIR="${RANDAL_DIR:-$HOME/randal}"
 REPO_URL="https://github.com/drewbietron/randal.git"
-IS_MACOS=$([[ "$(uname)" == "Darwin" ]] && echo true || echo false)
+case "$(uname)" in
+  Darwin) IS_MACOS=true ;;
+  *)      IS_MACOS=false ;;
+esac
 
 echo ""
 echo "  🤠 Randal Installer"
@@ -22,11 +25,7 @@ ensure_local_bin() {
   mkdir -p "$HOME/.local/bin"
   if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
     export PATH="$HOME/.local/bin:$PATH"
-    for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-      if [ -f "$rc" ] && ! grep -q '.local/bin' "$rc"; then
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
-      fi
-    done
+    # RC modification is handled later in the opt-in block
   fi
 }
 
@@ -132,22 +131,52 @@ if [ -f "$RANDAL_DIR/.env" ]; then
   echo "  + .env loaded for current session"
 fi
 
-# Add to shell RC files for future sessions
+# Add to shell RC files for future sessions (opt-in)
 ENV_LINE="set -a; source \"$RANDAL_DIR/.env\" 2>/dev/null; set +a"
 ENV_COMMENT="# Randal env vars (secrets for OpenCode MCP servers)"
+LOCAL_BIN_LINE='export PATH="$HOME/.local/bin:$PATH"'
 
-for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-  if [ -f "$rc" ] || [ "$(basename "$rc")" = ".$(basename "$SHELL")rc" ]; then
-    if ! grep -q "randal/.env" "$rc" 2>/dev/null; then
-      echo "" >> "$rc"
-      echo "$ENV_COMMENT" >> "$rc"
-      echo "$ENV_LINE" >> "$rc"
-      echo "  + Added .env sourcing to $(basename "$rc")"
-    else
-      echo "  + .env sourcing already in $(basename "$rc")"
+MODIFY_RC="${RANDAL_MODIFY_RC:-}"
+if [ "$MODIFY_RC" != "no" ] && [ -t 0 ]; then
+  # Interactive terminal — ask the user
+  echo ""
+  printf "  Add Randal env + PATH entries to your shell RC files? [y/N] "
+  read -r REPLY
+  case "$REPLY" in
+    [yY]|[yY][eE][sS]) MODIFY_RC="yes" ;;
+    *) MODIFY_RC="no" ;;
+  esac
+elif [ "$MODIFY_RC" != "yes" ]; then
+  # Non-interactive (piped install) — skip by default
+  MODIFY_RC="no"
+fi
+
+if [ "$MODIFY_RC" = "yes" ]; then
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if [ -f "$rc" ] || [ "$(basename "$rc")" = ".$(basename "$SHELL")rc" ]; then
+      # Add .local/bin to PATH if missing
+      if ! grep -q '.local/bin' "$rc" 2>/dev/null; then
+        echo "" >> "$rc"
+        echo "# Randal — ensure ~/.local/bin is on PATH" >> "$rc"
+        echo "$LOCAL_BIN_LINE" >> "$rc"
+        echo "  + Added .local/bin PATH to $(basename "$rc")"
+      fi
+      # Add .env sourcing if missing
+      if ! grep -q "randal/.env" "$rc" 2>/dev/null; then
+        echo "" >> "$rc"
+        echo "$ENV_COMMENT" >> "$rc"
+        echo "$ENV_LINE" >> "$rc"
+        echo "  + Added .env sourcing to $(basename "$rc")"
+      else
+        echo "  + .env sourcing already in $(basename "$rc")"
+      fi
     fi
-  fi
-done
+  done
+else
+  echo "  Skipped RC modification. To configure your shell manually, add:"
+  echo "    $LOCAL_BIN_LINE"
+  echo "    $ENV_LINE"
+fi
 
 # ── 6. Install Node/Bun dependencies ────────────────────────
 echo ""
