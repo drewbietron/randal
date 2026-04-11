@@ -124,8 +124,16 @@ import { parseDuration } from "./heartbeat.js";
 
 // ---- Persistence ----
 
-const CRON_STATE_DIR = join(homedir(), ".randal");
-const CRON_STATE_FILE = join(CRON_STATE_DIR, "cron.yaml");
+let cronStateDir = join(homedir(), ".randal");
+let cronStateFile = join(cronStateDir, "cron.yaml");
+
+/**
+ * Set the cron state file directory (for testing / multi-instance isolation).
+ */
+export function setCronStateDir(dir: string): void {
+	cronStateDir = dir;
+	cronStateFile = join(dir, "cron.yaml");
+}
 
 interface PersistedCronState {
 	jobs: Record<
@@ -140,8 +148,8 @@ interface PersistedCronState {
 
 function loadPersistedState(): PersistedCronState {
 	try {
-		if (existsSync(CRON_STATE_FILE)) {
-			const raw = readFileSync(CRON_STATE_FILE, "utf-8");
+		if (existsSync(cronStateFile)) {
+			const raw = readFileSync(cronStateFile, "utf-8");
 			const parsed = parseYaml(raw) as PersistedCronState;
 			return parsed ?? { jobs: {} };
 		}
@@ -153,13 +161,13 @@ function loadPersistedState(): PersistedCronState {
 
 function savePersistedState(state: PersistedCronState): void {
 	try {
-		if (!existsSync(CRON_STATE_DIR)) {
-			mkdirSync(CRON_STATE_DIR, { recursive: true });
+		if (!existsSync(cronStateDir)) {
+			mkdirSync(cronStateDir, { recursive: true });
 		}
 		// Atomic write: write to temp file then rename
-		const tmp = `${CRON_STATE_FILE}.tmp`;
+		const tmp = `${cronStateFile}.tmp`;
 		writeFileSync(tmp, stringifyYaml(state), "utf-8");
-		renameSync(tmp, CRON_STATE_FILE);
+		renameSync(tmp, cronStateFile);
 	} catch {
 		// Ignore write errors — persistence is best-effort
 	}

@@ -15,5 +15,6 @@ export {
 	type CronJobState,
 	type CronSchedulerOptions,
 	matchesCronExpression,
+	setCronStateDir,
 } from "./cron.js";
 export { createHooksRouter, type CreateHooksRouterOptions } from "./hooks.js";
