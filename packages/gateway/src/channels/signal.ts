@@ -1,14 +1,7 @@
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
-import {
-	type ChannelAdapter,
-	type ChannelDeps,
-	formatEvent,
-	handleCommand,
-	splitMessage,
-} from "./channel.js";
-
-const SIGNAL_MAX_LENGTH = 6000;
+import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { normalizePhone } from "./utils.js";
 
 // Extract signal channel config type from the discriminated union
 type SignalChannelConfig = Extract<RandalConfig["gateway"]["channels"][number], { type: "signal" }>;
@@ -32,18 +25,6 @@ interface SignalEnvelope {
 
 interface SignalReceiveOutput {
 	envelope?: SignalEnvelope;
-}
-
-/**
- * Normalize a phone number for comparison by stripping non-digit characters
- * (except leading +).
- */
-function normalizePhone(phone: string): string {
-	const trimmed = phone.trim();
-	if (trimmed.startsWith("+")) {
-		return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-	}
-	return trimmed.replace(/\D/g, "");
 }
 
 export class SignalChannel implements ChannelAdapter {
@@ -215,44 +196,41 @@ export class SignalChannel implements ChannelAdapter {
 	}
 
 	/**
-	 * Send a message via signal-cli, splitting long messages.
+	 * Send a message via signal-cli.
 	 */
 	private async sendMessage(recipient: string, text: string): Promise<void> {
-		const chunks = splitMessage(text, SIGNAL_MAX_LENGTH);
-		for (const chunk of chunks) {
-			try {
-				const proc = Bun.spawn(
-					[
-						this.channelConfig.signalCliBin,
-						"-a",
-						this.channelConfig.phoneNumber,
-						"send",
-						"-m",
-						chunk,
-						recipient,
-					],
-					{
-						stdout: "pipe",
-						stderr: "pipe",
-					},
-				);
+		try {
+			const proc = Bun.spawn(
+				[
+					this.channelConfig.signalCliBin,
+					"-a",
+					this.channelConfig.phoneNumber,
+					"send",
+					"-m",
+					text,
+					recipient,
+				],
+				{
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
 
-				const stderr = await new Response(proc.stderr).text();
-				const exitCode = await proc.exited;
+			const stderr = await new Response(proc.stderr).text();
+			const exitCode = await proc.exited;
 
-				if (exitCode !== 0) {
-					this.logger.warn("signal-cli send failed", {
-						exitCode,
-						stderr: stderr.trim().slice(0, 200),
-						recipient,
-					});
-				}
-			} catch (err) {
-				this.logger.warn("Failed to send Signal message", {
-					error: err instanceof Error ? err.message : String(err),
+			if (exitCode !== 0) {
+				this.logger.warn("signal-cli send failed", {
+					exitCode,
+					stderr: stderr.trim().slice(0, 200),
 					recipient,
 				});
 			}
+		} catch (err) {
+			this.logger.warn("Failed to send Signal message", {
+				error: err instanceof Error ? err.message : String(err),
+				recipient,
+			});
 		}
 	}
 
@@ -285,14 +263,5 @@ export class SignalChannel implements ChannelAdapter {
 			this.unsubscribe = undefined;
 		}
 		this.logger.info("Signal channel stopped");
-	}
-
-	/**
-	 * Send a Signal message to a phone number.
-	 * Implements ChannelAdapter.send() for the internal channel API.
-	 * Target should be a phone number (e.g., "+1234567890").
-	 */
-	async send(target: string, message: string): Promise<void> {
-		await this.sendMessage(target, message);
 	}
 }

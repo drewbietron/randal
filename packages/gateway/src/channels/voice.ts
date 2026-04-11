@@ -1,6 +1,7 @@
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { normalizePhone } from "./utils.js";
 
 // Extract voice channel config type from the discriminated union
 type VoiceChannelConfig = Extract<RandalConfig["gateway"]["channels"][number], { type: "voice" }>;
@@ -18,18 +19,6 @@ interface VoiceSession {
  * Callback to deliver TTS text back to the voice engine.
  */
 type TtsCallback = (text: string) => void | Promise<void>;
-
-/**
- * Normalize a phone number for comparison by stripping non-digit characters
- * (except leading +).
- */
-function normalizePhone(phone: string): string {
-	const trimmed = phone.trim();
-	if (trimmed.startsWith("+")) {
-		return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-	}
-	return trimmed.replace(/\D/g, "");
-}
 
 export class VoiceChannel implements ChannelAdapter {
 	readonly name = "voice";

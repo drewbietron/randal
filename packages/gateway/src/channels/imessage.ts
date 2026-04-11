@@ -3,6 +3,7 @@ import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { Hono } from "hono";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import { normalizePhone } from "./utils.js";
 
 /**
  * Constant-time string comparison for webhook secret validation.
@@ -58,18 +59,6 @@ async function checkIMessageActive(): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Normalize a phone number for comparison by stripping non-digit characters
- * (except leading +).
- */
-function normalizePhone(phone: string): string {
-	const trimmed = phone.trim();
-	if (trimmed.startsWith("+")) {
-		return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-	}
-	return trimmed.replace(/\D/g, "");
 }
 
 export class IMessageChannel implements ChannelAdapter {
