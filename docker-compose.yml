@@ -4,6 +4,16 @@ services:
     restart: unless-stopped
     ports:
       - "7600:7600"
+    # Resource limits — tune based on workload. Accounts for Bun (~200MB),
+    # Meilisearch (~500MB-1GB), Chromium (~1-2GB per tab), plus headroom.
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2.0"
+        reservations:
+          memory: 1g
+          cpus: "0.5"
     volumes:
       - ./randal.config.yaml:/app/randal.config.yaml:ro
       - ./.env:/app/.env:ro          # App reads .env from disk (Bun auto-loads it)
