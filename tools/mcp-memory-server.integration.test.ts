@@ -162,7 +162,7 @@ function parseToolResult(resp: JsonRpcResponse): unknown {
 }
 
 async function startClient(envOverrides: Record<string, string> = {}): Promise<McpClient> {
-	const proc = spawn(["bun", "run", "tools/mcp-memory-server.ts"], {
+	const proc = spawn(["bun", "run", "tools/mcp-memory/index.ts"], {
 		stdin: "pipe",
 		stdout: "pipe",
 		stderr: "pipe",

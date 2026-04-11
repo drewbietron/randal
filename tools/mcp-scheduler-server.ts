@@ -139,7 +139,7 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 	const action = params.action as string;
 
 	if (!action || !["list", "add", "remove"].includes(action)) {
-		throw new ToolError(`Invalid or missing action. Use "list", "add", or "remove".`);
+		throw new ToolError(`Unknown action: ${action ?? "(none)"}. Use "list", "add", or "remove".`);
 	}
 
 	if (action === "list") {

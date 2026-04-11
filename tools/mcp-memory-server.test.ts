@@ -75,7 +75,7 @@ function parseToolResult(resp: JsonRpcResponse): unknown {
  * Start the MCP server with custom env and send the initialize handshake.
  */
 async function startServer(envOverrides: Record<string, string> = {}): Promise<Subprocess> {
-	const proc = spawn(["bun", "run", "tools/mcp-memory-server.ts"], {
+	const proc = spawn(["bun", "run", "tools/mcp-memory/index.ts"], {
 		stdin: "pipe",
 		stdout: "pipe",
 		stderr: "pipe",
