@@ -23,6 +23,8 @@
 			--danger-bg: #3a1a1a;
 		}
 		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+		.skip-link { position: absolute; left: -9999px; top: 0; z-index: 2000; padding: 8px 16px; background: var(--accent); color: #fff; font-size: 14px; border-radius: 0 0 4px 0; }
+		.skip-link:focus { left: 0; }
 		a { color: var(--accent); text-decoration: none; }
 		a:hover { text-decoration: underline; }
 
@@ -220,6 +222,7 @@
 	</style>
 </head>
 <body>
+	<a href="#main-content" class="skip-link">Skip to content</a>
 	<div class="container">
 		<header>
 			<div>
@@ -233,23 +236,24 @@
 			<span></span><span></span><span></span>
 		</button>
 
-		<nav id="nav">
-			<button class="active" data-page="home">Home</button>
-			<button data-page="history">History</button>
-			<button data-page="memory">Memory</button>
-			<button data-page="voice">Voice</button>
-			<button data-page="mesh">Mesh</button>
-			<button data-page="analytics">Analytics</button>
-			<button data-page="posse" id="nav-posse" style="display:none">Posse</button>
-			<button data-page="settings">Settings</button>
+		<nav id="nav" aria-label="Main navigation" role="tablist">
+			<button class="active" data-page="home" role="tab" aria-selected="true" aria-controls="page-home" id="tab-home">Home</button>
+			<button data-page="history" role="tab" aria-selected="false" aria-controls="page-history" id="tab-history">History</button>
+			<button data-page="memory" role="tab" aria-selected="false" aria-controls="page-memory" id="tab-memory">Memory</button>
+			<button data-page="voice" role="tab" aria-selected="false" aria-controls="page-voice" id="tab-voice">Voice</button>
+			<button data-page="mesh" role="tab" aria-selected="false" aria-controls="page-mesh" id="tab-mesh">Mesh</button>
+			<button data-page="analytics" role="tab" aria-selected="false" aria-controls="page-analytics" id="tab-analytics">Analytics</button>
+			<button data-page="posse" id="nav-posse" style="display:none" role="tab" aria-selected="false" aria-controls="page-posse">Posse</button>
+			<button data-page="settings" role="tab" aria-selected="false" aria-controls="page-settings" id="tab-settings">Settings</button>
 		</nav>
 
+		<main id="main-content">
 		<!-- Home Page -->
-		<div class="page active" id="page-home">
+		<div class="page active" id="page-home" role="tabpanel" aria-labelledby="tab-home">
 			<div class="section">
 				<h2>New Job</h2>
 				<div class="new-job">
-					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..."></textarea>
+					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..." aria-label="Job prompt"></textarea>
 					<div class="controls">
 						<button class="btn" onclick="submitJob()">Submit Job</button>
 					</div>
@@ -257,18 +261,18 @@
 			</div>
 			<div class="section">
 				<h2>Active Jobs</h2>
-				<div class="job-grid" id="active-jobs">
+				<div class="job-grid" id="active-jobs" aria-live="polite">
 					<div class="empty">No active jobs</div>
 				</div>
 			</div>
 			<div class="section">
 				<h2>Events</h2>
-				<div class="events-log" id="events-log"></div>
+				<div class="events-log" id="events-log" aria-live="polite" aria-label="Event log"></div>
 			</div>
 		</div>
 
 		<!-- Job Detail Page -->
-		<div class="page" id="page-job-detail">
+		<div class="page" id="page-job-detail" role="tabpanel">
 			<div class="section">
 				<button class="btn" onclick="showPage('home')" style="margin-bottom: 16px;">Back</button>
 				<h2 id="job-detail-title">Job Detail</h2>
@@ -292,7 +296,7 @@
 			<div class="section">
 				<h2>Inject Context</h2>
 				<div class="context-input">
-					<input type="text" id="context-text" placeholder="Type context to inject..." />
+					<input type="text" id="context-text" placeholder="Type context to inject..." aria-label="Context to inject" />
 					<button class="btn" onclick="injectContext()">Inject</button>
 				</div>
 			</div>
@@ -302,7 +306,7 @@
 		</div>
 
 		<!-- History Page -->
-		<div class="page" id="page-history">
+		<div class="page" id="page-history" role="tabpanel" aria-labelledby="tab-history">
 			<div class="section">
 				<h2>Job History</h2>
 				<table id="history-table">
@@ -315,12 +319,12 @@
 		</div>
 
 		<!-- Memory Page -->
-		<div class="page" id="page-memory">
+		<div class="page" id="page-memory" role="tabpanel" aria-labelledby="tab-memory">
 			<div class="section">
 				<h2>Memory Search</h2>
 				<div class="memory-search">
-					<input type="text" id="memory-query" placeholder="Search memories..." />
-					<select id="memory-scope" style="display:none">
+					<input type="text" id="memory-query" placeholder="Search memories..." aria-label="Search memories" />
+					<select id="memory-scope" style="display:none" aria-label="Memory search scope">
 						<option value="self" selected>Self</option>
 						<option value="shared">Shared</option>
 						<option value="all">All</option>
@@ -332,7 +336,7 @@
 		</div>
 
 		<!-- Voice Page -->
-		<div class="page" id="page-voice">
+		<div class="page" id="page-voice" role="tabpanel" aria-labelledby="tab-voice">
 			<div class="section">
 				<h2>Active Voice Sessions</h2>
 				<div id="voice-sessions">
@@ -342,7 +346,7 @@
 		</div>
 
 		<!-- Mesh Page -->
-		<div class="page" id="page-mesh">
+		<div class="page" id="page-mesh" role="tabpanel" aria-labelledby="tab-mesh">
 			<div class="section">
 				<h2>Mesh Instances</h2>
 				<div class="mesh-grid" id="mesh-instances">
@@ -356,7 +360,7 @@
 		</div>
 
 		<!-- Analytics Page -->
-		<div class="page" id="page-analytics">
+		<div class="page" id="page-analytics" role="tabpanel" aria-labelledby="tab-analytics">
 			<div class="section">
 				<h2>Reliability Scores</h2>
 				<div class="gauge-grid" id="analytics-scores">
@@ -382,7 +386,7 @@
 		</div>
 
 		<!-- Posse Page -->
-		<div class="page" id="page-posse">
+		<div class="page" id="page-posse" role="tabpanel" aria-labelledby="nav-posse">
 			<div class="section">
 				<h2>Posse Agents</h2>
 				<div id="posse-agents"></div>
@@ -390,8 +394,8 @@
 			<div class="section">
 				<h2>Posse Memory Search</h2>
 				<div class="memory-search">
-					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." />
-					<select id="posse-scope">
+					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." aria-label="Search posse memory" />
+					<select id="posse-scope" aria-label="Posse memory search scope">
 						<option value="all" selected>All</option>
 						<option value="self">Self</option>
 						<option value="shared">Shared</option>
@@ -407,12 +411,13 @@
 		</div>
 
 		<!-- Settings Page -->
-		<div class="page" id="page-settings">
+		<div class="page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings">
 			<div class="section">
 				<h2>Settings</h2>
 				<div id="settings-content"></div>
 			</div>
 		</div>
+		</main>
 	</div>
 
 	<div id="toast-container" aria-live="polite" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:400px;pointer-events:none;"></div>
@@ -496,10 +501,16 @@
 
 		function showPage(name) {
 			document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-			document.querySelectorAll('nav button').forEach(function(b) { b.classList.remove('active'); });
+			document.querySelectorAll('nav button').forEach(function(b) {
+				b.classList.remove('active');
+				b.setAttribute('aria-selected', 'false');
+			});
 			document.getElementById('page-' + name).classList.add('active');
 			var navBtn = document.querySelector('nav button[data-page="' + name + '"]');
-			if (navBtn) navBtn.classList.add('active');
+			if (navBtn) {
+				navBtn.classList.add('active');
+				navBtn.setAttribute('aria-selected', 'true');
+			}
 
 			if (name === 'history') loadHistory();
 			if (name === 'settings') loadSettings();
@@ -560,7 +571,7 @@
 						var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
 						planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
 					}
-					return '<div class="job-card" onclick="showJobDetail(\'' + escapeHtml(j.id) + '\')">' +
+					return '<div class="job-card" tabindex="0" role="link" data-job-id="' + escapeHtml(j.id) + '" aria-label="Job: ' + preview + ' — ' + escapeHtml(j.status) + '">' +
 						'<h3>' + preview + '</h3>' +
 						'<div class="meta"><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span>' +
 						'<span>' + escapeHtml(j.agent) + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
@@ -571,6 +582,22 @@
 				loadInstance();
 			} catch(e) { showToast('Failed to refresh jobs', 'error'); }
 		}
+
+		// Delegated click/keyboard handler for job cards
+		(function() {
+			function handleJobCardActivation(e) {
+				var card = e.target.closest('.job-card[data-job-id]');
+				if (card) showJobDetail(card.dataset.jobId);
+			}
+			var jobGrid = document.getElementById('active-jobs');
+			jobGrid.addEventListener('click', handleJobCardActivation);
+			jobGrid.addEventListener('keydown', function(e) {
+				if (e.key === 'Enter' || e.key === ' ') {
+					var card = e.target.closest('.job-card[data-job-id]');
+					if (card) { e.preventDefault(); showJobDetail(card.dataset.jobId); }
+				}
+			});
+		})();
 
 		// Load job detail
 		async function loadJobDetail(id) {
@@ -662,7 +689,7 @@
 						actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + escapeHtml(j.id) + '\')">Annotate</button>' +
 							'<div id="annotate-form-' + escapeHtml(j.id) + '" style="display:none"></div>';
 					}
-					return '<tr onclick="showJobDetail(\'' + escapeHtml(j.id) + '\')" style="cursor:pointer">' +
+					return '<tr tabindex="0" data-job-id="' + escapeHtml(j.id) + '" style="cursor:pointer">' +
 						'<td>' + escapeHtml(j.id) + '</td>' +
 						'<td><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span></td>' +
 						'<td>' + escapeHtml(j.agent) + '</td>' +
@@ -673,6 +700,24 @@
 				}).join('');
 			} catch(e) { showToast('Failed to load history', 'error'); }
 		}
+
+		// Delegated click/keyboard handler for history rows
+		(function() {
+			var histBody = document.getElementById('history-body');
+			function handleHistoryRowActivation(e) {
+				if (e.target.closest('button')) return; // don't intercept Annotate button clicks
+				var row = e.target.closest('tr[data-job-id]');
+				if (row) showJobDetail(row.dataset.jobId);
+			}
+			histBody.addEventListener('click', handleHistoryRowActivation);
+			histBody.addEventListener('keydown', function(e) {
+				if (e.key === 'Enter' || e.key === ' ') {
+					if (e.target.closest('button')) return;
+					var row = e.target.closest('tr[data-job-id]');
+					if (row) { e.preventDefault(); showJobDetail(row.dataset.jobId); }
+				}
+			});
+		})();
 
 		// Annotate form
 		function showAnnotateForm(jobId) {
@@ -849,7 +894,7 @@
 					var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
 					var loadPct = Math.round(inst.load * 100);
 					var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
-					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '"></span>' + escapeHtml(inst.name) + '</h4>' +
+					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '" aria-label="Health: ' + escapeHtml(inst.health) + '"></span>' + escapeHtml(inst.name) + '</h4>' +
 						'<div class="mesh-meta">' +
 						'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + escapeHtml(inst.status) + '</span></div>' +
 						'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
