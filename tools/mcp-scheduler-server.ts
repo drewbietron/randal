@@ -43,7 +43,6 @@ interface JsonRpcResponse {
 const RPC_PARSE_ERROR = -32700;
 const RPC_INVALID_REQUEST = -32600;
 const RPC_METHOD_NOT_FOUND = -32601;
-const RPC_INVALID_PARAMS = -32602;
 const RPC_INTERNAL_ERROR = -32603;
 
 // ---------------------------------------------------------------------------
@@ -86,7 +85,8 @@ const ScheduleCronParamsSchema = z
 			return true;
 		},
 		{
-			message: "name and prompt are required for action 'add'; name is required for action 'remove'",
+			message:
+				"name and prompt are required for action 'add'; name is required for action 'remove'",
 		},
 	);
 
@@ -233,7 +233,8 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 
 	if (action === "remove") {
 		const { name } = validated;
-		const { ok, data } = await gatewayFetch(`/cron/${encodeURIComponent(name!)}`, {
+		if (!name) throw new ToolError("name is required for remove action");
+		const { ok, data } = await gatewayFetch(`/cron/${encodeURIComponent(name)}`, {
 			method: "DELETE",
 		});
 		if (!ok) {

@@ -67,8 +67,8 @@ import type { RegistryClient, SummaryGeneratorOptions } from "@randal/memory";
 import { checkHealth, routeTask } from "@randal/mesh";
 import type { RoutingContext } from "@randal/mesh";
 import { checkStruggle } from "@randal/runner";
-import { z } from "zod";
 import { MeiliSearch } from "meilisearch";
+import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // Configuration from environment
@@ -1169,7 +1169,11 @@ function resolveStoreScope(category: string, explicitScope: string | undefined):
 }
 
 async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
-	const { query, limit = 10, scope: explicitScope } = validateParams(params, MemorySearchParamsSchema);
+	const {
+		query,
+		limit = 10,
+		scope: explicitScope,
+	} = validateParams(params, MemorySearchParamsSchema);
 	const scope = resolveSearchScope(explicitScope);
 
 	if (!(await ensureStore())) {
@@ -1198,7 +1202,12 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
-	const { content, category, source = "self", scope: explicitScope } = validateParams(params, MemoryStoreParamsSchema);
+	const {
+		content,
+		category,
+		source = "self",
+		scope: explicitScope,
+	} = validateParams(params, MemoryStoreParamsSchema);
 
 	if (!(await ensureStore())) {
 		const error = getStoreError();
