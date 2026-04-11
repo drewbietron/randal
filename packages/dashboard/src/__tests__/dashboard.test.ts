@@ -6,7 +6,6 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-	type pollInterval as _pollInterval,
 	_toastErrorTimestamps,
 	escapeHtml,
 	resetPollingState,
@@ -21,9 +20,7 @@ import {
 // ---------------------------------------------------------------------------
 describe("escapeHtml", () => {
 	test("escapes script tags", () => {
-		expect(escapeHtml("<script>alert(1)</script>")).toBe(
-			"&lt;script&gt;alert(1)&lt;/script&gt;",
-		);
+		expect(escapeHtml("<script>alert(1)</script>")).toBe("&lt;script&gt;alert(1)&lt;/script&gt;");
 	});
 
 	test("returns normal text unchanged", () => {
@@ -112,7 +109,7 @@ describe("showToast", () => {
 		showToast("Hello world", "info");
 		const msg = container.querySelector(".toast-msg");
 		expect(msg).not.toBeNull();
-		expect(msg!.textContent).toBe("Hello world");
+		expect(msg?.textContent).toBe("Hello world");
 	});
 
 	test("toast has a close button with aria-label", () => {
@@ -155,8 +152,8 @@ describe("showToast", () => {
 	test("escapes HTML in message", () => {
 		showToast("<b>bold</b>", "info");
 		const msg = container.querySelector(".toast-msg");
-		expect(msg!.innerHTML).not.toContain("<b>");
-		expect(msg!.innerHTML).toContain("&lt;b&gt;");
+		expect(msg?.innerHTML).not.toContain("<b>");
+		expect(msg?.innerHTML).toContain("&lt;b&gt;");
 	});
 
 	test("does not crash when container is missing", () => {
@@ -290,9 +287,7 @@ describe("API contract expectations", () => {
 				{ task: "step 1", status: "completed", iterationNumber: 1 },
 				{ task: "step 2", status: "completed", iterationNumber: 2 },
 			],
-			delegations: [
-				{ task: "sub-task", status: "complete", jobId: "job-sub1", duration: 120 },
-			],
+			delegations: [{ task: "sub-task", status: "complete", jobId: "job-sub1", duration: 120 }],
 			spec: { content: "Full spec content here" },
 		};
 		expect(fullJob.iterations).toHaveProperty("history");
@@ -359,11 +354,13 @@ describe("navigation", () => {
 
 	function simulateShowPage(name: string) {
 		// Replicate showPage logic
-		document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
-		document.querySelectorAll("nav button").forEach((b) => {
+		for (const p of document.querySelectorAll(".page")) {
+			p.classList.remove("active");
+		}
+		for (const b of document.querySelectorAll("nav button")) {
 			b.classList.remove("active");
 			b.setAttribute("aria-selected", "false");
-		});
+		}
 		const pageEl = document.getElementById(`page-${name}`);
 		if (pageEl) pageEl.classList.add("active");
 		const navBtn = document.querySelector(`nav button[data-page="${name}"]`) as HTMLElement;
@@ -375,8 +372,8 @@ describe("navigation", () => {
 
 	test("showPage sets correct page active", () => {
 		simulateShowPage("history");
-		expect(document.getElementById("page-history")!.classList.contains("active")).toBe(true);
-		expect(document.getElementById("page-home")!.classList.contains("active")).toBe(false);
+		expect(document.getElementById("page-history")?.classList.contains("active")).toBe(true);
+		expect(document.getElementById("page-home")?.classList.contains("active")).toBe(false);
 	});
 
 	test("showPage sets correct tab active", () => {
