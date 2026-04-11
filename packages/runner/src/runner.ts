@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type {
 	Annotation,
+	AnnotationVerdict,
 	Job,
 	JobOrigin,
 	ReliabilityScore,
@@ -44,6 +45,7 @@ export interface RunnerOptions {
 		scores: ReliabilityScore[];
 		annotations: Annotation[];
 	}>;
+	addAnnotation?: (annotation: Omit<Annotation, "id" | "timestamp">) => Promise<void>;
 }
 
 export interface JobRequest {
@@ -225,6 +227,7 @@ export class Runner {
 		scores: ReliabilityScore[];
 		annotations: Annotation[];
 	}>;
+	private addAnnotation?: (annotation: Omit<Annotation, "id" | "timestamp">) => Promise<void>;
 	private activeJobs: Map<
 		string,
 		{ job: Job; aborted: boolean; proc?: ReturnType<typeof Bun.spawn> }
@@ -238,6 +241,49 @@ export class Runner {
 		this.memorySearch = options.memorySearch;
 		this.skillSearch = options.skillSearch;
 		this.analyticsData = options.analyticsData;
+		this.addAnnotation = options.addAnnotation;
+	}
+
+	private async autoAnnotate(job: Job): Promise<void> {
+		if (!this.config.analytics.autoAnnotationPrompt) return;
+		if (!this.addAnnotation) return;
+
+		try {
+			const verdict: AnnotationVerdict =
+				job.status === "complete"
+					? "pass"
+					: job.status === "failed"
+						? "fail"
+						: "partial";
+
+			const totalFiles = new Set(
+				job.iterations.history.flatMap((iter) => iter.filesChanged),
+			);
+
+			await this.addAnnotation({
+				jobId: job.id,
+				verdict,
+				agent: job.agent,
+				model: job.model,
+				domain: getPrimaryDomain(job.prompt, this.config.analytics.domainKeywords),
+				iterationCount: job.iterations.current,
+				tokenCost: job.cost.totalTokens.input + job.cost.totalTokens.output,
+				duration: job.duration ?? 0,
+				filesChanged: [...totalFiles],
+				prompt: job.prompt.slice(0, 500), // Truncate for storage
+				feedback: job.error ?? undefined,
+			});
+
+			this.logger.info("Auto-annotation created", {
+				jobId: job.id,
+				verdict,
+			});
+		} catch (err) {
+			this.logger.warn("Failed to auto-annotate job", {
+				jobId: job.id,
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
 	}
 
 	private emit(type: RunnerEventType, job: Job, data: RunnerEvent["data"] = {}): void {
@@ -612,6 +658,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -625,6 +672,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -637,6 +685,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.failed", job, { error: job.error });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -648,6 +697,7 @@ export class Runner {
 				job.duration = duration;
 				syncJobToLoopState(job);
 				this.emit("job.complete", job, { duration, output: agentOutput });
+				await this.autoAnnotate(job);
 				return job;
 			}
 
@@ -661,6 +711,7 @@ export class Runner {
 			job.duration = duration;
 			syncJobToLoopState(job);
 			this.emit("job.failed", job, { error: job.error });
+			await this.autoAnnotate(job);
 			return job;
 		} finally {
 			cleanupTempHome(tempHome);
