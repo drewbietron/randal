@@ -825,6 +825,32 @@
 			} catch(e) { showToast('Failed to load settings', 'error'); }
 		}
 
+		// Polling state machine — poll as fallback, stop when SSE is active
+		var sseConnected = false;
+		var pollInterval = null;
+
+		function startPolling() {
+			if (pollInterval) return;
+			pollInterval = setInterval(refreshJobs, 10000);
+		}
+
+		function stopPolling() {
+			if (pollInterval) {
+				clearInterval(pollInterval);
+				pollInterval = null;
+			}
+		}
+
+		// Pause polling when tab is hidden, resume when visible (if SSE not connected)
+		document.addEventListener('visibilitychange', function() {
+			if (document.hidden) {
+				stopPolling();
+			} else if (!sseConnected) {
+				startPolling();
+				refreshJobs(); // immediate refresh on tab focus
+			}
+		});
+
 		// SSE (EventSource can't send Authorization headers, so pass token as query param)
 		var evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
 		var eventsLog = document.getElementById('events-log');
@@ -840,12 +866,21 @@
 
 		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
 			evtSource.addEventListener(type, function(e) {
+				// SSE is delivering events — stop redundant polling
+				if (!sseConnected) { sseConnected = true; stopPolling(); }
 				addEvent(type, e.data);
 				if (currentJobId) loadJobDetail(currentJobId);
 			});
 		});
 
+		evtSource.onopen = function() {
+			sseConnected = true;
+			stopPolling();
+		};
+
 		evtSource.onerror = function() {
+			sseConnected = false;
+			startPolling(); // fallback to polling when SSE drops
 			addEvent('system', 'SSE connection lost — reconnecting...');
 		};
 
@@ -1086,7 +1121,7 @@
 		// Init
 		loadInstance();
 		refreshJobs();
-		setInterval(refreshJobs, 10000);
+		startPolling(); // SSE will disable this once connected
 	</script>
 </body>
 </html>
