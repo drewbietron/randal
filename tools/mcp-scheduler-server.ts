@@ -43,8 +43,56 @@ interface JsonRpcResponse {
 const RPC_PARSE_ERROR = -32700;
 const RPC_INVALID_REQUEST = -32600;
 const RPC_METHOD_NOT_FOUND = -32601;
-const _RPC_INVALID_PARAMS = -32602;
+const RPC_INVALID_PARAMS = -32602;
 const RPC_INTERNAL_ERROR = -32603;
+
+// ---------------------------------------------------------------------------
+// Input validation (Zod)
+// ---------------------------------------------------------------------------
+
+import { z } from "zod";
+
+class ToolError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ToolError";
+	}
+}
+
+function validateParams<T>(params: Record<string, unknown>, schema: z.ZodType<T>): T {
+	const result = schema.safeParse(params);
+	if (!result.success) {
+		const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+		throw new ToolError(`Invalid parameters: ${issues}`);
+	}
+	return result.data;
+}
+
+const ScheduleCronParamsSchema = z
+	.object({
+		action: z.enum(["list", "add", "remove"]),
+		name: z.string().optional(),
+		schedule: z
+			.union([z.string(), z.object({ every: z.string() }), z.object({ at: z.string() })])
+			.optional(),
+		prompt: z.string().optional(),
+		execution: z.enum(["main", "isolated"]).optional(),
+		model: z.string().optional(),
+	})
+	.refine(
+		(data) => {
+			if (data.action === "add") return !!data.name && !!data.prompt;
+			if (data.action === "remove") return !!data.name;
+			return true;
+		},
+		{
+			message: "name and prompt are required for action 'add'; name is required for action 'remove'",
+		},
+	);
+
+const WakeHeartbeatParamsSchema = z.object({
+	text: z.string().min(1, "text is required and must be non-empty"),
+});
 
 // ---------------------------------------------------------------------------
 // MCP tool schema definitions
@@ -157,7 +205,8 @@ async function handleScheduleInfo(): Promise<unknown> {
 }
 
 async function handleScheduleCron(params: Record<string, unknown>): Promise<unknown> {
-	const action = params.action as string;
+	const validated = validateParams(params, ScheduleCronParamsSchema);
+	const { action } = validated;
 
 	if (action === "list") {
 		const { data } = await gatewayFetch("/cron");
@@ -165,18 +214,14 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 	}
 
 	if (action === "add") {
-		const name = params.name as string | undefined;
-		const prompt = params.prompt as string | undefined;
-		if (!name || !prompt) {
-			throw new ToolError("name and prompt are required for action 'add'");
-		}
+		const { name, prompt } = validated;
 		const body: Record<string, unknown> = {
 			name,
 			prompt,
-			schedule: params.schedule ?? { every: "1h" },
-			execution: params.execution ?? "isolated",
+			schedule: validated.schedule ?? { every: "1h" },
+			execution: validated.execution ?? "isolated",
 		};
-		if (params.model) body.model = params.model;
+		if (validated.model) body.model = validated.model;
 
 		const { ok, data } = await gatewayFetch("/cron", { method: "POST", body });
 		if (!ok) {
@@ -187,11 +232,8 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 	}
 
 	if (action === "remove") {
-		const name = params.name as string | undefined;
-		if (!name) {
-			throw new ToolError("name is required for action 'remove'");
-		}
-		const { ok, data } = await gatewayFetch(`/cron/${encodeURIComponent(name)}`, {
+		const { name } = validated;
+		const { ok, data } = await gatewayFetch(`/cron/${encodeURIComponent(name!)}`, {
 			method: "DELETE",
 		});
 		if (!ok) {
@@ -201,14 +243,12 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 		return data;
 	}
 
+	// Unreachable due to z.enum, but keep for defensive safety
 	throw new ToolError(`Unknown action: ${action}. Use "list", "add", or "remove".`);
 }
 
 async function handleWakeHeartbeat(params: Record<string, unknown>): Promise<unknown> {
-	const text = params.text as string | undefined;
-	if (!text) {
-		throw new ToolError("text is required");
-	}
+	const { text } = validateParams(params, WakeHeartbeatParamsSchema);
 
 	const { ok, data } = await gatewayFetch("/heartbeat/wake", {
 		method: "POST",
@@ -219,13 +259,6 @@ async function handleWakeHeartbeat(params: Record<string, unknown>): Promise<unk
 		throw new ToolError(errMsg);
 	}
 	return { ok: true, message: `Wake item queued: "${text.slice(0, 100)}"` };
-}
-
-class ToolError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "ToolError";
-	}
 }
 
 // ---------------------------------------------------------------------------
