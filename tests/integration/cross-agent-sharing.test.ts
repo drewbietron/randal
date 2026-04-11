@@ -258,11 +258,12 @@ class InMemoryStore implements MemoryStore {
 		return this.docs.filter((d) => d.content.toLowerCase().includes(lower)).slice(0, limit);
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<{ status: "success" }> {
 		this.docs.push({
 			...doc,
 			id: `inmem-${Date.now()}-${Math.random()}`,
 		});
+		return { status: "success" };
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {

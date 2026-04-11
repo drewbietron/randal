@@ -8,7 +8,7 @@ import {
 	searchCrossAgent,
 	searchSharedSkills,
 } from "./cross-agent.js";
-import type { MemoryStore } from "./stores/index.js";
+import type { IndexResult, MemoryStore } from "./stores/index.js";
 
 /**
  * In-memory mock store for testing cross-agent functions without Meilisearch.
@@ -23,8 +23,9 @@ class MockStore implements MemoryStore {
 		return this.docs.filter((d) => d.content.toLowerCase().includes(lower)).slice(0, limit);
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<IndexResult> {
 		this.docs.push({ ...doc, id: `mock-${Date.now()}-${Math.random()}` });
+		return { status: "success" };
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {
@@ -46,7 +47,7 @@ class FailingStore implements MemoryStore {
 	async search(): Promise<MemoryDoc[]> {
 		throw new Error("Connection refused");
 	}
-	async index(): Promise<void> {
+	async index(): Promise<IndexResult> {
 		throw new Error("Connection refused");
 	}
 	async recent(): Promise<MemoryDoc[]> {

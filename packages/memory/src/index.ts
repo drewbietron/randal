@@ -15,7 +15,7 @@ export type { EmbeddingServiceOptions } from "./embedding.js";
 
 export { MeilisearchStore } from "./stores/meilisearch.js";
 export type { EmbedderConfig, MeilisearchStoreOptions } from "./stores/meilisearch.js";
-export type { MemoryStore, MemorySearchOptions } from "./stores/index.js";
+export type { IndexResult, MemoryStore, MemorySearchOptions } from "./stores/index.js";
 
 export {
 	searchCrossAgent,

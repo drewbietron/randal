@@ -360,7 +360,7 @@ describe("MeilisearchStore.index()", () => {
 		expect(docs[0].scope).toBe("global");
 	});
 
-	test("assigns 'global' default for non-global category when no project scope", async () => {
+	test("assigns 'unscoped' default for non-global category when no project scope", async () => {
 		const { store, mockIdx } = createStoreWithMock();
 
 		await store.init();
@@ -379,9 +379,9 @@ describe("MeilisearchStore.index()", () => {
 
 		const addCall = getCall(mockIdx._calls, "addDocuments");
 		const docs = addCall[0] as Record<string, unknown>[];
-		// Without project context at the store layer, non-global categories default to "global"
-		// Callers (MCP server) set scope explicitly for project-scoped memories
-		expect(docs[0].scope).toBe("global");
+		// Without project context at the store layer, non-global categories get "unscoped".
+		// Callers (MCP server) set scope explicitly for project-scoped memories.
+		expect(docs[0].scope).toBe("unscoped");
 	});
 
 	test("preserves existing scope when already set on doc", async () => {
@@ -547,5 +547,411 @@ describe("MeilisearchStore.recent()", () => {
 		const searchOpts = lastCall[1] as Record<string, unknown>;
 		expect(searchOpts.limit).toBe(5);
 		expect(searchOpts.sort).toEqual(["timestamp:desc"]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Retry behavior (Steps 2-3)
+// ---------------------------------------------------------------------------
+
+function makeDoc(overrides: Partial<Record<string, unknown>> = {}) {
+	return {
+		type: "learning" as const,
+		file: "",
+		content: "test content",
+		contentHash: `hash-${Date.now()}-${Math.random()}`,
+		category: "fact" as const,
+		source: "self" as const,
+		timestamp: new Date().toISOString(),
+		...overrides,
+	};
+}
+
+describe("MeilisearchStore.index() — retry behavior", () => {
+	test("returns { status: 'success' } on first attempt success", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		const result = await store.index(makeDoc());
+
+		expect(result).toEqual({ status: "success" });
+		expect(mockIdx.addDocuments).toHaveBeenCalledTimes(1);
+	});
+
+	test("retries on failure and succeeds on third attempt", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		let callCount = 0;
+		mockIdx.addDocuments.mockImplementation(async () => {
+			callCount++;
+			if (callCount < 3) throw new Error(`Attempt ${callCount} failed`);
+		});
+
+		const result = await store.index(makeDoc());
+
+		expect(result).toEqual({ status: "success" });
+		expect(callCount).toBe(3);
+	});
+
+	test("queues document when all retries exhausted", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		mockIdx.addDocuments.mockImplementation(async () => {
+			throw new Error("Connection refused");
+		});
+
+		const result = await store.index(makeDoc());
+
+		expect(result.status).toBe("queued");
+		if (result.status === "queued") {
+			expect(result.reason).toContain("Connection refused");
+		}
+		expect(store.pendingWrites).toBe(1);
+	});
+
+	test("returns { status: 'duplicate' } when contentHash already exists", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+
+		mockIdx._setSearchResults({
+			hits: [{ id: "existing", contentHash: "known-hash" }],
+		});
+
+		const result = await store.index(makeDoc({ contentHash: "known-hash" }));
+
+		expect(result).toEqual({ status: "duplicate", contentHash: "known-hash" });
+		// addDocuments should NOT have been called
+		expect(mockIdx._calls.addDocuments ?? []).toHaveLength(0);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Write-ahead queue (Step 3)
+// ---------------------------------------------------------------------------
+
+describe("MeilisearchStore — write-ahead queue", () => {
+	test("drains queued writes on next successful index()", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		// First call: always fail → queued
+		mockIdx.addDocuments.mockImplementation(async () => {
+			throw new Error("Meili down");
+		});
+		await store.index(makeDoc({ contentHash: "queued-doc-1" }));
+		expect(store.pendingWrites).toBe(1);
+
+		// Second call: succeed → should also drain the queue
+		mockIdx.addDocuments.mockImplementation(async () => {
+			// success
+		});
+		await store.index(makeDoc({ contentHash: "success-doc-1" }));
+
+		// Give the fire-and-forget drain a tick to complete
+		await new Promise((r) => setTimeout(r, 50));
+
+		expect(store.pendingWrites).toBe(0);
+	});
+
+	test("returns { status: 'failed' } when queue is full", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		// Directly populate the write queue to MAX_QUEUE_SIZE to avoid
+		// calling index() 100 times with retry delays
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		const maxSize = (MeilisearchStore as any).MAX_QUEUE_SIZE as number;
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		const queue = (store as any).writeQueue as Array<{
+			doc: Record<string, unknown>;
+			queuedAt: number;
+		}>;
+		for (let i = 0; i < maxSize; i++) {
+			queue.push({ doc: { id: `queued-${i}` }, queuedAt: Date.now() });
+		}
+		expect(store.pendingWrites).toBe(maxSize);
+
+		// Now make addDocuments fail so the next index() exhausts retries
+		mockIdx.addDocuments.mockImplementation(async () => {
+			throw new Error("Meili down");
+		});
+
+		const result = await store.index(makeDoc({ contentHash: "overflow" }));
+		expect(result.status).toBe("failed");
+		if (result.status === "failed") {
+			expect(result.error).toContain("Write queue full");
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Health check (Steps 4-5)
+// ---------------------------------------------------------------------------
+
+describe("MeilisearchStore — health monitoring", () => {
+	test("isHealthy() returns true after successful init()", async () => {
+		const { store } = createStoreWithMock();
+		await store.init();
+
+		expect(store.isHealthy()).toBe(true);
+
+		store.destroy(); // cleanup timer
+	});
+
+	test("isHealthy() returns false before init()", () => {
+		const { store } = createStoreWithMock();
+
+		expect(store.isHealthy()).toBe(false);
+	});
+
+	test("destroy() stops health check interval", async () => {
+		const { store } = createStoreWithMock();
+		await store.init();
+
+		store.destroy();
+
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		expect((store as any).healthCheckInterval).toBeNull();
+	});
+
+	test("checkHealth() sets healthy=false when fetch fails", async () => {
+		const { store } = createStoreWithMock();
+		await store.init();
+		expect(store.isHealthy()).toBe(true);
+
+		// Override global fetch for this test
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async () => {
+			throw new Error("ECONNREFUSED");
+		};
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: test-only access to private method
+			await (store as any).checkHealth();
+			expect(store.isHealthy()).toBe(false);
+		} finally {
+			globalThis.fetch = originalFetch;
+			store.destroy();
+		}
+	});
+
+	test("checkHealth() sets healthy=true when fetch returns 200", async () => {
+		const { store } = createStoreWithMock();
+		await store.init();
+
+		// Force unhealthy state
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		(store as any).healthy = false;
+		expect(store.isHealthy()).toBe(false);
+
+		// Mock fetch to return healthy
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ status: "available" }), { status: 200 });
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: test-only access to private method
+			await (store as any).checkHealth();
+			expect(store.isHealthy()).toBe(true);
+		} finally {
+			globalThis.fetch = originalFetch;
+			store.destroy();
+		}
+	});
+
+	test("checkHealth() calls reInit() on unhealthy→healthy transition", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+
+		// Force unhealthy state
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		(store as any).healthy = false;
+
+		// Reset call counts to track reInit activity
+		mockIdx.updateSearchableAttributes.mockClear();
+		mockIdx.updateFilterableAttributes.mockClear();
+		mockIdx.updateSortableAttributes.mockClear();
+
+		// Mock fetch to return healthy
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ status: "available" }), { status: 200 });
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: test-only access to private method
+			await (store as any).checkHealth();
+
+			// reInit() should have reconfigured indexes
+			expect(mockIdx.updateSearchableAttributes).toHaveBeenCalledTimes(1);
+			expect(mockIdx.updateFilterableAttributes).toHaveBeenCalledTimes(1);
+			expect(mockIdx.updateSortableAttributes).toHaveBeenCalledTimes(1);
+		} finally {
+			globalThis.fetch = originalFetch;
+			store.destroy();
+		}
+	});
+
+	test("checkHealth() does NOT call reInit() on healthy→healthy (no transition)", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		expect(store.isHealthy()).toBe(true);
+
+		// Reset call counts
+		mockIdx.updateSearchableAttributes.mockClear();
+
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ status: "available" }), { status: 200 });
+
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: test-only access to private method
+			await (store as any).checkHealth();
+
+			// No reInit — already healthy
+			expect(mockIdx.updateSearchableAttributes).toHaveBeenCalledTimes(0);
+		} finally {
+			globalThis.fetch = originalFetch;
+			store.destroy();
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Scope defaults (Step 6)
+// ---------------------------------------------------------------------------
+
+describe("MeilisearchStore — scope defaults", () => {
+	test("'preference' category gets scope 'global'", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index(makeDoc({ category: "preference" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'fact' category gets scope 'global'", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index(makeDoc({ category: "fact" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'pattern' category gets scope 'unscoped' (not 'global')", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index(makeDoc({ category: "pattern" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0].scope).toBe("unscoped");
+	});
+
+	test("'lesson' category gets scope 'unscoped' (not 'global')", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index(makeDoc({ category: "lesson" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0].scope).toBe("unscoped");
+	});
+
+	test("explicit scope is preserved regardless of category", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		await store.index(makeDoc({ category: "pattern", scope: "project:/my/project" }));
+
+		const addCall = getCall(mockIdx._calls, "addDocuments");
+		const docs = addCall[0] as Record<string, unknown>[];
+		expect(docs[0].scope).toBe("project:/my/project");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: IndexResult propagation (Step 9)
+// ---------------------------------------------------------------------------
+
+describe("MeilisearchStore.index() — IndexResult status codes", () => {
+	test("returns 'success' on normal write", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		const result = await store.index(makeDoc());
+		expect(result.status).toBe("success");
+	});
+
+	test("returns 'duplicate' with contentHash when dedup detects existing", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [{ id: "x", contentHash: "abc123" }] });
+
+		const result = await store.index(makeDoc({ contentHash: "abc123" }));
+		expect(result).toEqual({ status: "duplicate", contentHash: "abc123" });
+	});
+
+	test("returns 'queued' with reason when retries exhausted but queue has space", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+		mockIdx.addDocuments.mockImplementation(async () => {
+			throw new Error("timeout");
+		});
+
+		const result = await store.index(makeDoc());
+		expect(result.status).toBe("queued");
+		if (result.status === "queued") {
+			expect(result.reason).toBe("timeout");
+		}
+	});
+
+	test("returns 'failed' with error when retries exhausted and queue full", async () => {
+		const { store, mockIdx } = createStoreWithMock();
+		await store.init();
+		mockIdx._setSearchResults({ hits: [] });
+
+		// Directly fill the queue to avoid retry delays
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		const maxSize = (MeilisearchStore as any).MAX_QUEUE_SIZE as number;
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private field
+		const queue = (store as any).writeQueue as Array<{
+			doc: Record<string, unknown>;
+			queuedAt: number;
+		}>;
+		for (let i = 0; i < maxSize; i++) {
+			queue.push({ doc: { id: `queued-${i}` }, queuedAt: Date.now() });
+		}
+
+		mockIdx.addDocuments.mockImplementation(async () => {
+			throw new Error("down");
+		});
+
+		const result = await store.index(makeDoc({ contentHash: "overflow" }));
+		expect(result.status).toBe("failed");
+		if (result.status === "failed") {
+			expect(result.error).toContain("Write queue full");
+		}
 	});
 });

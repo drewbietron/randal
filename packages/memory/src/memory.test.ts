@@ -3,7 +3,7 @@ import type { MemoryDoc } from "@randal/core";
 import { parseConfig } from "@randal/core";
 import type { StoreFactory } from "./cross-agent.js";
 import { MemoryManager } from "./memory.js";
-import type { MemoryStore } from "./stores/index.js";
+import type { IndexResult, MemoryStore } from "./stores/index.js";
 
 /**
  * In-memory mock store for testing MemoryManager without Meilisearch.
@@ -18,8 +18,9 @@ class MockStore implements MemoryStore {
 		return this.docs.filter((d) => d.content.toLowerCase().includes(lower)).slice(0, limit);
 	}
 
-	async index(doc: Omit<MemoryDoc, "id">): Promise<void> {
+	async index(doc: Omit<MemoryDoc, "id">): Promise<IndexResult> {
 		this.docs.push({ ...doc, id: `mock-${Date.now()}-${Math.random()}` });
+		return { status: "success" };
 	}
 
 	async recent(limit: number): Promise<MemoryDoc[]> {
@@ -339,5 +340,152 @@ memory:
 		const recent = await mgr.recent(5);
 		expect(recent).toHaveLength(1);
 		expect(recent[0].content).toBe("Recent thing");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: Scope fix (Step 6) — MemoryManager layer
+// ---------------------------------------------------------------------------
+
+describe("MemoryManager.index() — scope assignment", () => {
+	function makeManager() {
+		const config = parseConfig(`
+name: test-agent
+runner:
+  workdir: /tmp
+memory:
+  url: http://localhost:7700
+  apiKey: test
+  sharing:
+    readFrom: []
+  autoInject:
+    maxResults: 5
+`);
+
+		const ownStore = new MockStore();
+		const mgr = new MemoryManager({ config, store: ownStore });
+		return { mgr, ownStore };
+	}
+
+	test("'preference' category gets scope 'global' when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "User likes dark mode",
+			contentHash: "hash-scope-pref",
+			category: "preference",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'fact' category gets scope 'global' when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "TypeScript is great",
+			contentHash: "hash-scope-fact",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("global");
+	});
+
+	test("'pattern' category gets undefined scope (not 'global') when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Always wrap in try-catch",
+			contentHash: "hash-scope-pattern",
+			category: "pattern",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		// MemoryManager sets undefined for non-global categories, deferring to store/caller
+		expect(docs[0].scope).toBeUndefined();
+	});
+
+	test("'lesson' category gets undefined scope (not 'global') when no explicit scope", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Learned about retry patterns",
+			contentHash: "hash-scope-lesson",
+			category: "lesson",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBeUndefined();
+	});
+
+	test("explicit scope is preserved regardless of category", async () => {
+		const { mgr, ownStore } = makeManager();
+		await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Project-scoped fact",
+			contentHash: "hash-scope-explicit",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+			scope: "project:/my/repo",
+		});
+
+		const docs = ownStore.getDocs();
+		expect(docs[0].scope).toBe("project:/my/repo");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Tests: IndexResult propagation (Step 9) — MemoryManager layer
+// ---------------------------------------------------------------------------
+
+describe("MemoryManager.index() — IndexResult propagation", () => {
+	function makeManager() {
+		const config = parseConfig(`
+name: test-agent
+runner:
+  workdir: /tmp
+memory:
+  url: http://localhost:7700
+  apiKey: test
+  sharing:
+    readFrom: []
+  autoInject:
+    maxResults: 5
+`);
+
+		const ownStore = new MockStore();
+		const mgr = new MemoryManager({ config, store: ownStore });
+		return { mgr, ownStore };
+	}
+
+	test("returns IndexResult from underlying store", async () => {
+		const { mgr } = makeManager();
+		const result = await mgr.index({
+			type: "learning",
+			file: "",
+			content: "Test propagation",
+			contentHash: "hash-propagate",
+			category: "fact",
+			source: "self",
+			timestamp: new Date().toISOString(),
+		});
+
+		expect(result).toEqual({ status: "success" });
 	});
 });
