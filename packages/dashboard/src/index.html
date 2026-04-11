@@ -499,6 +499,8 @@
 			}
 		});
 
+		var _lastFocusedJobCard = null; // for focus restoration on Back
+
 		function showPage(name) {
 			document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
 			document.querySelectorAll('nav button').forEach(function(b) {
@@ -512,6 +514,25 @@
 				navBtn.setAttribute('aria-selected', 'true');
 			}
 
+			// Focus management: move focus to the page heading
+			var page = document.getElementById('page-' + name);
+			if (page) {
+				// Restore focus to previously clicked job card when returning to home
+				if (name === 'home' && _lastFocusedJobCard) {
+					setTimeout(function() {
+						var card = document.querySelector('.job-card[data-job-id="' + _lastFocusedJobCard + '"]');
+						if (card) { card.focus(); }
+						_lastFocusedJobCard = null;
+					}, 50);
+				} else {
+					var heading = page.querySelector('h2');
+					if (heading) {
+						heading.setAttribute('tabindex', '-1');
+						heading.focus();
+					}
+				}
+			}
+
 			if (name === 'history') loadHistory();
 			if (name === 'settings') loadSettings();
 			if (name === 'voice') loadVoiceSessions();
@@ -521,6 +542,7 @@
 		}
 
 		function showJobDetail(id) {
+			_lastFocusedJobCard = id; // store for focus restoration
 			currentJobId = id;
 			showPage('job-detail');
 			loadJobDetail(id);
