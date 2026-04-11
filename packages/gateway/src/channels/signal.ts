@@ -1,6 +1,14 @@
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
-import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
+import {
+	type ChannelAdapter,
+	type ChannelDeps,
+	formatEvent,
+	handleCommand,
+	splitMessage,
+} from "./channel.js";
+
+const SIGNAL_MAX_LENGTH = 6000;
 
 // Extract signal channel config type from the discriminated union
 type SignalChannelConfig = Extract<RandalConfig["gateway"]["channels"][number], { type: "signal" }>;
@@ -207,41 +215,44 @@ export class SignalChannel implements ChannelAdapter {
 	}
 
 	/**
-	 * Send a message via signal-cli.
+	 * Send a message via signal-cli, splitting long messages.
 	 */
 	private async sendMessage(recipient: string, text: string): Promise<void> {
-		try {
-			const proc = Bun.spawn(
-				[
-					this.channelConfig.signalCliBin,
-					"-a",
-					this.channelConfig.phoneNumber,
-					"send",
-					"-m",
-					text,
-					recipient,
-				],
-				{
-					stdout: "pipe",
-					stderr: "pipe",
-				},
-			);
+		const chunks = splitMessage(text, SIGNAL_MAX_LENGTH);
+		for (const chunk of chunks) {
+			try {
+				const proc = Bun.spawn(
+					[
+						this.channelConfig.signalCliBin,
+						"-a",
+						this.channelConfig.phoneNumber,
+						"send",
+						"-m",
+						chunk,
+						recipient,
+					],
+					{
+						stdout: "pipe",
+						stderr: "pipe",
+					},
+				);
 
-			const stderr = await new Response(proc.stderr).text();
-			const exitCode = await proc.exited;
+				const stderr = await new Response(proc.stderr).text();
+				const exitCode = await proc.exited;
 
-			if (exitCode !== 0) {
-				this.logger.warn("signal-cli send failed", {
-					exitCode,
-					stderr: stderr.trim().slice(0, 200),
+				if (exitCode !== 0) {
+					this.logger.warn("signal-cli send failed", {
+						exitCode,
+						stderr: stderr.trim().slice(0, 200),
+						recipient,
+					});
+				}
+			} catch (err) {
+				this.logger.warn("Failed to send Signal message", {
+					error: err instanceof Error ? err.message : String(err),
 					recipient,
 				});
 			}
-		} catch (err) {
-			this.logger.warn("Failed to send Signal message", {
-				error: err instanceof Error ? err.message : String(err),
-				recipient,
-			});
 		}
 	}
 
