@@ -1,5 +1,6 @@
 export {
 	configSchema,
+	formatZodError,
 	loadConfig,
 	parseConfig,
 	findConfigPath,

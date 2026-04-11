@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	configSchema,
+	formatZodError,
 	loadConfig,
 	mergePartialConfig,
 	parseConfig,
@@ -571,5 +572,92 @@ describe("loadConfig env var support", () => {
 		expect(() => {
 			loadConfig("/nonexistent/path/that/does/not/exist.yaml");
 		}).toThrow();
+	});
+});
+
+describe("formatZodError", () => {
+	test("formats missing required field", () => {
+		const result = configSchema.safeParse({ name: "test" });
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const msg = formatZodError(result.error);
+			expect(msg).toContain("Config validation failed:");
+			expect(msg).toContain("runner");
+			expect(msg).toContain("Required");
+		}
+	});
+
+	test("formats invalid_type with expected vs received", () => {
+		const result = configSchema.safeParse({
+			name: 123, // should be string
+			runner: { workdir: "/tmp" },
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const msg = formatZodError(result.error);
+			expect(msg).toContain("expected string, got number");
+		}
+	});
+
+	test("formats invalid_enum_value with valid options", () => {
+		const result = configSchema.safeParse({
+			name: "test",
+			runner: { workdir: "/tmp", defaultAgent: "invalid-agent" },
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const msg = formatZodError(result.error);
+			expect(msg).toContain("runner.defaultAgent");
+			expect(msg).toContain("valid:");
+			expect(msg).toContain("opencode");
+			expect(msg).toContain("mock");
+		}
+	});
+
+	test("formats multiple errors", () => {
+		const result = configSchema.safeParse({});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const msg = formatZodError(result.error);
+			const lines = msg.split("\n").filter((l) => l.startsWith("  - "));
+			expect(lines.length).toBeGreaterThanOrEqual(2);
+		}
+	});
+
+	test("formats nested path with dotted notation", () => {
+		const result = configSchema.safeParse({
+			name: "test",
+			runner: { workdir: "/tmp", struggle: { action: "invalid" } },
+		});
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			const msg = formatZodError(result.error);
+			expect(msg).toContain("runner.struggle.action");
+		}
+	});
+});
+
+describe("config error integration", () => {
+	test("parseConfig throws human-readable error, not JSON", () => {
+		const badYaml = "name: 123\n";
+		try {
+			parseConfig(badYaml);
+			expect(true).toBe(false); // should not reach
+		} catch (err) {
+			const msg = (err as Error).message;
+			expect(msg).toContain("Config validation failed:");
+			expect(msg).not.toContain('"code"');
+			expect(msg).not.toContain('"path"');
+		}
+	});
+
+	test("mergePartialConfig throws human-readable error", () => {
+		try {
+			mergePartialConfig({ name: 123 as unknown as string });
+			expect(true).toBe(false); // should not reach
+		} catch (err) {
+			const msg = (err as Error).message;
+			expect(msg).toContain("Config validation failed:");
+		}
 	});
 });
