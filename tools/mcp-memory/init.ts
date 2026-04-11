@@ -27,13 +27,13 @@ import {
 	MEILI_MASTER_KEY,
 	MEILI_URL,
 	OPENROUTER_API_KEY,
-	RANDAL_CROSS_AGENT_READ_FROM,
-	RANDAL_GATEWAY_URL,
 	RANDAL_POSSE_NAME,
 	RANDAL_SELF_NAME,
 	SEMANTIC_RATIO,
 	SUMMARY_MODEL,
+	buildMcpServerConfig,
 } from "./types.js";
+export type { McpServerConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Store construction
@@ -65,16 +65,8 @@ let storeInitError: string | null = null;
 // MessageManager construction (chat history)
 // ---------------------------------------------------------------------------
 
-// MessageManager expects a RandalConfig-shaped object. We only use the fields
-// it actually reads: memory.url, memory.apiKey, and name. Use a type assertion
-// for pragmatism — this is the MCP server, not the full platform.
-const messageManagerConfig = {
-	name: "randal",
-	memory: {
-		url: MEILI_URL,
-		apiKey: MEILI_MASTER_KEY,
-	},
-};
+// Build the shared McpServerConfig once — used by MessageManager and posse stubs.
+const mcpConfig = buildMcpServerConfig();
 
 const summaryGeneratorConfig: SummaryGeneratorOptions | undefined = OPENROUTER_API_KEY
 	? {
@@ -83,9 +75,11 @@ const summaryGeneratorConfig: SummaryGeneratorOptions | undefined = OPENROUTER_A
 		}
 	: undefined;
 
+// MessageManager expects a full RandalConfig but only reads config.memory.url,
+// config.memory.apiKey, and config.name. Our McpServerConfig provides exactly
+// those fields. The cast is safe because unused fields are never accessed.
 export const messageManager = new MessageManager({
-	// biome-ignore lint/suspicious/noExplicitAny: Partial RandalConfig — only memory.url, memory.apiKey, name are read
-	config: messageManagerConfig as any,
+	config: mcpConfig as unknown as RandalConfig,
 	embeddingService,
 	semanticRatio: Number.isFinite(SEMANTIC_RATIO) ? SEMANTIC_RATIO : 0.7,
 	summaryGenerator: summaryGeneratorConfig,
@@ -275,34 +269,18 @@ export function ensurePosse(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a minimal RandalConfig stub with the fields needed for posse operations.
- * This avoids importing the full parseConfig() just for the MCP server.
+ * Build a RandalConfig stub for posse operations (queryPosseMembers, searchCrossAgent).
+ *
+ * Uses McpServerConfig as the source of truth — all fields are populated from
+ * centralized env var reads. The cast to RandalConfig is required because
+ * @randal/memory functions expect the full type, but only read the fields
+ * present in McpServerConfig (posse, name, memory.url/apiKey/sharing, mesh.endpoint).
  */
 export function buildPosseConfigStub(): RandalConfig {
-	return {
-		posse: RANDAL_POSSE_NAME,
-		name: RANDAL_SELF_NAME,
-		memory: {
-			url: MEILI_URL,
-			apiKey: MEILI_MASTER_KEY,
-			store: "meilisearch",
-			sharing: {
-				readFrom: RANDAL_CROSS_AGENT_READ_FROM
-					? RANDAL_CROSS_AGENT_READ_FROM.split(",")
-							.map((s) => s.trim())
-							.filter(Boolean)
-					: [],
-				publishTo: "",
-			},
-		},
-		mesh: {
-			endpoint: RANDAL_GATEWAY_URL,
-		},
-		// Minimal stubs for required fields — not used by posse operations
-		tools: [],
-		runner: { defaultAgent: "" },
-		version: "0.1",
-	} as unknown as RandalConfig;
+	// McpServerConfig already contains exactly the fields consumed by posse
+	// operations. Cast through unknown because RandalConfig has many more
+	// required fields (tools, runner, version, etc.) that are never accessed.
+	return mcpConfig as unknown as RandalConfig;
 }
 
 // ---------------------------------------------------------------------------

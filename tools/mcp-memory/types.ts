@@ -60,6 +60,61 @@ export const RANDAL_CROSS_AGENT_READ_FROM = process.env.RANDAL_CROSS_AGENT_READ_
 export const RANDAL_PEER_AUTH_TOKEN = process.env.RANDAL_PEER_AUTH_TOKEN || "";
 
 // ---------------------------------------------------------------------------
+// McpServerConfig — typed shape for the config subset used by the MCP server
+// ---------------------------------------------------------------------------
+
+/**
+ * The subset of RandalConfig fields actually consumed by the MCP server.
+ *
+ * Instead of casting through `unknown` to satisfy the full RandalConfig,
+ * handler code constructs this typed shape from env vars. Subsystem consumers
+ * (MessageManager, queryPosseMembers, searchCrossAgent) receive the appropriate
+ * slices cast to RandalConfig at the boundary.
+ */
+export interface McpServerConfig {
+	name: string;
+	memory: {
+		url: string;
+		apiKey: string;
+		store: "meilisearch";
+		sharing: {
+			readFrom: string[];
+			publishTo: string;
+		};
+	};
+	posse: string;
+	mesh: {
+		endpoint: string;
+	};
+}
+
+/**
+ * Build the McpServerConfig from env vars (called once at module load).
+ */
+export function buildMcpServerConfig(): McpServerConfig {
+	return {
+		name: RANDAL_SELF_NAME || "randal",
+		memory: {
+			url: MEILI_URL,
+			apiKey: MEILI_MASTER_KEY,
+			store: "meilisearch",
+			sharing: {
+				readFrom: RANDAL_CROSS_AGENT_READ_FROM
+					? RANDAL_CROSS_AGENT_READ_FROM.split(",")
+							.map((s) => s.trim())
+							.filter(Boolean)
+					: [],
+				publishTo: "",
+			},
+		},
+		posse: RANDAL_POSSE_NAME,
+		mesh: {
+			endpoint: RANDAL_GATEWAY_URL,
+		},
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Scope constants and helpers
 // ---------------------------------------------------------------------------
 
