@@ -3,7 +3,7 @@ import { createLogger } from "@randal/core";
 import type { Hono } from "hono";
 import type { ChannelAdapter, ChannelDeps } from "./channel.js";
 
-const logger = createLogger({ context: { component: "channel:factory" } });
+const _logger = createLogger({ context: { component: "channel:factory" } });
 
 type ChannelConfig = RandalConfig["gateway"]["channels"][number];
 

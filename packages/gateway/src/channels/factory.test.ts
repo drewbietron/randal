@@ -56,7 +56,7 @@ describe("createChannel", () => {
 		const result = await createChannel(config as never, deps);
 		expect(result.adapter.name).toBe("whatsapp");
 		expect(result.webhookRouter).toBeDefined();
-		expect(result.webhookRouter!.path).toBe("/webhooks/whatsapp");
+		expect(result.webhookRouter?.path).toBe("/webhooks/whatsapp");
 	});
 
 	test("creates SignalChannel for type=signal", async () => {
