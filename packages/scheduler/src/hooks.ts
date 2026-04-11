@@ -3,6 +3,7 @@ import { createLogger } from "@randal/core";
 import type { RunnerEvent } from "@randal/core";
 import type { Runner } from "@randal/runner";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import type { Heartbeat } from "./heartbeat.js";
 
 // ---- Types ----
@@ -23,6 +24,17 @@ const logger = createLogger({ context: { component: "hooks" } });
 export function createHooksRouter(opts: CreateHooksRouterOptions): Hono {
 	const { token, heartbeat, runner, onEvent } = opts;
 	const app = new Hono();
+
+	// Body size limit middleware (1 MB)
+	app.use(
+		"*",
+		bodyLimit({
+			maxSize: 1024 * 1024,
+			onError: (c) => {
+				return c.json({ error: "Request body too large (max 1MB)" }, 413);
+			},
+		}),
+	);
 
 	// Auth middleware
 	app.use("*", async (c, next) => {
