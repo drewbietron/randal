@@ -16,6 +16,7 @@ import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
 import { readAndClearContext } from "./context.js";
 import { syncJobToLoopState } from "./loop-state.js";
+import { compactContext, shouldCompact } from "./compaction.js";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./prompt-assembly.js";
 import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "./sentinel.js";
 import { type StreamingResult, readStreamLines } from "./streaming.js";
@@ -412,30 +413,62 @@ export class Runner {
 				this.emit("job.context_injected", job, { contextText: injectedContext });
 			}
 
-		// Build minimal prompt — brain has its own persona/rules/knowledge.
-		// Only channel context and analytics feedback are injected (if applicable).
-		let feedbackInjection: BuildSystemPromptOptions["feedbackInjection"];
-		if (this.config.analytics.feedbackInjection && this.analyticsData) {
-			try {
-				const { scores, annotations } = await this.analyticsData();
-				const domain = getPrimaryDomain(
-					job.prompt,
-					this.config.analytics.domainKeywords,
+			// Context compaction for resumed jobs with iteration history
+			let compactedContextText: string | undefined;
+			const compactionCfg = this.config.runner.compaction;
+			if (compactionCfg.enabled && job.iterations.history.length > 2) {
+				// Estimate current context size from iteration history
+				const estimatedTokens = job.iterations.history.reduce(
+					(sum, iter) => sum + iter.tokens.input + iter.tokens.output,
+					0,
 				);
-				feedbackInjection = { enabled: true, scores, annotations, taskDomain: domain };
-			} catch (err) {
-				this.logger.warn("Failed to load analytics for feedback injection", {
-					error: String(err),
-				});
+				// Use a reasonable default for maxContextWindow based on model
+				const maxContextWindow = 128000; // TODO: derive from model config
+				if (shouldCompact(estimatedTokens, compactionCfg.threshold, maxContextWindow)) {
+					const result = compactContext({
+						iterations: job.iterations.history,
+						plan: job.plan,
+						delegations: job.delegations,
+						injectedContext: injectedContext ? [injectedContext] : undefined,
+						compactionConfig: compactionCfg,
+					});
+					compactedContextText = result.compactedContext;
+					this.emit("job.compacted", job, {
+						iterationsCompacted: result.iterationsCompacted,
+						originalTokens: result.originalTokens,
+						compactedTokens: result.compactedTokens,
+					});
+				}
 			}
-		}
 
-		const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
-			injectedContext: injectedContext ?? undefined,
-			feedbackInjection,
-		});
+			// Build minimal prompt — brain has its own persona/rules/knowledge.
+			// Only channel context and analytics feedback are injected (if applicable).
+			let feedbackInjection: BuildSystemPromptOptions["feedbackInjection"];
+			if (this.config.analytics.feedbackInjection && this.analyticsData) {
+				try {
+					const { scores, annotations } = await this.analyticsData();
+					const domain = getPrimaryDomain(
+						job.prompt,
+						this.config.analytics.domainKeywords,
+					);
+					feedbackInjection = { enabled: true, scores, annotations, taskDomain: domain };
+				} catch (err) {
+					this.logger.warn("Failed to load analytics for feedback injection", {
+						error: String(err),
+					});
+				}
+			}
 
-			const prompt = systemPrompt ? `${systemPrompt}\n\n---\n\n${job.prompt}` : job.prompt;
+			const systemPrompt = await buildSystemPrompt(this.config, this.configBasePath, {
+				injectedContext: injectedContext ?? undefined,
+				feedbackInjection,
+			});
+
+			const prompt = compactedContextText
+				? `${systemPrompt}\n\n## Resumed Context (Compacted)\n${compactedContextText}\n\n---\n\n${job.prompt}`
+				: systemPrompt
+					? `${systemPrompt}\n\n---\n\n${job.prompt}`
+					: job.prompt;
 
 			const args = adapter.buildCommand({
 				prompt,
