@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { RunnerEvent } from "@randal/core";
 import { Runner } from "@randal/runner";
-import type { CliContext } from "../cli.js";
+import { type CliContext, requireConfig } from "../cli.js";
 import { parseArgs } from "../parse-args.js";
 
 export interface ParsedRunArgs {
@@ -49,6 +49,7 @@ export function parseRunArgs(args: string[]): ParsedRunArgs {
 }
 
 export async function runCommand(args: string[], ctx: CliContext): Promise<void> {
+	const config = requireConfig(ctx);
 	const { prompt, agent, model, maxIterations, workdir, verbose } = parseRunArgs(args);
 
 	if (!prompt) {
@@ -90,7 +91,7 @@ export async function runCommand(args: string[], ctx: CliContext): Promise<void>
 	};
 
 	const runner = new Runner({
-		config: ctx.config,
+		config,
 		onEvent,
 	});
 

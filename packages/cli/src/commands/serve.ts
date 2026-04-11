@@ -1,15 +1,15 @@
-import { loadConfig } from "@randal/core";
-import type { CliContext } from "../cli.js";
+import { type RandalConfig, loadConfig } from "@randal/core";
+import { type CliContext, requireConfig } from "../cli.js";
 
 /**
  * Auto-start Meilisearch if the config uses it and it's not already running.
  * Generates MEILI_MASTER_KEY in .env if missing.
  * Returns true if .env was modified (config needs reload).
  */
-async function ensureMeilisearch(ctx: CliContext): Promise<boolean> {
-	if (ctx.config.memory.store !== "meilisearch") return false;
+async function ensureMeilisearch(config: RandalConfig, configPath?: string): Promise<boolean> {
+	if (config.memory.store !== "meilisearch") return false;
 
-	const url = ctx.config.memory.url || "http://localhost:7700";
+	const url = config.memory.url || "http://localhost:7700";
 	let envModified = false;
 
 	// Resolve master key: check env, generate if missing
@@ -20,7 +20,7 @@ async function ensureMeilisearch(ctx: CliContext): Promise<boolean> {
 
 		// Persist to .env
 		const { resolve, dirname } = await import("node:path");
-		const basePath = ctx.configPath ? dirname(resolve(ctx.configPath)) : ".";
+		const basePath = configPath ? dirname(resolve(configPath)) : ".";
 		const envPath = resolve(basePath, ".env");
 		const fs = await import("node:fs");
 		let envContent = "";
@@ -149,6 +149,7 @@ async function ensureMeilisearch(ctx: CliContext): Promise<boolean> {
 }
 
 export async function serveCommand(args: string[], ctx: CliContext): Promise<void> {
+	let config = requireConfig(ctx);
 	const { startGateway } = await import("@randal/gateway");
 
 	let port: number | undefined;
@@ -159,17 +160,17 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 	}
 
 	// Startup update check + auto-apply
-	if (ctx.config.updates?.autoCheck) {
+	if (config.updates?.autoCheck) {
 		try {
 			const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
 			if (!isContainer()) {
-				const update = await checkForUpdate(ctx.config.updates.channel);
+				const update = await checkForUpdate(config.updates.channel);
 				if (update.available) {
-					if (ctx.config.updates.autoApply) {
+					if (config.updates.autoApply) {
 						console.log(
 							`\x1b[33mUpdate available: ${update.current} -> ${update.latest}. Applying...\x1b[0m`,
 						);
-						const result = await applyUpdate({ channel: ctx.config.updates.channel });
+						const result = await applyUpdate({ channel: config.updates.channel });
 						if (result.applied) {
 							console.log(`\x1b[32mUpdated: ${result.fromVersion} -> ${result.toVersion}\x1b[0m`);
 						}
@@ -188,10 +189,9 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 	}
 
 	// Auto-start Meilisearch if needed
-	const envChanged = await ensureMeilisearch(ctx);
+	const envChanged = await ensureMeilisearch(config, ctx.configPath);
 
 	// Reload config if .env was modified (so new keys are substituted)
-	let config = ctx.config;
 	if (envChanged) {
 		config = loadConfig(ctx.configPath);
 	}
@@ -201,13 +201,13 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 		const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
 		if (isContainer()) return "Updates are not available in container mode. Rebuild your image.";
 
-		const update = await checkForUpdate(ctx.config.updates?.channel ?? "main");
+		const update = await checkForUpdate(ctx.config?.updates?.channel ?? "main");
 		if (!update.available) {
 			const { RANDAL_VERSION } = await import("@randal/core");
 			return `Already up to date (${RANDAL_VERSION}).`;
 		}
 
-		const result = await applyUpdate({ channel: ctx.config.updates?.channel ?? "main" });
+		const result = await applyUpdate({ channel: ctx.config?.updates?.channel ?? "main" });
 		if (!result.applied) return "Update check completed. Already up to date.";
 
 		// Notify all channels before restart
@@ -228,7 +228,7 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 	let updateTimer: ReturnType<typeof setInterval> | undefined;
 
 	function startUpdateTimer() {
-		const updates = ctx.config.updates;
+		const updates = ctx.config?.updates;
 		const interval = updates?.interval;
 		if (!interval || !updates?.autoApply) return;
 
@@ -254,7 +254,7 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 				const { checkForUpdate, applyUpdate, isContainer } = await import("./update.js");
 				if (isContainer()) return;
 
-				const currentUpdates = ctx.config.updates;
+				const currentUpdates = ctx.config?.updates;
 				const channel = currentUpdates?.channel ?? "main";
 				const update = await checkForUpdate(channel);
 				if (!update.available) return;
@@ -313,7 +313,7 @@ export async function serveCommand(args: string[], ctx: CliContext): Promise<voi
 			gateway.stop();
 			// Reload config to pick up any code/config changes
 			const freshConfig = loadConfig(ctx.configPath);
-			const envChanged = await ensureMeilisearch(ctx);
+			const envChanged = await ensureMeilisearch(freshConfig, ctx.configPath);
 			const finalConfig = envChanged ? loadConfig(ctx.configPath) : freshConfig;
 			// Update ctx.config so timer uses fresh config
 			ctx.config = finalConfig;
