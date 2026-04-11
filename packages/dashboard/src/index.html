@@ -364,6 +364,12 @@
 	</div>
 
 	<script>
+		// HTML sanitization — escape characters that enable XSS in innerHTML assignments
+		function sanitizeHtml(str) {
+			if (str === null || str === undefined) return '';
+			return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+		}
+
 		// Auth
 		var API_TOKEN = localStorage.getItem('randal_token') || prompt('Enter API token:') || '';
 		if (API_TOKEN) localStorage.setItem('randal_token', API_TOKEN);
@@ -433,22 +439,22 @@
 					container.innerHTML = '<div class="empty">No active jobs</div>';
 					return;
 				}
-				container.innerHTML = active.map(function(j) {
-					var pct = (j.iterations.current / j.maxIterations) * 100;
-					var preview = j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : '');
-					var planInfo = '';
-					if (j.plan && j.plan.length > 0) {
-						var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
-						planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
-					}
-					return '<div class="job-card" onclick="showJobDetail(\'' + j.id + '\')">' +
-						'<h3>' + preview + '</h3>' +
-						'<div class="meta"><span class="badge ' + j.status + '">' + j.status + '</span>' +
-						'<span>' + j.agent + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
-						planInfo +
-						'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
-						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
-				}).join('');
+			container.innerHTML = active.map(function(j) {
+				var pct = (j.iterations.current / j.maxIterations) * 100;
+				var preview = sanitizeHtml(j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : ''));
+				var planInfo = '';
+				if (j.plan && j.plan.length > 0) {
+					var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
+					planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
+				}
+				return '<div class="job-card" onclick="showJobDetail(\'' + sanitizeHtml(j.id) + '\')">' +
+					'<h3>' + preview + '</h3>' +
+					'<div class="meta"><span class="badge ' + sanitizeHtml(j.status) + '">' + sanitizeHtml(j.status) + '</span>' +
+					'<span>' + sanitizeHtml(j.agent) + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
+					planInfo +
+					'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
+					'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
+			}).join('');
 				loadInstance();
 			} catch(e) { console.error(e); }
 		}
@@ -458,7 +464,7 @@
 			try {
 				var res = await fetch('/job/' + id, { headers: headers });
 				var job = await res.json();
-				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + job.status + '">' + job.status + '</span> Job ' + job.id;
+				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + sanitizeHtml(job.status) + '">' + sanitizeHtml(job.status) + '</span> Job ' + sanitizeHtml(job.id);
 				document.getElementById('job-spec').textContent = job.spec ? job.spec.content || job.prompt : job.prompt;
 
 				// Plan
@@ -467,11 +473,11 @@
 					var completedCount = job.plan.filter(function(p) { return p.status === 'completed'; }).length;
 					planHtml = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-muted)">' + completedCount + '/' + job.plan.length + ' tasks complete</div>';
 					planHtml += '<table><thead><tr><th>Task</th><th>Status</th><th>Iteration</th></tr></thead><tbody>';
-					planHtml += job.plan.map(function(p) {
-						var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
-						var iterInfo = p.iterationNumber ? '#' + p.iterationNumber : '-';
-						return '<tr><td>' + icon + ' ' + p.task + '</td><td><span class="badge ' + p.status + '">' + p.status + '</span></td><td>' + iterInfo + '</td></tr>';
-					}).join('');
+				planHtml += job.plan.map(function(p) {
+					var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
+					var iterInfo = p.iterationNumber ? '#' + sanitizeHtml(p.iterationNumber) : '-';
+					return '<tr><td>' + icon + ' ' + sanitizeHtml(p.task) + '</td><td><span class="badge ' + sanitizeHtml(p.status) + '">' + sanitizeHtml(p.status) + '</span></td><td>' + iterInfo + '</td></tr>';
+				}).join('');
 					planHtml += '</tbody></table>';
 				} else {
 					planHtml = '<div class="empty">No plan extracted</div>';
@@ -483,10 +489,10 @@
 				if (delegationsEl) {
 					if (job.delegations && job.delegations.length > 0) {
 						var delHtml = '<table><thead><tr><th>Task</th><th>Status</th><th>Job ID</th><th>Duration</th></tr></thead><tbody>';
-						delHtml += job.delegations.map(function(d) {
-							return '<tr><td>' + d.task + '</td><td><span class="badge ' + d.status + '">' + d.status + '</span></td>' +
-								'<td>' + d.jobId + '</td><td>' + d.duration + 's</td></tr>';
-						}).join('');
+					delHtml += job.delegations.map(function(d) {
+						return '<tr><td>' + sanitizeHtml(d.task) + '</td><td><span class="badge ' + sanitizeHtml(d.status) + '">' + sanitizeHtml(d.status) + '</span></td>' +
+							'<td>' + sanitizeHtml(d.jobId) + '</td><td>' + sanitizeHtml(d.duration) + 's</td></tr>';
+					}).join('');
 						delHtml += '</tbody></table>';
 						delegationsEl.innerHTML = delHtml;
 					} else {
@@ -495,12 +501,12 @@
 				}
 
 				// Timeline
-				var timelineHtml = job.iterations.history.length > 0 ?
-					job.iterations.history.map(function(h) {
-						return '<div class="timeline-item"><span class="iter-num">Iter ' + h.number + '</span>' +
-							'<span class="iter-duration">' + h.duration + 's</span>' +
-							'<span class="iter-summary">' + (h.summary || 'No summary') + '</span></div>';
-					}).join('') : '<div class="empty">No iterations yet</div>';
+			var timelineHtml = job.iterations.history.length > 0 ?
+				job.iterations.history.map(function(h) {
+					return '<div class="timeline-item"><span class="iter-num">Iter ' + sanitizeHtml(h.number) + '</span>' +
+						'<span class="iter-duration">' + sanitizeHtml(h.duration) + 's</span>' +
+						'<span class="iter-summary">' + sanitizeHtml(h.summary || 'No summary') + '</span></div>';
+				}).join('') : '<div class="empty">No iterations yet</div>';
 				document.getElementById('job-timeline').innerHTML = timelineHtml;
 			} catch(e) { console.error(e); }
 		}
@@ -535,38 +541,40 @@
 				var res = await fetch('/jobs', { headers: headers });
 				var jobs = await res.json();
 				var body = document.getElementById('history-body');
-				body.innerHTML = jobs.map(function(j) {
-					var actions = '';
-					if (j.status === 'complete' || j.status === 'failed') {
-						actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + j.id + '\')">Annotate</button>' +
-							'<div id="annotate-form-' + j.id + '" style="display:none"></div>';
-					}
-					return '<tr onclick="showJobDetail(\'' + j.id + '\')" style="cursor:pointer">' +
-						'<td>' + j.id + '</td>' +
-						'<td><span class="badge ' + j.status + '">' + j.status + '</span></td>' +
-						'<td>' + j.agent + '</td>' +
-						'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
-						'<td>' + (j.duration || '-') + 's</td>' +
-						'<td>' + j.prompt.slice(0, 50) + '</td>' +
-						'<td>' + actions + '</td></tr>';
-				}).join('');
+			body.innerHTML = jobs.map(function(j) {
+				var safeId = sanitizeHtml(j.id);
+				var actions = '';
+				if (j.status === 'complete' || j.status === 'failed') {
+					actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + safeId + '\')">Annotate</button>' +
+						'<div id="annotate-form-' + safeId + '" style="display:none"></div>';
+				}
+				return '<tr onclick="showJobDetail(\'' + safeId + '\')" style="cursor:pointer">' +
+					'<td>' + safeId + '</td>' +
+					'<td><span class="badge ' + sanitizeHtml(j.status) + '">' + sanitizeHtml(j.status) + '</span></td>' +
+					'<td>' + sanitizeHtml(j.agent) + '</td>' +
+					'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
+					'<td>' + sanitizeHtml(j.duration || '-') + 's</td>' +
+					'<td>' + sanitizeHtml(j.prompt.slice(0, 50)) + '</td>' +
+					'<td>' + actions + '</td></tr>';
+			}).join('');
 			} catch(e) { console.error(e); }
 		}
 
 		// Annotate form
 		function showAnnotateForm(jobId) {
+			var safeJobId = sanitizeHtml(jobId);
 			var el = document.getElementById('annotate-form-' + jobId);
 			if (!el) return;
 			if (el.style.display !== 'none') { el.style.display = 'none'; return; }
 			el.style.display = 'block';
 			el.innerHTML = '<div class="annotate-form">' +
-				'<select id="annotate-verdict-' + jobId + '">' +
+				'<select id="annotate-verdict-' + safeJobId + '">' +
 				'<option value="correct">Correct</option>' +
 				'<option value="partial">Partial</option>' +
 				'<option value="incorrect">Incorrect</option>' +
 				'<option value="unsure">Unsure</option></select>' +
-				'<input type="text" id="annotate-feedback-' + jobId + '" placeholder="Feedback (optional)" />' +
-				'<button class="btn sm" onclick="submitAnnotation(\'' + jobId + '\')">Submit</button></div>';
+				'<input type="text" id="annotate-feedback-' + safeJobId + '" placeholder="Feedback (optional)" />' +
+				'<button class="btn sm" onclick="submitAnnotation(\'' + safeJobId + '\')">Submit</button></div>';
 		}
 
 		async function submitAnnotation(jobId) {
@@ -602,10 +610,10 @@
 					container.innerHTML = '<div class="empty">No results</div>';
 					return;
 				}
-				container.innerHTML = docs.map(function(d) {
-					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' +
-						'<div class="content">' + d.content + '</div></div>';
-				}).join('');
+			container.innerHTML = docs.map(function(d) {
+				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' +
+					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
+			}).join('');
 			} catch(e) { console.error(e); }
 		}
 
@@ -614,44 +622,44 @@
 			try {
 				var res = await fetch('/config', { headers: headers });
 				var cfg = await res.json();
-				var html = '<div class="settings-group"><h3>Instance</h3>' +
-					'<div class="setting-row"><span class="label">Name</span><span class="value">' + cfg.name + '</span></div>' +
-					'<div class="setting-row"><span class="label">Version</span><span class="value">' + cfg.version + '</span></div>' +
-					'<div class="setting-row"><span class="label">Posse</span><span class="value">' + (cfg.posse || '-') + '</span></div></div>';
+			var html = '<div class="settings-group"><h3>Instance</h3>' +
+				'<div class="setting-row"><span class="label">Name</span><span class="value">' + sanitizeHtml(cfg.name) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Version</span><span class="value">' + sanitizeHtml(cfg.version) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Posse</span><span class="value">' + sanitizeHtml(cfg.posse || '-') + '</span></div></div>';
 
-				html += '<div class="settings-group"><h3>Runner</h3>' +
-					'<div class="setting-row"><span class="label">Agent</span><span class="value">' + cfg.runner.defaultAgent + '</span></div>' +
-					'<div class="setting-row"><span class="label">Model</span><span class="value">' + cfg.runner.defaultModel + '</span></div>' +
-					'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + cfg.runner.defaultMaxIterations + '</span></div>' +
-					'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + cfg.runner.workdir + '</span></div></div>';
+			html += '<div class="settings-group"><h3>Runner</h3>' +
+				'<div class="setting-row"><span class="label">Agent</span><span class="value">' + sanitizeHtml(cfg.runner.defaultAgent) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Model</span><span class="value">' + sanitizeHtml(cfg.runner.defaultModel) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + sanitizeHtml(cfg.runner.defaultMaxIterations) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + sanitizeHtml(cfg.runner.workdir) + '</span></div></div>';
 
-				html += '<div class="settings-group"><h3>Memory</h3>' +
-					'<div class="setting-row"><span class="label">Store</span><span class="value">' + cfg.memory.store + '</span></div>' +
-					'<div class="setting-row"><span class="label">Index</span><span class="value">' + (cfg.memory.index || '-') + '</span></div></div>';
+			html += '<div class="settings-group"><h3>Memory</h3>' +
+				'<div class="setting-row"><span class="label">Store</span><span class="value">' + sanitizeHtml(cfg.memory.store) + '</span></div>' +
+				'<div class="setting-row"><span class="label">Index</span><span class="value">' + sanitizeHtml(cfg.memory.index || '-') + '</span></div></div>';
 
 				html += '<div class="settings-group"><h3>Credentials</h3>';
-				if (cfg.credentials.loaded) {
-					cfg.credentials.loaded.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value cred-loaded">loaded</span></div>';
-					});
-				}
-				if (cfg.credentials.missing) {
-					cfg.credentials.missing.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value cred-missing">missing</span></div>';
-					});
-				}
-				if (cfg.credentials.inherited) {
-					cfg.credentials.inherited.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + k + '</span><span class="value">inherited</span></div>';
-					});
-				}
+			if (cfg.credentials.loaded) {
+				cfg.credentials.loaded.forEach(function(k) {
+					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value cred-loaded">loaded</span></div>';
+				});
+			}
+			if (cfg.credentials.missing) {
+				cfg.credentials.missing.forEach(function(k) {
+					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value cred-missing">missing</span></div>';
+				});
+			}
+			if (cfg.credentials.inherited) {
+				cfg.credentials.inherited.forEach(function(k) {
+					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(k) + '</span><span class="value">inherited</span></div>';
+				});
+			}
 				html += '</div>';
 
 				if (cfg.tools && cfg.tools.length > 0) {
 					html += '<div class="settings-group"><h3>Tools</h3>';
-					cfg.tools.forEach(function(t) {
-						html += '<div class="setting-row"><span class="label">' + t.name + '</span><span class="value">' + t.binary + '</span></div>';
-					});
+				cfg.tools.forEach(function(t) {
+					html += '<div class="setting-row"><span class="label">' + sanitizeHtml(t.name) + '</span><span class="value">' + sanitizeHtml(t.binary) + '</span></div>';
+				});
 					html += '</div>';
 				}
 
@@ -666,7 +674,7 @@
 		function addEvent(type, data) {
 			var line = document.createElement('div');
 			line.className = 'event-line';
-			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + type + '</span> ' + data;
+			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + sanitizeHtml(type) + '</span> ' + sanitizeHtml(data);
 			eventsLog.prepend(line);
 			if (eventsLog.children.length > 100) eventsLog.lastChild.remove();
 			refreshJobs();
@@ -697,18 +705,18 @@
 					container.innerHTML = '<div class="empty">No active voice sessions</div>';
 					return;
 				}
-				container.innerHTML = data.sessions.map(function(s) {
-					var mins = Math.floor(s.duration / 60);
-					var secs = Math.round(s.duration % 60);
-					return '<div class="voice-card"><h4>Session ' + s.id.slice(0, 8) + '</h4>' +
-						'<div class="voice-meta">' +
-						'<span>Call: ' + s.callId + '</span>' +
-						'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + s.status + '</span>' +
-						'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
-						'<span>Transcript: ' + s.transcriptLength + ' chars</span>' +
-						'</div>' +
-						'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + new Date(s.startedAt).toLocaleString() + '</div></div>';
-				}).join('');
+			container.innerHTML = data.sessions.map(function(s) {
+				var mins = Math.floor(s.duration / 60);
+				var secs = Math.round(s.duration % 60);
+				return '<div class="voice-card"><h4>Session ' + sanitizeHtml(s.id.slice(0, 8)) + '</h4>' +
+					'<div class="voice-meta">' +
+					'<span>Call: ' + sanitizeHtml(s.callId) + '</span>' +
+					'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + sanitizeHtml(s.status) + '</span>' +
+					'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
+					'<span>Transcript: ' + sanitizeHtml(s.transcriptLength) + ' chars</span>' +
+					'</div>' +
+					'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + sanitizeHtml(new Date(s.startedAt).toLocaleString()) + '</div></div>';
+			}).join('');
 			} catch(e) {
 				document.getElementById('voice-sessions').innerHTML = '<div class="empty">Failed to load voice sessions</div>';
 			}
@@ -724,18 +732,18 @@
 					container.innerHTML = '<div class="empty">No mesh instances found</div>';
 					return;
 				}
-				container.innerHTML = data.instances.map(function(inst) {
-					var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
-					var loadPct = Math.round(inst.load * 100);
-					var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
-					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '"></span>' + inst.name + '</h4>' +
-						'<div class="mesh-meta">' +
-						'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + inst.status + '</span></div>' +
-						'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
-						'<div style="margin-top:4px">Specialization: ' + (inst.specialization || '-') + '</div>' +
-						'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + inst.lastSeen + '</div>' +
-						'</div></div>';
-				}).join('');
+			container.innerHTML = data.instances.map(function(inst) {
+				var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
+				var loadPct = Math.round(inst.load * 100);
+				var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
+				return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '"></span>' + sanitizeHtml(inst.name) + '</h4>' +
+					'<div class="mesh-meta">' +
+					'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + sanitizeHtml(inst.status) + '</span></div>' +
+					'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
+					'<div style="margin-top:4px">Specialization: ' + sanitizeHtml(inst.specialization || '-') + '</div>' +
+					'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + sanitizeHtml(inst.lastSeen) + '</div>' +
+					'</div></div>';
+			}).join('');
 			} catch(e) {
 				document.getElementById('mesh-instances').innerHTML = '<div class="empty">Failed to load mesh status</div>';
 			}
@@ -758,9 +766,9 @@
 				// Overall score gauge
 				var overallPct = Math.round((data.overall || 0) * 100);
 				var overallClass = overallPct >= 80 ? 'good' : overallPct >= 50 ? 'warn' : 'bad';
-				var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
-					'<div class="gauge-value">' + overallPct + '%</div>' +
-					'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
+			var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
+				'<div class="gauge-value">' + sanitizeHtml(overallPct) + '%</div>' +
+				'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
 
 				scoresEl.innerHTML = html;
 
@@ -789,9 +797,9 @@
 			for (var key in scores) {
 				var pct = Math.round(scores[key] * 100);
 				var cls = pct >= 80 ? 'good' : pct >= 50 ? 'warn' : 'bad';
-				html += '<div class="gauge-card"><div class="gauge-label">' + key + '</div>' +
-					'<div class="gauge-value">' + pct + '%</div>' +
-					'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
+			html += '<div class="gauge-card"><div class="gauge-label">' + sanitizeHtml(key) + '</div>' +
+				'<div class="gauge-value">' + sanitizeHtml(pct) + '%</div>' +
+				'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
 			}
 			html += '</div>';
 			return html;
@@ -806,13 +814,13 @@
 					container.innerHTML = '<div class="empty">No recommendations at this time</div>';
 					return;
 				}
-				container.innerHTML = data.recommendations.map(function(rec) {
-					return '<div class="rec-card ' + rec.severity + '">' +
-						'<div class="rec-severity ' + rec.severity + '">' + rec.severity + '</div>' +
-						'<div style="font-size:13px">' + rec.message + '</div>' +
-						(rec.action ? '<div class="rec-action">Action: ' + rec.action + '</div>' : '') +
-						'</div>';
-				}).join('');
+			container.innerHTML = data.recommendations.map(function(rec) {
+				return '<div class="rec-card ' + sanitizeHtml(rec.severity) + '">' +
+					'<div class="rec-severity ' + sanitizeHtml(rec.severity) + '">' + sanitizeHtml(rec.severity) + '</div>' +
+					'<div style="font-size:13px">' + sanitizeHtml(rec.message) + '</div>' +
+					(rec.action ? '<div class="rec-action">Action: ' + sanitizeHtml(rec.action) + '</div>' : '') +
+					'</div>';
+			}).join('');
 			} catch(e) {
 				document.getElementById('analytics-recommendations').innerHTML = '<div class="empty">Failed to load recommendations</div>';
 			}
@@ -828,13 +836,13 @@
 					return;
 				}
 				var html = '<table><thead><tr><th>Job</th><th>Verdict</th><th>Feedback</th><th>Time</th></tr></thead><tbody>';
-				html += data.annotations.slice(0, 50).map(function(a) {
-					var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
-					return '<tr><td>' + (a.jobId || '-') + '</td>' +
-						'<td><span class="badge ' + verdictClass + '">' + a.verdict + '</span></td>' +
-						'<td>' + (a.feedback || '-') + '</td>' +
-						'<td>' + (a.timestamp ? new Date(a.timestamp).toLocaleString() : '-') + '</td></tr>';
-				}).join('');
+			html += data.annotations.slice(0, 50).map(function(a) {
+				var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
+				return '<tr><td>' + sanitizeHtml(a.jobId || '-') + '</td>' +
+					'<td><span class="badge ' + verdictClass + '">' + sanitizeHtml(a.verdict) + '</span></td>' +
+					'<td>' + sanitizeHtml(a.feedback || '-') + '</td>' +
+					'<td>' + (a.timestamp ? sanitizeHtml(new Date(a.timestamp).toLocaleString()) : '-') + '</td></tr>';
+			}).join('');
 				html += '</tbody></table>';
 				container.innerHTML = html;
 			} catch(e) {
@@ -864,15 +872,15 @@
 					container.innerHTML = '<div class="empty">No agents registered</div>';
 					return;
 				}
-				container.innerHTML = data.agents.map(function(a) {
-					var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
-					var heartbeat = a.lastHeartbeat ? new Date(a.lastHeartbeat).toLocaleString() : '-';
-					return '<div class="job-card"><h3>' + a.name + (a.name === data.self ? ' (self)' : '') + '</h3>' +
-						'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + a.status + '</span>' +
-						'<span>' + a.agent + '</span>' +
-						'<span>v' + a.version + '</span></div>' +
-						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
-				}).join('');
+			container.innerHTML = data.agents.map(function(a) {
+				var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
+				var heartbeat = a.lastHeartbeat ? sanitizeHtml(new Date(a.lastHeartbeat).toLocaleString()) : '-';
+				return '<div class="job-card"><h3>' + sanitizeHtml(a.name) + (a.name === data.self ? ' (self)' : '') + '</h3>' +
+					'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + sanitizeHtml(a.status) + '</span>' +
+					'<span>' + sanitizeHtml(a.agent) + '</span>' +
+					'<span>v' + sanitizeHtml(a.version) + '</span></div>' +
+					'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
+			}).join('');
 			} catch(e) { console.error(e); }
 		}
 
@@ -888,15 +896,15 @@
 					container.innerHTML = '<div class="empty">No results</div>';
 					return;
 				}
-				container.innerHTML = docs.map(function(d) {
-					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
-					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
-						'<div class="content">' + d.content + '</div></div>';
-				}).join('');
-			} catch(e) { console.error(e); }
-		}
+			container.innerHTML = docs.map(function(d) {
+				var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + sanitizeHtml(d.source) + ')</span>' : '';
+				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' + sourceTag +
+					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
+			}).join('');
+		} catch(e) { console.error(e); }
+	}
 
-		async function loadPosseRecent() {
+	async function loadPosseRecent() {
 			if (!isPosseMember) return;
 			try {
 				var res = await fetch('/posse/memory/recent?scope=all&limit=10', { headers: headers });
@@ -907,13 +915,13 @@
 					container.innerHTML = '<div class="empty">No recent activity</div>';
 					return;
 				}
-				container.innerHTML = docs.map(function(d) {
-					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + d.source + ')</span>' : '';
-					var time = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
-					return '<div class="memory-item"><span class="category">[' + d.category + ']</span>' + sourceTag +
-						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
-						'<div class="content">' + d.content + '</div></div>';
-				}).join('');
+			container.innerHTML = docs.map(function(d) {
+				var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + sanitizeHtml(d.source) + ')</span>' : '';
+				var time = d.timestamp ? sanitizeHtml(new Date(d.timestamp).toLocaleString()) : '';
+				return '<div class="memory-item"><span class="category">[' + sanitizeHtml(d.category) + ']</span>' + sourceTag +
+					'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
+					'<div class="content">' + sanitizeHtml(d.content) + '</div></div>';
+			}).join('');
 			} catch(e) { console.error(e); }
 		}
 
