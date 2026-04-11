@@ -1,30 +1,29 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CliContext } from "../cli.js";
+import { parseArgs } from "../parse-args.js";
 
 export async function sendCommand(args: string[], ctx: CliContext): Promise<void> {
-	let prompt: string | undefined;
-	let agent: string | undefined;
-	let model: string | undefined;
-	let maxIterations: number | undefined;
-	let workdir: string | undefined;
+	const { flags, positionals } = parseArgs(args, {
+		string: ["agent", "model", "workdir"],
+		number: ["max-iterations"],
+		passthrough: ["config", "url"],
+	});
 
+	const agent = flags.agent as string | undefined;
+	const model = flags.model as string | undefined;
+	const maxIterations = flags["max-iterations"] as number | undefined;
+	const workdir = flags.workdir as string | undefined;
 	const url = ctx.url ?? "http://localhost:7600";
 
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-		if (arg === "--agent") agent = args[++i];
-		else if (arg === "--model") model = args[++i];
-		else if (arg === "--max-iterations") maxIterations = Number.parseInt(args[++i], 10);
-		else if (arg === "--workdir") workdir = args[++i];
-		else if (arg === "--url" || arg === "--config") i++;
-		else if (!arg.startsWith("-") && !prompt) {
-			const resolved = resolve(arg);
-			if (existsSync(resolved) && arg.endsWith(".md")) {
-				prompt = readFileSync(resolved, "utf-8");
-			} else {
-				prompt = arg;
-			}
+	let prompt: string | undefined;
+	if (positionals.length > 0) {
+		const first = positionals[0];
+		const resolved = resolve(first);
+		if (existsSync(resolved) && first.endsWith(".md")) {
+			prompt = readFileSync(resolved, "utf-8");
+		} else {
+			prompt = first;
 		}
 	}
 

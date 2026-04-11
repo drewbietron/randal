@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { RunnerEvent } from "@randal/core";
 import { Runner } from "@randal/runner";
 import type { CliContext } from "../cli.js";
+import { parseArgs } from "../parse-args.js";
 
 export interface ParsedRunArgs {
 	prompt?: string;
@@ -18,41 +19,33 @@ export interface ParsedRunArgs {
  * Exported for testing.
  */
 export function parseRunArgs(args: string[]): ParsedRunArgs {
-	let prompt: string | undefined;
-	let agent: string | undefined;
-	let model: string | undefined;
-	let maxIterations: number | undefined;
-	let workdir: string | undefined;
-	let verbose = false;
+	const { flags, positionals } = parseArgs(args, {
+		string: ["agent", "model", "workdir"],
+		number: ["max-iterations"],
+		boolean: ["verbose", "no-memory"],
+		aliases: { "-v": "--verbose" },
+		passthrough: ["config", "url"],
+	});
 
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-		if (arg === "--agent") {
-			agent = args[++i];
-		} else if (arg === "--model") {
-			model = args[++i];
-		} else if (arg === "--max-iterations") {
-			maxIterations = Number.parseInt(args[++i], 10);
-		} else if (arg === "--workdir") {
-			workdir = args[++i];
-		} else if (arg === "--verbose" || arg === "-v") {
-			verbose = true;
-		} else if (arg === "--config" || arg === "--url") {
-			i++; // skip value for global flags that take a value
-		} else if (arg === "--no-memory") {
-			// Boolean flag — do not increment i
-		} else if (!arg.startsWith("-") && !prompt) {
-			// Check if it's a file path
-			const resolved = resolve(arg);
-			if (existsSync(resolved) && arg.endsWith(".md")) {
-				prompt = readFileSync(resolved, "utf-8");
-			} else {
-				prompt = arg;
-			}
+	let prompt: string | undefined;
+	if (positionals.length > 0) {
+		const first = positionals[0];
+		const resolved = resolve(first);
+		if (existsSync(resolved) && first.endsWith(".md")) {
+			prompt = readFileSync(resolved, "utf-8");
+		} else {
+			prompt = first;
 		}
 	}
 
-	return { prompt, agent, model, maxIterations, workdir, verbose };
+	return {
+		prompt,
+		agent: flags.agent as string | undefined,
+		model: flags.model as string | undefined,
+		maxIterations: flags["max-iterations"] as number | undefined,
+		workdir: flags.workdir as string | undefined,
+		verbose: (flags.verbose as boolean) ?? false,
+	};
 }
 
 export async function runCommand(args: string[], ctx: CliContext): Promise<void> {
