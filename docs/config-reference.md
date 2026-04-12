@@ -740,9 +740,12 @@ memory:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `mesh.enabled` | boolean | `false` | Enable mesh orchestration |
-| `mesh.specialization` | string | — | Instance specialization (e.g., "frontend", "backend") |
+| `mesh.role` | string (enum) | — | Agent's broad domain. One of: `product-engineering`, `platform-infrastructure`, `security-compliance`, `data-intelligence`, `design-experience`, `content-communications`, `revenue-growth`, `customer-operations`, `strategy-finance`, `legal-governance`. Used for routing pre-filter and analytics. |
+| `mesh.expertise` | string \| `{file, additional?}` | — | Rich natural language expertise description. Supports inline string, file reference (`{ file: "./profile.md" }`), or combined (`{ file: "./profile.md", additional: "Also knows X" }`). Used for semantic routing when embeddings are available. |
+| `mesh.specialization` | string | — | **(Deprecated)** Legacy specialization tag. Superseded by `role` + `expertise`. Still supported for backward compatibility. |
 | `mesh.endpoint` | string | — | This instance's HTTP endpoint for peer communication |
-| `mesh.routingWeights.specialization` | number | `0.4` | Weight for specialization match in routing |
+| `mesh.routingWeights.expertise` | number | `0.4` | Weight for semantic expertise matching in routing (3-tier: vector cosine → role match → specialization fallback) |
+| `mesh.routingWeights.specialization` | number | `0.0` | Weight for legacy specialization string match. Set to `0.4` (and `expertise` to `0.0`) for old-style routing. |
 | `mesh.routingWeights.reliability` | number | `0.3` | Weight for reliability score in routing |
 | `mesh.routingWeights.load` | number | `0.2` | Weight for current load in routing |
 | `mesh.routingWeights.modelMatch` | number | `0.1` | Weight for model availability in routing |
@@ -757,7 +760,7 @@ memory:
 | `analytics.autoAnnotationPrompt` | boolean | `true` | Prompt for annotations after job completion |
 | `analytics.feedbackInjection` | boolean | `true` | Inject empirical guidance into system prompts |
 | `analytics.recommendationFrequency` | `"daily"` \| `"weekly"` \| `"on-demand"` | `"on-demand"` | How often to generate recommendations |
-| `analytics.domainKeywords` | Record<string, string[]> | (see defaults) | Custom keyword-to-domain mapping |
+| `analytics.domainKeywords` | Record<string, string[]> | (see defaults) | Custom keyword-to-domain mapping. Default domains: `product-engineering`, `platform-infrastructure`, `security-compliance`, `data-intelligence`, `design-experience`, `content-communications`, `revenue-growth`, `customer-operations`, `strategy-finance`, `legal-governance`. Override or extend per domain. Legacy domain names (`frontend`, `backend`, `database`, `infra`, `docs`, `testing`) are automatically mapped to the new taxonomy for backward compatibility. |
 | `analytics.agingHalfLife` | number | `30` | Half-life in days for annotation aging |
 
 ---
