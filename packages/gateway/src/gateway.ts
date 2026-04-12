@@ -1,8 +1,9 @@
-import { mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { MeshInstance, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { createLogger } from "@randal/core";
+import { EmbeddingService } from "@randal/memory";
 import {
 	MemoryManager,
 	MessageManager,
@@ -63,6 +64,34 @@ async function waitForMeilisearch(
 			logger.info("Waiting for Meilisearch...", { attempt, maxAttempts, url });
 			await new Promise((r) => setTimeout(r, intervalMs));
 		}
+	}
+}
+
+/**
+ * Resolve the mesh.expertise config field to plain text.
+ * Supports inline string, file reference, or combined format.
+ * Never throws — returns undefined on any failure.
+ */
+function resolveExpertiseText(config: RandalConfig): string | undefined {
+	try {
+		const expertise = config.mesh.expertise;
+		if (!expertise) return undefined;
+		if (typeof expertise === "string") return expertise;
+		// Object form: { file: string, additional?: string }
+		let text = "";
+		if (expertise.file) {
+			const filePath = resolve(expertise.file);
+			text = readFileSync(filePath, "utf-8");
+		}
+		if (expertise.additional) {
+			text = text ? `${text}\n\n${expertise.additional}` : expertise.additional;
+		}
+		return text || undefined;
+	} catch (err) {
+		logger.warn("Failed to resolve expertise text", {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return undefined;
 	}
 }
 
@@ -231,12 +260,36 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	// biome-ignore lint/suspicious/noExplicitAny: meshCoordinator shape is defined by HttpChannelOptions
 	let meshCoordinator: any;
 
+	// Cached expertise data for posse registration and heartbeats
+	let resolvedExpertiseCache: string | undefined;
+	let expertiseVectorCache: number[] | undefined;
+
 	if (config.mesh.enabled && posseClient) {
 		try {
 			meshRegistry = new MeilisearchMeshRegistry(posseClient, config.posse ?? config.name);
 			await meshRegistry.init();
 
-			selfInstance = createInstanceFromConfig(config);
+			// Resolve expertise text and embed it (non-fatal)
+			resolvedExpertiseCache = resolveExpertiseText(config);
+			let meshEmbedding: EmbeddingService | undefined;
+			if (process.env.OPENROUTER_API_KEY) {
+				try {
+					meshEmbedding = new EmbeddingService({
+						apiKey: process.env.OPENROUTER_API_KEY,
+					});
+					if (resolvedExpertiseCache) {
+						const vector = await meshEmbedding.embed(resolvedExpertiseCache).catch(() => null);
+						expertiseVectorCache = vector ?? undefined;
+					}
+				} catch {
+					// Embedding init or call failed — non-fatal, fall back to role matching
+				}
+			}
+
+			selfInstance = createInstanceFromConfig(config, {
+				resolvedExpertise: resolvedExpertiseCache,
+				expertiseVector: expertiseVectorCache,
+			});
 			await meshRegistry.register(selfInstance);
 
 			healthMonitor = new HealthMonitor();
@@ -281,12 +334,21 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 							status: inst.status,
 							health: inst.health.missedPings > 0 ? "degraded" : "healthy",
 							load: inst.activeJobs,
+							role: inst.role ?? "",
+							expertise: inst.expertise ?? "",
 							specialization: inst.specialization ?? "",
 							lastSeen: inst.lastHeartbeat,
 						}));
 
-					meshCoordinator.routeDryRun = (prompt: string) => {
-						const decisions = dryRunRoute(instances, { prompt });
+					meshCoordinator.routeDryRun = async (prompt: string) => {
+						// Embed the task prompt for semantic scoring (non-fatal)
+						const taskVector = meshEmbedding
+							? await meshEmbedding.embed(prompt).catch(() => null)
+							: null;
+						const decisions = dryRunRoute(instances, {
+							prompt,
+							taskVector: taskVector ?? undefined,
+						});
 						const best = decisions[0];
 						return {
 							selectedInstance: best
@@ -310,6 +372,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 			logger.info("Mesh coordinator initialized", {
 				posse: config.posse ?? config.name,
 				instanceId: selfInstance.instanceId,
+				expertise: !!resolvedExpertiseCache,
+				vector: !!expertiseVectorCache,
 			});
 		} catch (err) {
 			logger.warn("Mesh coordinator initialization failed, continuing without mesh", {
@@ -410,7 +474,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	// Register in posse registry (R3.3)
 	if (posseClient && config.posse) {
 		try {
-			await registerAgent(config, posseClient);
+			await registerAgent(config, posseClient, {
+				resolvedExpertise: resolvedExpertiseCache,
+				expertiseVector: expertiseVectorCache,
+			});
 			logger.info("Registered in posse registry", {
 				posse: config.posse,
 				endpoint: config.mesh.endpoint,
@@ -430,7 +497,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 				try {
 					const activeJobs = runner.getActiveJobs();
 					const status = activeJobs.length > 0 ? "busy" : "idle";
-					await updateHeartbeat(config, posseClient, status as "idle" | "busy");
+					await updateHeartbeat(config, posseClient, status as "idle" | "busy", {
+						resolvedExpertise: resolvedExpertiseCache,
+						expertiseVector: expertiseVectorCache,
+					});
 				} catch {
 					// Non-fatal
 				}
