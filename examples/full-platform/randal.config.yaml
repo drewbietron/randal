@@ -42,7 +42,7 @@ identity:
     - ./knowledge/codebase-overview.md
   rules:
     - Use voice-appropriate responses when on a call
-    - Delegate tasks outside your specialization to mesh peers
+    - Delegate tasks outside your expertise to mesh peers — the router handles matching automatically
     - Self-evaluate work quality after each task
     - Use browser tools for web research and testing
 
@@ -86,10 +86,15 @@ voice:
 
 mesh:
   enabled: true
-  specialization: general
+  role: product-engineering
+  expertise: >
+    Full-stack software engineering with voice, browser, and mesh
+    capabilities. Handles React frontends, Node.js backends, database
+    design, and API development. Generalist with broad coverage across
+    the product engineering domain.
   endpoint: ${MESH_ENDPOINT}
   routingWeights:
-    specialization: 0.4
+    expertise: 0.4
     reliability: 0.3
     load: 0.2
     modelMatch: 0.1
@@ -100,64 +105,60 @@ analytics:
   feedbackInjection: true
   recommendationFrequency: weekly
   domainKeywords:
-    frontend:
+    product-engineering:
       - react
-      - vue
-      - angular
-      - css
-      - html
-      - component
-      - ui
-      - ux
-      - tailwind
-      - next.js
-      - svelte
-    backend:
+      - typescript
       - api
-      - server
-      - endpoint
-      - rest
-      - graphql
-      - middleware
-      - express
-      - hono
-      - fastify
-    database:
-      - sql
-      - query
+      - component
+      - database
       - migration
-      - schema
-      - postgres
-      - mysql
-      - sqlite
-      - prisma
-      - drizzle
-    infra:
+    platform-infrastructure:
       - docker
       - kubernetes
-      - ci
-      - cd
-      - deploy
       - terraform
-      - aws
-      - gcp
-      - azure
-      - nginx
-    docs:
-      - readme
-      - documentation
+      - deploy
+      - ci
+      - monitoring
+    security-compliance:
+      - security
+      - vulnerability
+      - audit
+      - compliance
+    data-intelligence:
+      - analytics
+      - pipeline
+      - ml
+      - dashboard
+    design-experience:
+      - design
+      - ux
+      - accessibility
+      - figma
+    content-communications:
       - docs
-      - guide
-      - tutorial
+      - readme
+      - blog
       - changelog
-    testing:
-      - test
-      - spec
-      - jest
-      - vitest
-      - cypress
-      - playwright
-      - coverage
+    revenue-growth:
+      - sales
+      - pricing
+      - conversion
+      - growth
+    customer-operations:
+      - support
+      - onboarding
+      - ticket
+      - churn
+    strategy-finance:
+      - roadmap
+      - okr
+      - budget
+      - sprint
+    legal-governance:
+      - contract
+      - license
+      - policy
+      - compliance
   agingHalfLife: 30
 
 # Capabilities: controls which MCP servers and tool permissions are wired
