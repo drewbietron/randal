@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { type ZodError, z } from "zod";
+import { MESH_DOMAINS } from "./types.js";
 
 // ---- Sub-schemas ----
 
@@ -474,11 +475,30 @@ export const configSchema = z.object({
 	mesh: z
 		.object({
 			enabled: z.boolean().default(false),
+			/** Legacy specialization tag — superseded by role + expertise. */
 			specialization: z.string().optional(),
+			/** Broad domain role — one of 10 predefined MeshDomain slugs. */
+			role: z.enum(MESH_DOMAINS as unknown as [string, ...string[]]).optional(),
+			/**
+			 * Rich natural language expertise description.
+			 * Supports inline string, file reference, or combined format.
+			 */
+			expertise: z
+				.union([
+					z.string(),
+					z.object({
+						file: z.string(),
+						additional: z.string().optional(),
+					}),
+				])
+				.optional(),
 			endpoint: z.string().optional(),
 			routingWeights: z
 				.object({
-					specialization: z.number().default(0.4),
+					/** Weight for semantic expertise matching (3-tier: vector → role → specialization). */
+					expertise: z.number().default(0.4),
+					/** Weight for legacy specialization string match. Default 0.0 (superseded by expertise). */
+					specialization: z.number().default(0.0),
 					reliability: z.number().default(0.3),
 					load: z.number().default(0.2),
 					modelMatch: z.number().default(0.1),
