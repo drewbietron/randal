@@ -38,7 +38,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 	{
 		name: "posse_members",
 		description:
-			"Discover other Randal instances in your posse. Returns name, status, specialization, capabilities, endpoint, and last heartbeat for each member. Use this to see who is available before delegating work.",
+			"Discover other Randal instances in your posse. Returns name, status, role (broad domain), expertise (detailed skills), specialization, capabilities, endpoint, and last heartbeat for each member. Use this to see who is available before delegating work.",
 		inputSchema: {
 			type: "object" as const,
 			properties: {},
@@ -129,6 +129,12 @@ async function handlePosseMembers(_params: Record<string, unknown>): Promise<unk
 			members: docs.map((doc) => ({
 				name: doc.name,
 				status: doc.status,
+				role: doc.role,
+				expertise: doc.expertise
+					? doc.expertise.length > 200
+						? `${doc.expertise.slice(0, 200)}...`
+						: doc.expertise
+					: undefined,
 				specialization: doc.specialization,
 				capabilities: doc.capabilities,
 				endpoint: doc.endpoint,
