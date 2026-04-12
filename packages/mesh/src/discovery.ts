@@ -10,6 +10,8 @@ const logger = createLogger({ context: { component: "mesh:discovery" } });
 
 export interface DiscoveryOptions {
 	posse?: string;
+	/** Filter by broad domain role (one of 10 MeshDomain slugs). */
+	role?: string;
 	specialization?: string;
 	status?: MeshInstance["status"];
 	excludeInstanceId?: string;
@@ -39,6 +41,11 @@ export function filterInstances(
 	// Filter by posse
 	if (options.posse) {
 		instances = instances.filter((i) => i.posse === options.posse);
+	}
+
+	// Filter by role (broad domain pre-filter)
+	if (options.role) {
+		instances = instances.filter((i) => i.role === options.role);
 	}
 
 	// Filter by specialization
@@ -82,6 +89,27 @@ export function findBestForSpecialization(
 	const matching = instances.filter(
 		(i) =>
 			i.specialization === specialization && i.status !== "unhealthy" && i.status !== "offline",
+	);
+
+	if (matching.length === 0) return null;
+
+	// Prefer idle over busy
+	const idle = matching.filter((i) => i.status === "idle");
+	if (idle.length > 0) {
+		return idle.reduce((a, b) => (a.activeJobs <= b.activeJobs ? a : b));
+	}
+
+	// All busy — pick least loaded
+	return matching.reduce((a, b) => (a.activeJobs <= b.activeJobs ? a : b));
+}
+
+/**
+ * Find the best instance for a given role (broad domain).
+ * Returns null if no suitable instance found.
+ */
+export function findBestForRole(instances: MeshInstance[], role: string): MeshInstance | null {
+	const matching = instances.filter(
+		(i) => i.role === role && i.status !== "unhealthy" && i.status !== "offline",
 	);
 
 	if (matching.length === 0) return null;
