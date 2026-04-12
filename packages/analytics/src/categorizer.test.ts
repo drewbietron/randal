@@ -1,34 +1,37 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_DOMAIN_KEYWORDS, categorizePrompt, getPrimaryDomain } from "./categorizer.js";
+import {
+	DEFAULT_DOMAIN_KEYWORDS,
+	LEGACY_DOMAIN_MAP,
+	categorizePrompt,
+	getPrimaryDomain,
+	mapLegacyDomain,
+} from "./categorizer.js";
 
 describe("categorizePrompt", () => {
-	test("returns ['frontend'] for React component prompt", () => {
+	test("returns ['product-engineering'] for React component prompt", () => {
 		const result = categorizePrompt("build a React component");
-		expect(result).toContain("frontend");
-		expect(result[0]).toBe("frontend");
+		expect(result).toContain("product-engineering");
+		expect(result[0]).toBe("product-engineering");
 	});
 
-	test("returns ['database'] for SQL query prompt", () => {
+	test("returns ['product-engineering'] for SQL query prompt", () => {
 		const result = categorizePrompt("fix the SQL query");
-		expect(result).toContain("database");
-		expect(result[0]).toBe("database");
+		expect(result).toContain("product-engineering");
+		expect(result[0]).toBe("product-engineering");
 	});
 
-	test("returns ['infra'] for Docker deployment prompt", () => {
+	test("returns ['platform-infrastructure'] for Docker deployment prompt", () => {
 		const result = categorizePrompt("write Docker deployment");
-		expect(result).toContain("infra");
-		expect(result[0]).toBe("infra");
+		expect(result).toContain("platform-infrastructure");
+		expect(result[0]).toBe("platform-infrastructure");
 	});
 
 	test("returns multiple domains sorted by keyword count for mixed prompt", () => {
 		const result = categorizePrompt(
 			"build a React component with CSS that calls a REST API endpoint",
 		);
-		expect(result.length).toBeGreaterThanOrEqual(2);
-		expect(result).toContain("frontend");
-		expect(result).toContain("backend");
-		// frontend should come first since React + CSS > REST + API
-		expect(result.indexOf("frontend")).toBeLessThan(result.indexOf("backend"));
+		expect(result.length).toBeGreaterThanOrEqual(1);
+		expect(result).toContain("product-engineering");
 	});
 
 	test("returns empty array for prompt with no matching keywords", () => {
@@ -38,30 +41,29 @@ describe("categorizePrompt", () => {
 
 	test("is case insensitive", () => {
 		const result = categorizePrompt("Build a REACT COMPONENT with CSS");
-		expect(result).toContain("frontend");
+		expect(result).toContain("product-engineering");
 	});
 
-	test("detects backend keywords", () => {
+	test("detects backend keywords under product-engineering", () => {
 		const result = categorizePrompt("create a REST API endpoint with middleware");
-		expect(result).toContain("backend");
+		expect(result).toContain("product-engineering");
 	});
 
-	test("detects testing keywords", () => {
+	test("detects testing keywords under product-engineering", () => {
 		const result = categorizePrompt("write unit test with jest and mock data");
-		expect(result).toContain("testing");
+		expect(result).toContain("product-engineering");
 	});
 
-	test("detects docs keywords", () => {
+	test("detects docs keywords under content-communications", () => {
 		const result = categorizePrompt("update the readme documentation");
-		expect(result).toContain("docs");
+		expect(result).toContain("content-communications");
 	});
 
 	test("returns domains sorted by match count descending", () => {
-		// Use prompt with multiple frontend keywords and one backend keyword
 		const result = categorizePrompt(
 			"create a React component with tailwind CSS layout and responsive UI that calls an API",
 		);
-		expect(result[0]).toBe("frontend");
+		expect(result[0]).toBe("product-engineering");
 	});
 
 	test("uses custom keyword map when provided", () => {
@@ -71,7 +73,7 @@ describe("categorizePrompt", () => {
 		};
 		const result = categorizePrompt("build a flutter mobile app", customKeywords);
 		expect(result).toContain("mobile");
-		expect(result).not.toContain("frontend");
+		expect(result).not.toContain("product-engineering");
 	});
 
 	test("custom keyword map overrides defaults", () => {
@@ -81,6 +83,56 @@ describe("categorizePrompt", () => {
 		const result = categorizePrompt("build a react api", customKeywords);
 		expect(result).toEqual(["custom"]);
 	});
+
+	test("detects security-compliance domain", () => {
+		const result = categorizePrompt(
+			"run a security audit on the authentication module for GDPR compliance",
+		);
+		expect(result).toContain("security-compliance");
+	});
+
+	test("detects data-intelligence domain", () => {
+		const result = categorizePrompt(
+			"build an ETL pipeline to load data into the warehouse for analytics",
+		);
+		expect(result).toContain("data-intelligence");
+	});
+
+	test("detects revenue-growth domain", () => {
+		const result = categorizePrompt(
+			"create a sales funnel and conversion tracking for the GTM launch",
+		);
+		expect(result).toContain("revenue-growth");
+	});
+
+	test("detects customer-operations domain", () => {
+		const result = categorizePrompt(
+			"set up zendesk helpdesk for customer support ticket onboarding",
+		);
+		expect(result).toContain("customer-operations");
+	});
+
+	test("detects strategy-finance domain", () => {
+		const result = categorizePrompt("build the quarterly OKR roadmap and budget forecast");
+		expect(result).toContain("strategy-finance");
+	});
+
+	test("detects legal-governance domain", () => {
+		const result = categorizePrompt("review the NDA contract terms and licensing policy");
+		expect(result).toContain("legal-governance");
+	});
+
+	test("detects design-experience domain", () => {
+		const result = categorizePrompt(
+			"create figma wireframe for accessibility and responsive design",
+		);
+		expect(result).toContain("design-experience");
+	});
+
+	test("detects content-communications domain", () => {
+		const result = categorizePrompt("write blog article and release notes for the newsletter");
+		expect(result).toContain("content-communications");
+	});
 });
 
 describe("getPrimaryDomain", () => {
@@ -89,24 +141,24 @@ describe("getPrimaryDomain", () => {
 		expect(result).toBe("general");
 	});
 
-	test("returns the top domain for a matching prompt", () => {
+	test("returns 'product-engineering' for React/CSS prompt", () => {
 		const result = getPrimaryDomain("build a React component with CSS");
-		expect(result).toBe("frontend");
+		expect(result).toBe("product-engineering");
 	});
 
-	test("returns 'backend' for API-related prompt", () => {
+	test("returns 'product-engineering' for API-related prompt", () => {
 		const result = getPrimaryDomain("create REST API endpoint with express middleware");
-		expect(result).toBe("backend");
+		expect(result).toBe("product-engineering");
 	});
 
-	test("returns 'database' for SQL prompt", () => {
+	test("returns 'product-engineering' for SQL prompt", () => {
 		const result = getPrimaryDomain("write a SQL migration for postgres schema");
-		expect(result).toBe("database");
+		expect(result).toBe("product-engineering");
 	});
 
-	test("returns 'infra' for deployment prompt", () => {
+	test("returns 'platform-infrastructure' for deployment prompt", () => {
 		const result = getPrimaryDomain("set up docker kubernetes deployment with terraform");
-		expect(result).toBe("infra");
+		expect(result).toBe("platform-infrastructure");
 	});
 
 	test("uses custom keyword map", () => {
@@ -127,14 +179,19 @@ describe("getPrimaryDomain", () => {
 });
 
 describe("DEFAULT_DOMAIN_KEYWORDS", () => {
-	test("contains all expected domains", () => {
+	test("contains all 10 expected domains", () => {
 		const domains = Object.keys(DEFAULT_DOMAIN_KEYWORDS);
-		expect(domains).toContain("frontend");
-		expect(domains).toContain("backend");
-		expect(domains).toContain("database");
-		expect(domains).toContain("infra");
-		expect(domains).toContain("docs");
-		expect(domains).toContain("testing");
+		expect(domains).toContain("product-engineering");
+		expect(domains).toContain("platform-infrastructure");
+		expect(domains).toContain("security-compliance");
+		expect(domains).toContain("data-intelligence");
+		expect(domains).toContain("design-experience");
+		expect(domains).toContain("content-communications");
+		expect(domains).toContain("revenue-growth");
+		expect(domains).toContain("customer-operations");
+		expect(domains).toContain("strategy-finance");
+		expect(domains).toContain("legal-governance");
+		expect(Object.keys(DEFAULT_DOMAIN_KEYWORDS).length).toBe(10);
 	});
 
 	test("each domain has at least 5 keywords", () => {
@@ -143,19 +200,68 @@ describe("DEFAULT_DOMAIN_KEYWORDS", () => {
 		}
 	});
 
-	test("frontend contains react", () => {
-		expect(DEFAULT_DOMAIN_KEYWORDS.frontend).toContain("react");
+	test("product-engineering contains react", () => {
+		expect(DEFAULT_DOMAIN_KEYWORDS["product-engineering"]).toContain("react");
 	});
 
-	test("backend contains api", () => {
-		expect(DEFAULT_DOMAIN_KEYWORDS.backend).toContain("api");
+	test("product-engineering contains api", () => {
+		expect(DEFAULT_DOMAIN_KEYWORDS["product-engineering"]).toContain("api");
 	});
 
-	test("database contains sql", () => {
-		expect(DEFAULT_DOMAIN_KEYWORDS.database).toContain("sql");
+	test("product-engineering contains sql", () => {
+		expect(DEFAULT_DOMAIN_KEYWORDS["product-engineering"]).toContain("sql");
 	});
 
-	test("infra contains docker", () => {
-		expect(DEFAULT_DOMAIN_KEYWORDS.infra).toContain("docker");
+	test("platform-infrastructure contains docker", () => {
+		expect(DEFAULT_DOMAIN_KEYWORDS["platform-infrastructure"]).toContain("docker");
+	});
+});
+
+describe("LEGACY_DOMAIN_MAP", () => {
+	test("maps all 6 legacy domains", () => {
+		expect(Object.keys(LEGACY_DOMAIN_MAP)).toHaveLength(6);
+		expect(LEGACY_DOMAIN_MAP.frontend).toBe("product-engineering");
+		expect(LEGACY_DOMAIN_MAP.backend).toBe("product-engineering");
+		expect(LEGACY_DOMAIN_MAP.database).toBe("product-engineering");
+		expect(LEGACY_DOMAIN_MAP.infra).toBe("platform-infrastructure");
+		expect(LEGACY_DOMAIN_MAP.docs).toBe("content-communications");
+		expect(LEGACY_DOMAIN_MAP.testing).toBe("product-engineering");
+	});
+});
+
+describe("mapLegacyDomain", () => {
+	test("maps 'frontend' to 'product-engineering'", () => {
+		expect(mapLegacyDomain("frontend")).toBe("product-engineering");
+	});
+
+	test("maps 'backend' to 'product-engineering'", () => {
+		expect(mapLegacyDomain("backend")).toBe("product-engineering");
+	});
+
+	test("maps 'database' to 'product-engineering'", () => {
+		expect(mapLegacyDomain("database")).toBe("product-engineering");
+	});
+
+	test("maps 'infra' to 'platform-infrastructure'", () => {
+		expect(mapLegacyDomain("infra")).toBe("platform-infrastructure");
+	});
+
+	test("maps 'docs' to 'content-communications'", () => {
+		expect(mapLegacyDomain("docs")).toBe("content-communications");
+	});
+
+	test("maps 'testing' to 'product-engineering'", () => {
+		expect(mapLegacyDomain("testing")).toBe("product-engineering");
+	});
+
+	test("passes through new domain names unchanged", () => {
+		expect(mapLegacyDomain("product-engineering")).toBe("product-engineering");
+		expect(mapLegacyDomain("security-compliance")).toBe("security-compliance");
+		expect(mapLegacyDomain("platform-infrastructure")).toBe("platform-infrastructure");
+	});
+
+	test("passes through unknown domain names unchanged", () => {
+		expect(mapLegacyDomain("general")).toBe("general");
+		expect(mapLegacyDomain("custom-domain")).toBe("custom-domain");
 	});
 });
