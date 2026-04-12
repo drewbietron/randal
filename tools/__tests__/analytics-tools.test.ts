@@ -190,12 +190,12 @@ describe("get_feedback handler logic", () => {
 
 describe("annotate handler logic", () => {
 	test("auto-detects domain from prompt via getPrimaryDomain", () => {
-		expect(getPrimaryDomain("Fix the React component rendering")).toBe("frontend");
-		expect(getPrimaryDomain("Update the API endpoint handler")).toBe("backend");
-		expect(getPrimaryDomain("Add database migration for users table")).toBe("database");
-		expect(getPrimaryDomain("Update the README documentation")).toBe("docs");
-		expect(getPrimaryDomain("Add unit tests for the parser")).toBe("testing");
-		expect(getPrimaryDomain("Configure Docker deployment")).toBe("infra");
+		expect(getPrimaryDomain("Fix the React component rendering")).toBe("product-engineering");
+		expect(getPrimaryDomain("Update the API endpoint handler")).toBe("product-engineering");
+		expect(getPrimaryDomain("Add database migration for users table")).toBe("product-engineering");
+		expect(getPrimaryDomain("Update the README documentation")).toBe("content-communications");
+		expect(getPrimaryDomain("Add unit tests for the parser")).toBe("product-engineering");
+		expect(getPrimaryDomain("Configure Docker deployment")).toBe("platform-infrastructure");
 		expect(getPrimaryDomain("Something generic")).toBe("general");
 	});
 
@@ -225,7 +225,7 @@ describe("annotate handler logic", () => {
 
 		const saved = await store.getByJobId("test-job-1");
 		expect(saved).toBeTruthy();
-		expect(saved?.domain).toBe("frontend");
+		expect(saved?.domain).toBe("product-engineering");
 		expect(saved?.verdict).toBe("pass");
 		expect(saved?.feedback).toBe("All tests pass");
 	});
