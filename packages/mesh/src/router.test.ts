@@ -110,6 +110,7 @@ describe("routeTask", () => {
 
 		// Use weights that heavily favor load
 		const weights: RoutingWeights = {
+			expertise: 0.0,
 			specialization: 0.0,
 			reliability: 0.0,
 			load: 1.0,
@@ -143,6 +144,7 @@ describe("routeTask", () => {
 
 		// Use weights that heavily favor model match
 		const weights: RoutingWeights = {
+			expertise: 0.0,
 			specialization: 0.0,
 			reliability: 0.0,
 			load: 0.0,
@@ -208,6 +210,7 @@ describe("routeTask", () => {
 		};
 
 		const weights: RoutingWeights = {
+			expertise: 0.0,
 			specialization: 0.0,
 			reliability: 0.0,
 			load: 0.0,
@@ -294,6 +297,7 @@ describe("dryRunRoute", () => {
 
 		// Heavily favor specialization
 		const specWeights: RoutingWeights = {
+			expertise: 0.0,
 			specialization: 1.0,
 			reliability: 0.0,
 			load: 0.0,
@@ -305,6 +309,7 @@ describe("dryRunRoute", () => {
 
 		// Heavily favor load
 		const loadWeights: RoutingWeights = {
+			expertise: 0.0,
 			specialization: 0.0,
 			reliability: 0.0,
 			load: 1.0,
