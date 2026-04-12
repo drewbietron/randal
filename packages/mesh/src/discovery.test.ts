@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MeshInstance } from "@randal/core";
-import { filterInstances, findBestForSpecialization } from "./discovery.js";
+import { filterInstances, findBestForRole, findBestForSpecialization } from "./discovery.js";
 
 function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 	return {
@@ -223,6 +223,126 @@ describe("findBestForSpecialization", () => {
 
 	test("returns null for empty instances array", () => {
 		const result = findBestForSpecialization([], "frontend");
+		expect(result).toBeNull();
+	});
+});
+
+describe("filterInstances with role", () => {
+	test("filters by role", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-1", role: "product-engineering" }),
+			makeInstance({ instanceId: "inst-2", role: "security-compliance" }),
+			makeInstance({ instanceId: "inst-3", role: "product-engineering" }),
+		];
+
+		const result = filterInstances(instances, { role: "product-engineering" });
+		expect(result.instances).toHaveLength(2);
+		expect(result.instances.every((i) => i.role === "product-engineering")).toBe(true);
+	});
+
+	test("role filter combined with specialization filter", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				role: "product-engineering",
+				specialization: "frontend",
+			}),
+			makeInstance({
+				instanceId: "inst-2",
+				role: "product-engineering",
+				specialization: "backend",
+			}),
+		];
+
+		const result = filterInstances(instances, {
+			role: "product-engineering",
+			specialization: "frontend",
+		});
+		expect(result.instances).toHaveLength(1);
+		expect(result.instances[0].instanceId).toBe("inst-1");
+	});
+
+	test("role filter excludes instances without role field", () => {
+		const instances = [
+			makeInstance({ instanceId: "inst-with-role", role: "product-engineering" }),
+			makeInstance({ instanceId: "inst-no-role" }),
+		];
+
+		const result = filterInstances(instances, { role: "product-engineering" });
+		expect(result.instances).toHaveLength(1);
+		expect(result.instances[0].instanceId).toBe("inst-with-role");
+	});
+});
+
+describe("findBestForRole", () => {
+	test("returns matching idle instance", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				role: "product-engineering",
+				status: "idle",
+				activeJobs: 0,
+			}),
+			makeInstance({
+				instanceId: "inst-2",
+				role: "security-compliance",
+				status: "idle",
+				activeJobs: 0,
+			}),
+		];
+
+		const result = findBestForRole(instances, "product-engineering");
+		expect(result).not.toBeNull();
+		expect(result?.instanceId).toBe("inst-1");
+		expect(result?.role).toBe("product-engineering");
+	});
+
+	test("prefers idle over busy", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-busy",
+				role: "product-engineering",
+				status: "busy",
+				activeJobs: 2,
+			}),
+			makeInstance({
+				instanceId: "inst-idle",
+				role: "product-engineering",
+				status: "idle",
+				activeJobs: 0,
+			}),
+		];
+
+		const result = findBestForRole(instances, "product-engineering");
+		expect(result).not.toBeNull();
+		expect(result?.instanceId).toBe("inst-idle");
+	});
+
+	test("returns null when no role match found", () => {
+		const instances = [makeInstance({ role: "security-compliance", status: "idle" })];
+
+		const result = findBestForRole(instances, "product-engineering");
+		expect(result).toBeNull();
+	});
+
+	test("returns null for unhealthy instances matching role", () => {
+		const instances = [
+			makeInstance({
+				role: "product-engineering",
+				status: "unhealthy",
+			}),
+			makeInstance({
+				role: "product-engineering",
+				status: "offline",
+			}),
+		];
+
+		const result = findBestForRole(instances, "product-engineering");
+		expect(result).toBeNull();
+	});
+
+	test("returns null for empty array", () => {
+		const result = findBestForRole([], "product-engineering");
 		expect(result).toBeNull();
 	});
 });
