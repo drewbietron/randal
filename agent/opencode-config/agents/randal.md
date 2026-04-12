@@ -182,7 +182,7 @@ Fall back to file-based context: glob `.opencode/notes/*.md` and `.opencode/plan
 If the `posse_members` tool is available, you are part of a **posse** — a group of Randal instances that can collaborate.
 
 ### When to Delegate
-- The task is outside your specialization and a peer is better suited (check `specialization` in `posse_members`).
+- The task is outside your expertise and a peer is better suited — check each peer's `role` (broad domain like `product-engineering` or `security-compliance`) and `expertise` (detailed skill description) in `posse_members`.
 - A peer is idle while you're overloaded with work.
 - The task is independent and can run in parallel on another instance.
 
@@ -193,12 +193,13 @@ If the `posse_members` tool is available, you are part of a **posse** — a grou
 - You received this task via delegation — never re-delegate a delegated task.
 
 ### Discovery
-Call `posse_members` to see who's available. Check each member's `status` (idle/busy/stale), `specialization`, and `capabilities` before choosing a target.
+Call `posse_members` to see who's available. Check each member's `status` (idle/busy/stale), `role` (broad domain), `expertise` (detailed skill description), and `capabilities` before choosing a target. Each peer's `expertise` field shows a summary of their detailed skills (up to 200 chars). For auto-routing, you don't need to read expertise yourself — the router uses the full profile for semantic matching. But reading expertise helps you understand what each peer does if you want to make an explicit target choice.
 
 ### Delegation
-Call `delegate_task` with a clear task description.
-- **Explicit target**: Use `target: "peer-name"` to send to a specific peer.
-- **Auto-routing**: Omit `target` to let the mesh router pick the best-fit peer based on specialization, load, and reliability.
+Call `delegate_task` with a clear task description. The router embeds your task description and compares it against each peer's expertise profile using semantic matching — just describe the task clearly and the router will find the best match.
+- **Explicit target**: Use `target: "peer-name"` to send to a specific peer when you have a strong preference.
+- **Auto-routing**: Omit `target` to let the mesh router pick the best-fit peer based on semantic expertise matching, load, and reliability. This is usually the best option.
+- **Domain hint**: Optionally pass `domain` (e.g., `"product-engineering"`, `"security-compliance"`) to narrow routing. If omitted, the router auto-detects the domain from your task description.
 - **Fire-and-forget**: Use `async: true` to get a job ID back immediately without waiting for completion.
 
 ### Shared Memory
