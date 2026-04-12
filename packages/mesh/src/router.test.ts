@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MeshInstance } from "@randal/core";
-import { dryRunRoute, routeTask } from "./router.js";
+import { cosineSimilarity, dryRunRoute, routeTask } from "./router.js";
 import type { RoutingContext, RoutingWeights } from "./router.js";
 
 function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
@@ -318,5 +318,268 @@ describe("dryRunRoute", () => {
 
 		const loadResults = dryRunRoute(instances, context, loadWeights);
 		expect(loadResults[0].instance.instanceId).toBe("inst-idle");
+	});
+});
+
+describe("cosineSimilarity", () => {
+	test("identical vectors return 1.0", () => {
+		// Normalized vector: [1/sqrt(2), 1/sqrt(2), 0, 0]
+		const v = [Math.SQRT1_2, Math.SQRT1_2, 0, 0];
+		expect(cosineSimilarity(v, v)).toBeCloseTo(1.0, 5);
+	});
+
+	test("orthogonal vectors return 0.0", () => {
+		const a = [1, 0, 0, 0];
+		const b = [0, 1, 0, 0];
+		expect(cosineSimilarity(a, b)).toBeCloseTo(0.0, 5);
+	});
+
+	test("returns 0 for empty vectors", () => {
+		expect(cosineSimilarity([], [])).toBe(0);
+	});
+
+	test("returns 0 for mismatched lengths", () => {
+		expect(cosineSimilarity([1, 0], [1, 0, 0])).toBe(0);
+	});
+
+	test("clamps negative dot product to 0", () => {
+		// Opposing normalized vectors would give -1, clamped to 0
+		const a = [1, 0, 0];
+		const b = [-1, 0, 0];
+		expect(cosineSimilarity(a, b)).toBe(0);
+	});
+
+	test("clamps dot product exceeding 1.0 to 1.0", () => {
+		// Non-normalized vectors with large components
+		const a = [2, 0];
+		const b = [2, 0];
+		// dot product = 4, clamped to 1.0
+		expect(cosineSimilarity(a, b)).toBe(1.0);
+	});
+});
+
+describe("computeExpertiseScore via routeTask", () => {
+	const expertiseOnlyWeights: RoutingWeights = {
+		expertise: 1.0,
+		specialization: 0.0,
+		reliability: 0.0,
+		load: 0.0,
+		modelMatch: 0.0,
+	};
+
+	test("cosine similarity: prefers instance with similar expertise vector", () => {
+		// Hand-crafted normalized-ish vectors to simulate embedding similarity
+		const instances = [
+			makeInstance({
+				instanceId: "inst-similar",
+				expertiseVector: [0.8, 0.1, 0.05, 0.05],
+				status: "idle",
+			}),
+			makeInstance({
+				instanceId: "inst-dissimilar",
+				expertiseVector: [0.05, 0.05, 0.1, 0.8],
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Build a React component",
+			taskVector: [0.9, 0.05, 0.025, 0.025],
+		};
+
+		const result = routeTask(instances, context, expertiseOnlyWeights);
+		expect(result).not.toBeNull();
+		expect(result?.instance.instanceId).toBe("inst-similar");
+		// Similar vectors should produce high cosine similarity
+		expect(result?.breakdown.expertiseScore).toBeGreaterThan(0.5);
+	});
+
+	test("cosine similarity: identical vectors give score close to 1.0", () => {
+		// Use L2-normalized vector so dot product = 1.0
+		const vec = [0.5, 0.5, 0.5, 0.5]; // magnitude = 1.0
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				expertiseVector: vec,
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Anything",
+			taskVector: vec,
+		};
+
+		const result = routeTask(instances, context, expertiseOnlyWeights);
+		expect(result).not.toBeNull();
+		expect(result?.breakdown.expertiseScore).toBeCloseTo(1.0, 1);
+	});
+
+	test("cosine similarity: orthogonal vectors give score close to 0.0", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-1",
+				expertiseVector: [1, 0, 0, 0],
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Anything",
+			taskVector: [0, 1, 0, 0],
+		};
+
+		// With orthogonal vectors, expertise score is ~0.0 which means total score < 0.1
+		// so routeTask returns null. Use dryRunRoute to see the breakdown.
+		const results = dryRunRoute(instances, context, expertiseOnlyWeights);
+		expect(results).toHaveLength(1);
+		expect(results[0].breakdown.expertiseScore).toBeCloseTo(0.0, 1);
+	});
+
+	test("tier 2 fallback: role match when no vectors", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-role-match",
+				role: "product-engineering",
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Build an API",
+			domain: "product-engineering",
+			// No taskVector — triggers Tier 2 fallback
+		};
+
+		const result = routeTask(instances, context, expertiseOnlyWeights);
+		expect(result).not.toBeNull();
+		expect(result?.breakdown.expertiseScore).toBe(1.0);
+	});
+
+	test("tier 2 fallback: role mismatch gives low score", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-wrong-role",
+				role: "security-compliance",
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Build an API",
+			domain: "product-engineering",
+			// No taskVector — triggers Tier 2 fallback
+		};
+
+		const result = routeTask(instances, context, expertiseOnlyWeights);
+		expect(result).not.toBeNull();
+		expect(result?.breakdown.expertiseScore).toBe(0.2);
+	});
+
+	test("tier 3 fallback: legacy specialization match when no role or vector", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-legacy",
+				specialization: "backend",
+				// No role, no expertiseVector
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Build an API",
+			domain: "backend",
+			// No taskVector
+		};
+
+		// Use specialization weight to verify the legacy path via specializationScore
+		const specWeights: RoutingWeights = {
+			expertise: 0.0,
+			specialization: 1.0,
+			reliability: 0.0,
+			load: 0.0,
+			modelMatch: 0.0,
+		};
+
+		const result = routeTask(instances, context, specWeights);
+		expect(result).not.toBeNull();
+		expect(result?.breakdown.specializationScore).toBe(1.0);
+	});
+
+	test("graceful degradation: no vectors, no role, no specialization returns neutral score", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-bare",
+				// No role, no expertiseVector, no specialization
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Do something",
+			domain: "product-engineering",
+			// No taskVector
+		};
+
+		const result = routeTask(instances, context, expertiseOnlyWeights);
+		expect(result).not.toBeNull();
+		expect(result?.breakdown.expertiseScore).toBe(0.5);
+	});
+
+	test("mixed instances: some with vectors, some without", () => {
+		const instances = [
+			makeInstance({
+				instanceId: "inst-vector",
+				role: "product-engineering",
+				expertiseVector: [0.85, 0.1, 0.025, 0.025],
+				status: "idle",
+			}),
+			makeInstance({
+				instanceId: "inst-role-only",
+				role: "product-engineering",
+				// No expertiseVector — falls to Tier 2 (role match)
+				status: "idle",
+			}),
+			makeInstance({
+				instanceId: "inst-legacy-only",
+				specialization: "backend",
+				// No role, no expertiseVector — falls to Tier 3
+				status: "idle",
+			}),
+		];
+
+		const context: RoutingContext = {
+			prompt: "Build a React component",
+			domain: "product-engineering",
+			taskVector: [0.9, 0.05, 0.025, 0.025],
+		};
+
+		// Use dryRunRoute to see all scores
+		const results = dryRunRoute(instances, context, expertiseOnlyWeights);
+		expect(results).toHaveLength(3);
+
+		// All three are scored — none excluded
+		const vectorResult = results.find((r) => r.instance.instanceId === "inst-vector");
+		const roleResult = results.find((r) => r.instance.instanceId === "inst-role-only");
+		const legacyResult = results.find((r) => r.instance.instanceId === "inst-legacy-only");
+
+		expect(vectorResult).toBeDefined();
+		expect(roleResult).toBeDefined();
+		expect(legacyResult).toBeDefined();
+
+		// inst-vector: Tier 1 cosine similarity — high but not 1.0 (vectors are similar, not identical)
+		expect(vectorResult?.breakdown.expertiseScore).toBeGreaterThan(0.5);
+
+		// inst-role-only: Tier 2 role match — exact match gives 1.0
+		// (role match can actually score higher than cosine similarity for non-identical vectors)
+		expect(roleResult?.breakdown.expertiseScore).toBe(1.0);
+
+		// inst-legacy-only: Tier 3 specialization match
+		// "backend" vs "product-engineering" → no exact/partial match → 0.2
+		expect(legacyResult?.breakdown.expertiseScore).toBe(0.2);
+
+		// Legacy instance should rank lowest
+		expect(legacyResult?.score).toBeLessThan(vectorResult?.score ?? 0);
+		expect(legacyResult?.score).toBeLessThan(roleResult?.score ?? 0);
 	});
 });
