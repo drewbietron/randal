@@ -5,6 +5,7 @@
  * and polling for completion.
  */
 
+import { getPrimaryDomain } from "@randal/analytics";
 import { queryPosseMembers, registryDocToMeshInstance, searchCrossAgent } from "@randal/memory";
 import type { RegistryClient } from "@randal/memory";
 import { checkHealth, routeTask } from "@randal/mesh";
@@ -12,7 +13,7 @@ import type { RoutingContext } from "@randal/mesh";
 import { MeiliSearch } from "meilisearch";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
-import { buildPosseConfigStub, ensurePosse } from "../init.js";
+import { buildPosseConfigStub, embeddingService, ensurePosse } from "../init.js";
 import { MEILI_MASTER_KEY, MEILI_URL, RANDAL_PEER_AUTH_TOKEN, RANDAL_SELF_NAME } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +62,8 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 				},
 				domain: {
 					type: "string",
-					description: "Task domain hint for auto-routing (e.g. 'frontend', 'backend', 'devops')",
+					description:
+						"Task domain hint for auto-routing (e.g. 'product-engineering', 'security-compliance'). Auto-detected from task if omitted.",
 				},
 				model: {
 					type: "string",
@@ -192,14 +194,39 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 			targetEndpoint = peer.endpoint;
 			targetName = peer.name;
 		} else {
+			// Auto-detect domain from task if not explicitly provided (R4)
+			const effectiveDomain = domain || getPrimaryDomain(task);
+
+			// Embed task for semantic routing (non-fatal — falls back to role/specialization matching)
+			const taskVector = embeddingService
+				? await embeddingService.embed(task).catch(() => null)
+				: null;
+
 			// Auto-route using mesh router
 			const instances = peers.map(registryDocToMeshInstance);
+
+			// Pre-filter by role if domain was auto-detected and there are enough candidates
+			let candidates = instances;
+			if (effectiveDomain && effectiveDomain !== "general" && instances.length > 2) {
+				const roleFiltered = instances.filter((i) => i.role === effectiveDomain);
+				if (roleFiltered.length > 0) {
+					candidates = roleFiltered;
+				}
+				// If no role matches, keep all candidates — let the router score by other factors
+			}
+
+			log(
+				"info",
+				`Routing context: domain=${effectiveDomain}, taskVector=${!!taskVector}, candidates=${candidates.length}/${instances.length}`,
+			);
+
 			const routingContext: RoutingContext = {
 				prompt: task,
-				domain,
+				domain: effectiveDomain,
 				model,
+				taskVector: taskVector ?? undefined,
 			};
-			const decision = routeTask(instances, routingContext);
+			const decision = routeTask(candidates, routingContext);
 			if (!decision) {
 				return {
 					delegated: false,
