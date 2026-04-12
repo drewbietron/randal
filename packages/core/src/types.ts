@@ -108,6 +108,38 @@ export interface Annotation {
 	timestamp: string;
 }
 
+// ---- Mesh Domain Taxonomy ----
+
+/**
+ * The 10 broad domains covering all computer-based company operations.
+ * Used for routing pre-filtering, analytics categorization, and lens selection.
+ */
+export type MeshDomain =
+	| "product-engineering"
+	| "platform-infrastructure"
+	| "security-compliance"
+	| "data-intelligence"
+	| "design-experience"
+	| "content-communications"
+	| "revenue-growth"
+	| "customer-operations"
+	| "strategy-finance"
+	| "legal-governance";
+
+/** Runtime array of all valid MeshDomain values. */
+export const MESH_DOMAINS: readonly MeshDomain[] = [
+	"product-engineering",
+	"platform-infrastructure",
+	"security-compliance",
+	"data-intelligence",
+	"design-experience",
+	"content-communications",
+	"revenue-growth",
+	"customer-operations",
+	"strategy-finance",
+	"legal-governance",
+] as const;
+
 // ---- Mesh Instance ----
 export interface MeshInstance {
 	instanceId: string;
@@ -115,6 +147,12 @@ export interface MeshInstance {
 	posse?: string;
 	capabilities: string[];
 	specialization?: string;
+	/** Broad domain role — one of 10 predefined MeshDomain slugs. Used for pre-filtering. */
+	role?: MeshDomain;
+	/** Resolved natural language expertise description (the agent's "resume"). */
+	expertise?: string;
+	/** Embedding vector for the expertise text, used for semantic routing. */
+	expertiseVector?: number[];
 	status: "idle" | "busy" | "unhealthy" | "offline";
 	lastHeartbeat: string;
 	endpoint: string;
