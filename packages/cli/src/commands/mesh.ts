@@ -35,6 +35,8 @@ Usage:
 						status: string;
 						health: string;
 						load: number;
+						role: string;
+						expertise: string;
 						specialization: string;
 						lastSeen: string;
 					}>;
@@ -46,13 +48,19 @@ Usage:
 				}
 
 				console.log(
-					"ID        | Name           | Status  | Health  | Load | Specialization     | Last Seen",
+					"ID        | Name           | Status  | Health  | Load | Role                      | Expertise",
 				);
-				console.log("-".repeat(95));
+				console.log("-".repeat(110));
 				for (const inst of data.instances) {
 					const loadPct = `${Math.round(inst.load * 100)}%`;
+					const role = inst.role || inst.specialization || "-";
+					const expertise = inst.expertise
+						? inst.expertise.length > 25
+							? `${inst.expertise.slice(0, 25)}...`
+							: inst.expertise
+						: "-";
 					console.log(
-						`${inst.id.slice(0, 8).padEnd(9)} | ${inst.name.padEnd(14)} | ${inst.status.padEnd(7)} | ${inst.health.padEnd(7)} | ${loadPct.padStart(4)} | ${(inst.specialization || "-").padEnd(18)} | ${inst.lastSeen}`,
+						`${inst.id.slice(0, 8).padEnd(9)} | ${inst.name.padEnd(14)} | ${inst.status.padEnd(7)} | ${inst.health.padEnd(7)} | ${loadPct.padStart(4)} | ${role.padEnd(25)} | ${expertise}`,
 					);
 				}
 			} catch (err) {
@@ -92,10 +100,11 @@ Usage:
 						name: string;
 						score: number;
 						breakdown: {
-							loadScore: number;
+							expertiseScore: number;
 							specializationScore: number;
-							healthScore: number;
-							affinityScore: number;
+							reliabilityScore: number;
+							loadScore: number;
+							modelMatchScore: number;
 						};
 					}>;
 				};
@@ -105,11 +114,12 @@ Usage:
 				);
 				console.log("");
 				console.log("Score Breakdown:");
-				console.log("Instance       | Total  | Load   | Spec   | Health | Affinity");
-				console.log("-".repeat(70));
+				console.log("Instance       | Total  | Expert | Spec   | Reliab | Load   | Model");
+				console.log("-".repeat(85));
 				for (const s of data.scores) {
+					const b = s.breakdown;
 					console.log(
-						`${s.name.padEnd(14)} | ${s.score.toFixed(3).padStart(6)} | ${s.breakdown.loadScore.toFixed(3).padStart(6)} | ${s.breakdown.specializationScore.toFixed(3).padStart(6)} | ${s.breakdown.healthScore.toFixed(3).padStart(6)} | ${s.breakdown.affinityScore.toFixed(3).padStart(6)}`,
+						`${s.name.padEnd(14)} | ${s.score.toFixed(3).padStart(6)} | ${(b.expertiseScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.specializationScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.reliabilityScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.loadScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.modelMatchScore?.toFixed(3) ?? "  N/A").padStart(6)}`,
 					);
 				}
 			} catch (err) {
