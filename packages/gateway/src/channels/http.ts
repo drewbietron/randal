@@ -91,13 +91,15 @@ export interface HttpChannelOptions {
 			status: string;
 			health: string;
 			load: number;
+			role: string;
+			expertise: string;
 			specialization: string;
 			lastSeen: string;
 		}>;
-		routeDryRun(prompt: string): {
+		routeDryRun(prompt: string): Promise<{
 			selectedInstance: { id: string; name: string; score: number };
 			scores: unknown[];
-		};
+		}>;
 	};
 	/** Voice channel manager instance (optional). */
 	voiceManager?: {
@@ -1042,7 +1044,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			return c.json({ error: "prompt required" }, 400);
 		}
 
-		const result = meshCoordinator.routeDryRun(body.prompt);
+		const result = await meshCoordinator.routeDryRun(body.prompt);
 		return c.json(result);
 	});
 
