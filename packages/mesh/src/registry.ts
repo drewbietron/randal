@@ -131,6 +131,7 @@ export class MeilisearchMeshRegistry {
 			await index.updateFilterableAttributes([
 				"posse",
 				"specialization",
+				"role",
 				"status",
 				"lastHeartbeat",
 			]);
@@ -200,16 +201,31 @@ export class MeilisearchMeshRegistry {
 	}
 }
 
+/** Options for passing pre-resolved expertise data to instance creation. */
+export interface ExpertiseOptions {
+	/** Resolved natural language expertise text (from inline string or file). */
+	resolvedExpertise?: string;
+	/** Pre-computed embedding vector for the expertise text. */
+	expertiseVector?: number[];
+}
+
 /**
  * Create a MeshInstance object from config.
+ * Accepts optional pre-resolved expertise data (text + embedding vector).
  */
-export function createInstanceFromConfig(config: RandalConfig): MeshInstance {
+export function createInstanceFromConfig(
+	config: RandalConfig,
+	options?: ExpertiseOptions,
+): MeshInstance {
 	return {
 		instanceId: randomBytes(8).toString("hex"),
 		name: config.name,
 		posse: config.posse,
 		capabilities: ["run", "delegate"],
 		specialization: config.mesh.specialization,
+		role: config.mesh.role,
+		expertise: options?.resolvedExpertise,
+		expertiseVector: options?.expertiseVector,
 		status: "idle",
 		lastHeartbeat: new Date().toISOString(),
 		endpoint: config.mesh.endpoint ?? "",

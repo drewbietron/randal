@@ -3,7 +3,7 @@ export {
 	MeilisearchMeshRegistry,
 	createInstanceFromConfig,
 } from "./registry.js";
-export type { MeshRegistryOptions, MeiliClient } from "./registry.js";
+export type { MeshRegistryOptions, MeiliClient, ExpertiseOptions } from "./registry.js";
 
 export { filterInstances, findBestForSpecialization } from "./discovery.js";
 export type { DiscoveryOptions, DiscoveryResult } from "./discovery.js";
