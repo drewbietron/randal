@@ -64,16 +64,12 @@ export class MemoryMeshRegistry {
 
 	async discover(options?: {
 		posse?: string;
-		specialization?: string;
 		status?: MeshInstance["status"];
 	}): Promise<MeshInstance[]> {
 		let results = [...this.instances.values()];
 
 		if (options?.posse) {
 			results = results.filter((i) => i.posse === options.posse);
-		}
-		if (options?.specialization) {
-			results = results.filter((i) => i.specialization === options.specialization);
 		}
 		if (options?.status) {
 			results = results.filter((i) => i.status === options.status);
@@ -128,13 +124,7 @@ export class MeilisearchMeshRegistry {
 	async init(): Promise<void> {
 		try {
 			const index = this.client.index(this.indexName);
-			await index.updateFilterableAttributes([
-				"posse",
-				"specialization",
-				"role",
-				"status",
-				"lastHeartbeat",
-			]);
+			await index.updateFilterableAttributes(["posse", "role", "status", "lastHeartbeat"]);
 			await index.updateSortableAttributes(["lastHeartbeat"]);
 		} catch (err) {
 			logger.warn("Failed to configure mesh index", {
@@ -173,14 +163,12 @@ export class MeilisearchMeshRegistry {
 
 	async discover(options?: {
 		posse?: string;
-		specialization?: string;
 		status?: MeshInstance["status"];
 	}): Promise<MeshInstance[]> {
 		const index = this.client.index(this.indexName);
 		const filters: string[] = [];
 
 		if (options?.posse) filters.push(`posse = "${options.posse}"`);
-		if (options?.specialization) filters.push(`specialization = "${options.specialization}"`);
 		if (options?.status) filters.push(`status = "${options.status}"`);
 
 		const result = await index.search("", {
@@ -222,7 +210,6 @@ export function createInstanceFromConfig(
 		name: config.name,
 		posse: config.posse,
 		capabilities: ["run", "delegate"],
-		specialization: config.mesh.specialization,
 		role: config.mesh.role,
 		expertise: options?.resolvedExpertise,
 		expertiseVector: options?.expertiseVector,

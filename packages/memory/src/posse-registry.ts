@@ -28,8 +28,6 @@ export interface RegistryDoc {
 	registeredAt: string;
 	/** HTTP endpoint URL for this agent's gateway (e.g. "http://localhost:3100"). */
 	endpoint?: string;
-	/** Agent's domain specialization (e.g. "frontend", "backend", "devops"). Legacy — superseded by role + expertise. */
-	specialization?: string;
 	/** Broad domain role — one of 10 MeshDomain slugs (e.g., "product-engineering"). */
 	role?: string;
 	/** Resolved natural language expertise description. */
@@ -70,7 +68,6 @@ export function buildRegistryDoc(
 		lastHeartbeat: now,
 		registeredAt: now,
 		endpoint: config.mesh.endpoint,
-		specialization: config.mesh.specialization,
 		role: config.mesh.role,
 		expertise: options?.resolvedExpertise,
 		expertiseVector: options?.expertiseVector,
@@ -235,7 +232,6 @@ export function registryDocToMeshInstance(doc: RegistryDoc): MeshInstance {
 		name: doc.name,
 		posse: doc.posse || undefined,
 		capabilities: doc.capabilities,
-		specialization: doc.specialization,
 		role: doc.role as MeshInstance["role"],
 		expertise: doc.expertise,
 		expertiseVector: doc.expertiseVector,

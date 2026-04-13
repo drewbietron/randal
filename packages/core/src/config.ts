@@ -475,8 +475,6 @@ export const configSchema = z.object({
 	mesh: z
 		.object({
 			enabled: z.boolean().default(false),
-			/** Legacy specialization tag — superseded by role + expertise. */
-			specialization: z.string().optional(),
 			/** Broad domain role — one of 10 predefined MeshDomain slugs. */
 			role: z.enum(MESH_DOMAINS as unknown as [string, ...string[]]).optional(),
 			/**
@@ -495,10 +493,8 @@ export const configSchema = z.object({
 			endpoint: z.string().optional(),
 			routingWeights: z
 				.object({
-					/** Weight for semantic expertise matching (3-tier: vector → role → specialization). */
+					/** Weight for semantic expertise matching (2-tier: vector cosine → role match). */
 					expertise: z.number().default(0.4),
-					/** Weight for legacy specialization string match. Default 0.0 (superseded by expertise). */
-					specialization: z.number().default(0.0),
 					reliability: z.number().default(0.3),
 					load: z.number().default(0.2),
 					modelMatch: z.number().default(0.1),

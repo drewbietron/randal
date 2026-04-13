@@ -93,7 +93,6 @@ export interface HttpChannelOptions {
 			load: number;
 			role: string;
 			expertise: string;
-			specialization: string;
 			lastSeen: string;
 		}>;
 		routeDryRun(prompt: string): Promise<{

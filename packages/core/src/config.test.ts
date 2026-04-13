@@ -691,19 +691,9 @@ describe("mesh config schema", () => {
 		});
 	});
 
-	test("defaults routing weight expertise to 0.4 and specialization to 0.0", () => {
+	test("defaults routing weight expertise to 0.4", () => {
 		const result = configSchema.parse(minimalConfig);
 		expect(result.mesh.routingWeights.expertise).toBe(0.4);
-		expect(result.mesh.routingWeights.specialization).toBe(0.0);
-	});
-
-	test("legacy config with only specialization still parses", () => {
-		const result = configSchema.parse({
-			...minimalConfig,
-			mesh: { specialization: "frontend" },
-		});
-		expect(result.mesh.specialization).toBe("frontend");
-		expect(result.mesh.role).toBeUndefined();
 	});
 });
 

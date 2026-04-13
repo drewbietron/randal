@@ -36,13 +36,31 @@ All lens files: `~/.config/opencode/lenses/{name}.md`
 
 **For @build dispatch — Primary Lens (implementation):**
 - Read the domain tags on the NEXT batch of steps about to be executed
-- Select lens based on the dominant tag(s):
-  - `[backend]`, `[infrastructure]`, `[security]`, `[database]`, `[config]`, `[ci]`, `[deployment]`, `[devops]` → **Architect**
-  - `[frontend]`, `[ui]`, `[design]`, `[visual]` → **Crafter**
-  - `[docs]`, `[content]`, `[copy]`, `[marketing]` → **Narrator**
+- Select lens based on the dominant domain tag:
+
+  | Domain Tag | Primary Lens | Notes |
+  |------------|-------------|-------|
+  | `[product-engineering]` | **Architect** | Use **Crafter** if step tags also include `[frontend]`, `[ui]`, or `[design]` |
+  | `[platform-infrastructure]` | **Architect** | Includes CI/CD, cloud, DevOps, observability |
+  | `[security-compliance]` | **Auditor** | Security review, compliance audits, threat modeling |
+  | `[data-intelligence]` | **Architect** | Use **Strategist** if the step is analytics/BI focused (dashboards, reports) |
+  | `[design-experience]` | **Crafter** | Use **Diplomat** if the step focuses on a11y or i18n |
+  | `[content-communications]` | **Narrator** | Docs, blog posts, release notes, marketing copy |
+  | `[revenue-growth]` | **Strategist** | Sales tooling, GTM, pricing, conversion |
+  | `[customer-operations]` | **Diplomat** | Support workflows, onboarding, customer-facing |
+  | `[strategy-finance]` | **Strategist** | Roadmaps, planning, product management |
+  | `[legal-governance]` | **Auditor** | Contracts, policy review, compliance |
+  | Mixed tags or no tags | **Architect** | Safest default |
+
+- **Sub-domain overrides**: When a step has BOTH a domain tag and a more specific sub-tag (e.g., `[product-engineering]` + `[frontend]`), the sub-tag refines the lens choice. The table above notes these exceptions.
+- **Legacy tags still work**: Old-style tags continue to select lenses via these implicit mappings:
+  - `[backend]`, `[database]`, `[config]`, `[ci]`, `[deployment]`, `[devops]` → **Architect** (maps to product-engineering or platform-infrastructure)
+  - `[frontend]`, `[ui]`, `[visual]` → **Crafter** (maps to product-engineering or design-experience)
+  - `[docs]`, `[content]`, `[copy]`, `[marketing]` → **Narrator** (maps to content-communications)
   - `[testing]` → same lens as the code being tested (usually Architect)
-  - `[i18n]`, `[a11y]`, `[localization]` → **Diplomat**
-  - Mixed tags or no tags → **Architect** (safest default)
+  - `[i18n]`, `[a11y]`, `[localization]` → **Diplomat** (maps to design-experience)
+  - `[security]` → **Auditor** (maps to security-compliance)
+  - `[infrastructure]` → **Architect** (maps to platform-infrastructure)
 - If the batch spans domains, use the lens for the FIRST step in the batch.
 
 **For @build dispatch — Full-Spectrum Review (verification):**

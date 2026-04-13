@@ -9,7 +9,6 @@ function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 		name: "test-instance",
 		posse: "test-posse",
 		capabilities: ["run", "delegate"],
-		specialization: undefined,
 		role: undefined,
 		expertise: undefined,
 		expertiseVector: undefined,
@@ -31,12 +30,12 @@ describe("mesh routing integration", () => {
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
 		const backend = makeInstance({
 			instanceId: "inst-backend",
 			name: "backend-specialist",
-			specialization: "backend",
+			role: "product-engineering",
 		});
 		const general = makeInstance({
 			instanceId: "inst-general",
@@ -56,12 +55,12 @@ describe("mesh routing integration", () => {
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
 		const backend = makeInstance({
 			instanceId: "inst-backend",
 			name: "backend-specialist",
-			specialization: "backend",
+			role: "product-engineering",
 		});
 		const general = makeInstance({
 			instanceId: "inst-general",
@@ -75,40 +74,40 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Build a React component",
-			domain: "frontend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).not.toBeNull();
 		expect(decision?.instance.instanceId).toBe("inst-frontend");
-		expect(decision?.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 
-	test("routeTask selects backend-specialized instance for backend task", async () => {
+	test("routeTask selects infra-specialized instance for infra task", async () => {
 		const registry = new MemoryMeshRegistry();
 
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
-		const backend = makeInstance({
-			instanceId: "inst-backend",
-			name: "backend-specialist",
-			specialization: "backend",
+		const infra = makeInstance({
+			instanceId: "inst-infra",
+			name: "infra-specialist",
+			role: "platform-infrastructure",
 		});
 
 		await registry.register(frontend);
-		await registry.register(backend);
+		await registry.register(infra);
 
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
-			prompt: "Create REST API endpoint",
-			domain: "backend",
+			prompt: "Deploy Kubernetes cluster",
+			domain: "platform-infrastructure",
 		});
 
 		expect(decision).not.toBeNull();
-		expect(decision?.instance.instanceId).toBe("inst-backend");
-		expect(decision?.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.instance.instanceId).toBe("inst-infra");
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 
 	test("routeTask prefers idle instances over busy ones", async () => {
@@ -117,14 +116,14 @@ describe("mesh routing integration", () => {
 		const busy = makeInstance({
 			instanceId: "inst-busy",
 			name: "busy-backend",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "busy",
 			activeJobs: 3,
 		});
 		const idle = makeInstance({
 			instanceId: "inst-idle",
 			name: "idle-backend",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "idle",
 			activeJobs: 0,
 		});
@@ -135,7 +134,7 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Create API endpoint",
-			domain: "backend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).not.toBeNull();
@@ -149,7 +148,7 @@ describe("mesh routing integration", () => {
 		const unhealthy = makeInstance({
 			instanceId: "inst-1",
 			name: "unhealthy-agent",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "unhealthy",
 		});
 
@@ -158,7 +157,7 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Build an API",
-			domain: "backend",
+			domain: "product-engineering",
 		});
 
 		// Should return null since the only instance is unhealthy
@@ -254,11 +253,11 @@ describe("semantic mesh routing", () => {
 			name: "role-only-agent",
 			role: "product-engineering",
 		});
-		// inst-c: legacy specialization only — uses Tier 3
+		// inst-c: no role or vector — uses neutral score
 		const instC = makeInstance({
 			instanceId: "inst-c",
-			name: "legacy-agent",
-			specialization: "backend",
+			name: "bare-agent",
+			// No role, no expertiseVector
 		});
 
 		await registry.register(instA);
@@ -276,7 +275,7 @@ describe("semantic mesh routing", () => {
 		expect(decisions.length).toBe(3);
 
 		// inst-a and inst-b both get expertiseScore 1.0 (vector match vs role match)
-		// but both should rank above inst-c (legacy fallback with partial/no match)
+		// but both should rank above inst-c (neutral score)
 		const instADecision = decisions.find((d) => d.instance.instanceId === "inst-a");
 		const instBDecision = decisions.find((d) => d.instance.instanceId === "inst-b");
 		const instCDecision = decisions.find((d) => d.instance.instanceId === "inst-c");
@@ -289,45 +288,11 @@ describe("semantic mesh routing", () => {
 		expect(instADecision?.breakdown.expertiseScore).toBe(1.0);
 		// inst-b uses Tier 2 (role match): expertiseScore = 1.0
 		expect(instBDecision?.breakdown.expertiseScore).toBe(1.0);
-		// inst-c uses Tier 3 (legacy): "backend" partial match against "product-engineering" domain → 0.2
-		expect(instCDecision?.breakdown.expertiseScore).toBeLessThan(0.5);
+		// inst-c has no data: neutral score
+		expect(instCDecision?.breakdown.expertiseScore).toBe(0.5);
 
 		// inst-c should rank last
 		expect(decisions[2].instance.instanceId).toBe("inst-c");
-	});
-
-	test("backward compat: existing specialization-only routing still works", async () => {
-		const registry = new MemoryMeshRegistry();
-
-		const frontend = makeInstance({
-			instanceId: "inst-frontend",
-			name: "frontend-specialist",
-			specialization: "frontend",
-		});
-		const backend = makeInstance({
-			instanceId: "inst-backend",
-			name: "backend-specialist",
-			specialization: "backend",
-		});
-
-		await registry.register(frontend);
-		await registry.register(backend);
-
-		const instances = await registry.discover();
-		// With default weights (expertise: 0.4, specialization: 0.0),
-		// computeExpertiseScore falls through to Tier 3 (legacy specialization match)
-		// for instances with only specialization set
-		const decision = routeTask(instances, {
-			prompt: "Build a React component",
-			domain: "frontend",
-		});
-
-		expect(decision).not.toBeNull();
-		expect(decision?.instance.instanceId).toBe("inst-frontend");
-		// Legacy specialization score is still computed and stored
-		expect(decision?.breakdown.specializationScore).toBe(1.0);
-		// Expertise score uses Tier 3 fallback (same as specialization logic)
-		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 
 	test("categorizer → router integration: auto-detected domain routes correctly", async () => {

@@ -12,7 +12,6 @@ export interface DiscoveryOptions {
 	posse?: string;
 	/** Filter by broad domain role (one of 10 MeshDomain slugs). */
 	role?: string;
-	specialization?: string;
 	status?: MeshInstance["status"];
 	excludeInstanceId?: string;
 }
@@ -48,11 +47,6 @@ export function filterInstances(
 		instances = instances.filter((i) => i.role === options.role);
 	}
 
-	// Filter by specialization
-	if (options.specialization) {
-		instances = instances.filter((i) => i.specialization === options.specialization);
-	}
-
 	// Filter by status
 	if (options.status) {
 		instances = instances.filter((i) => i.status === options.status);
@@ -76,31 +70,6 @@ export function filterInstances(
 		healthy,
 		busy,
 	};
-}
-
-/**
- * Find the best instance for a given specialization.
- * Returns null if no suitable instance found.
- */
-export function findBestForSpecialization(
-	instances: MeshInstance[],
-	specialization: string,
-): MeshInstance | null {
-	const matching = instances.filter(
-		(i) =>
-			i.specialization === specialization && i.status !== "unhealthy" && i.status !== "offline",
-	);
-
-	if (matching.length === 0) return null;
-
-	// Prefer idle over busy
-	const idle = matching.filter((i) => i.status === "idle");
-	if (idle.length > 0) {
-		return idle.reduce((a, b) => (a.activeJobs <= b.activeJobs ? a : b));
-	}
-
-	// All busy — pick least loaded
-	return matching.reduce((a, b) => (a.activeJobs <= b.activeJobs ? a : b));
 }
 
 /**

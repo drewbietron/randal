@@ -8,7 +8,6 @@ function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 		name: "test-instance",
 		posse: "dev-team",
 		capabilities: ["run", "delegate"],
-		specialization: undefined,
 		status: "idle",
 		lastHeartbeat: new Date().toISOString(),
 		endpoint: "http://localhost:3000",
@@ -21,29 +20,29 @@ function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 }
 
 describe("mesh collaboration E2E", () => {
-	test("two instances collaborate across specializations", async () => {
+	test("two instances collaborate across different domains", async () => {
 		// Create 2 MemoryMeshRegistry instances (simulating 2 Randal instances)
 		// In practice each Randal instance has its own registry, but they share
 		// state via Meilisearch. For testing, we use a single shared MemoryMeshRegistry.
 		const registry = new MemoryMeshRegistry();
 
-		// Register both in same posse with different specializations
+		// Register both in same posse with different roles
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-agent",
 			posse: "dev-team",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
 
-		const backend = makeInstance({
-			instanceId: "inst-backend",
-			name: "backend-agent",
+		const infra = makeInstance({
+			instanceId: "inst-infra",
+			name: "infra-agent",
 			posse: "dev-team",
-			specialization: "backend",
+			role: "platform-infrastructure",
 		});
 
 		await registry.register(frontend);
-		await registry.register(backend);
+		await registry.register(infra);
 
 		// Verify both registered
 		expect(await registry.count()).toBe(2);
@@ -55,27 +54,27 @@ describe("mesh collaboration E2E", () => {
 		// Route a frontend task → verify routes to frontend instance
 		const frontendDecision = routeTask(posseInstances, {
 			prompt: "Build a React dashboard component",
-			domain: "frontend",
+			domain: "product-engineering",
 		});
 
 		expect(frontendDecision).not.toBeNull();
 		if (frontendDecision) {
 			expect(frontendDecision.instance.instanceId).toBe("inst-frontend");
-			expect(frontendDecision.instance.specialization).toBe("frontend");
-			expect(frontendDecision.breakdown.specializationScore).toBe(1.0);
+			expect(frontendDecision.instance.role).toBe("product-engineering");
+			expect(frontendDecision.breakdown.expertiseScore).toBe(1.0);
 		}
 
-		// Route a backend task → verify routes to backend instance
-		const backendDecision = routeTask(posseInstances, {
-			prompt: "Create a REST API with authentication",
-			domain: "backend",
+		// Route an infra task → verify routes to infra instance
+		const infraDecision = routeTask(posseInstances, {
+			prompt: "Deploy Kubernetes cluster with Terraform",
+			domain: "platform-infrastructure",
 		});
 
-		expect(backendDecision).not.toBeNull();
-		if (backendDecision) {
-			expect(backendDecision.instance.instanceId).toBe("inst-backend");
-			expect(backendDecision.instance.specialization).toBe("backend");
-			expect(backendDecision.breakdown.specializationScore).toBe(1.0);
+		expect(infraDecision).not.toBeNull();
+		if (infraDecision) {
+			expect(infraDecision.instance.instanceId).toBe("inst-infra");
+			expect(infraDecision.instance.role).toBe("platform-infrastructure");
+			expect(infraDecision.breakdown.expertiseScore).toBe(1.0);
 		}
 	});
 
@@ -86,7 +85,7 @@ describe("mesh collaboration E2E", () => {
 			instanceId: "inst-frontend",
 			name: "frontend-agent",
 			posse: "dev-team",
-			specialization: "frontend",
+			role: "product-engineering",
 			status: "idle",
 		});
 
@@ -94,7 +93,7 @@ describe("mesh collaboration E2E", () => {
 			instanceId: "inst-backend",
 			name: "backend-agent",
 			posse: "dev-team",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "idle",
 		});
 
@@ -111,7 +110,7 @@ describe("mesh collaboration E2E", () => {
 		// Route a frontend task — frontend is unhealthy, should fall back
 		const decision = routeTask(allInstances, {
 			prompt: "Build a React component",
-			domain: "frontend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).not.toBeNull();
@@ -141,7 +140,7 @@ describe("mesh collaboration E2E", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Do something",
-			domain: "backend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).toBeNull();

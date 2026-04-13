@@ -41,13 +41,13 @@ describe("routeTask", () => {
 		const instances = [
 			makeInstance({
 				instanceId: "inst-match",
-				specialization: "backend",
+				role: "product-engineering",
 				status: "idle",
 				models: ["anthropic/claude-sonnet-4"],
 			}),
 			makeInstance({
 				instanceId: "inst-other",
-				specialization: "frontend",
+				role: "security-compliance",
 				status: "busy",
 				activeJobs: 3,
 				models: ["openai/gpt-4o"],
@@ -56,7 +56,7 @@ describe("routeTask", () => {
 
 		const context: RoutingContext = {
 			prompt: "Build a REST API",
-			domain: "backend",
+			domain: "product-engineering",
 			model: "anthropic/claude-sonnet-4",
 		};
 
@@ -65,29 +65,29 @@ describe("routeTask", () => {
 		expect(result?.instance.instanceId).toBe("inst-match");
 	});
 
-	test("specialization match gives high score", () => {
+	test("role match gives high score", () => {
 		const instances = [
 			makeInstance({
-				instanceId: "inst-specialized",
-				specialization: "backend",
+				instanceId: "inst-role-match",
+				role: "product-engineering",
 				status: "idle",
 			}),
 			makeInstance({
-				instanceId: "inst-general",
-				specialization: "frontend",
+				instanceId: "inst-other",
+				role: "security-compliance",
 				status: "idle",
 			}),
 		];
 
 		const context: RoutingContext = {
 			prompt: "Build API",
-			domain: "backend",
+			domain: "product-engineering",
 		};
 
 		const result = routeTask(instances, context);
 		expect(result).not.toBeNull();
-		expect(result?.instance.instanceId).toBe("inst-specialized");
-		expect(result?.breakdown.specializationScore).toBe(1.0);
+		expect(result?.instance.instanceId).toBe("inst-role-match");
+		expect(result?.breakdown.expertiseScore).toBe(1.0);
 	});
 
 	test("load score favors idle instances", () => {
@@ -111,7 +111,6 @@ describe("routeTask", () => {
 		// Use weights that heavily favor load
 		const weights: RoutingWeights = {
 			expertise: 0.0,
-			specialization: 0.0,
 			reliability: 0.0,
 			load: 1.0,
 			modelMatch: 0.0,
@@ -145,7 +144,6 @@ describe("routeTask", () => {
 		// Use weights that heavily favor model match
 		const weights: RoutingWeights = {
 			expertise: 0.0,
-			specialization: 0.0,
 			reliability: 0.0,
 			load: 0.0,
 			modelMatch: 1.0,
@@ -160,7 +158,7 @@ describe("routeTask", () => {
 	test("returns routing decision with breakdown and reason", () => {
 		const instances = [
 			makeInstance({
-				specialization: "backend",
+				role: "product-engineering",
 				status: "idle",
 				models: ["anthropic/claude-sonnet-4"],
 			}),
@@ -168,7 +166,7 @@ describe("routeTask", () => {
 
 		const context: RoutingContext = {
 			prompt: "Build API",
-			domain: "backend",
+			domain: "product-engineering",
 			model: "anthropic/claude-sonnet-4",
 		};
 
@@ -176,7 +174,7 @@ describe("routeTask", () => {
 		expect(result).not.toBeNull();
 		expect(result?.score).toBeGreaterThan(0);
 		expect(result?.breakdown).toBeDefined();
-		expect(typeof result?.breakdown.specializationScore).toBe("number");
+		expect(typeof result?.breakdown.expertiseScore).toBe("number");
 		expect(typeof result?.breakdown.reliabilityScore).toBe("number");
 		expect(typeof result?.breakdown.loadScore).toBe("number");
 		expect(typeof result?.breakdown.modelMatchScore).toBe("number");
@@ -211,7 +209,6 @@ describe("routeTask", () => {
 
 		const weights: RoutingWeights = {
 			expertise: 0.0,
-			specialization: 0.0,
 			reliability: 0.0,
 			load: 0.0,
 			modelMatch: 1.0,
@@ -229,13 +226,13 @@ describe("dryRunRoute", () => {
 		const instances = [
 			makeInstance({
 				instanceId: "inst-low",
-				specialization: "frontend",
+				role: "security-compliance",
 				status: "busy",
 				activeJobs: 3,
 			}),
 			makeInstance({
 				instanceId: "inst-high",
-				specialization: "backend",
+				role: "product-engineering",
 				status: "idle",
 				activeJobs: 0,
 			}),
@@ -243,7 +240,7 @@ describe("dryRunRoute", () => {
 
 		const context: RoutingContext = {
 			prompt: "Build API",
-			domain: "backend",
+			domain: "product-engineering",
 		};
 
 		const results = dryRunRoute(instances, context);
@@ -277,14 +274,14 @@ describe("dryRunRoute", () => {
 	test("custom routing weights change ranking", () => {
 		const instances = [
 			makeInstance({
-				instanceId: "inst-specialized",
-				specialization: "backend",
+				instanceId: "inst-role-match",
+				role: "product-engineering",
 				status: "busy",
 				activeJobs: 3,
 			}),
 			makeInstance({
 				instanceId: "inst-idle",
-				specialization: "frontend",
+				role: "security-compliance",
 				status: "idle",
 				activeJobs: 0,
 			}),
@@ -292,25 +289,23 @@ describe("dryRunRoute", () => {
 
 		const context: RoutingContext = {
 			prompt: "Build API",
-			domain: "backend",
+			domain: "product-engineering",
 		};
 
-		// Heavily favor specialization
-		const specWeights: RoutingWeights = {
-			expertise: 0.0,
-			specialization: 1.0,
+		// Heavily favor expertise (role match)
+		const expertiseWeights: RoutingWeights = {
+			expertise: 1.0,
 			reliability: 0.0,
 			load: 0.0,
 			modelMatch: 0.0,
 		};
 
-		const specResults = dryRunRoute(instances, context, specWeights);
-		expect(specResults[0].instance.instanceId).toBe("inst-specialized");
+		const expertiseResults = dryRunRoute(instances, context, expertiseWeights);
+		expect(expertiseResults[0].instance.instanceId).toBe("inst-role-match");
 
 		// Heavily favor load
 		const loadWeights: RoutingWeights = {
 			expertise: 0.0,
-			specialization: 0.0,
 			reliability: 0.0,
 			load: 1.0,
 			modelMatch: 0.0,
@@ -361,7 +356,6 @@ describe("cosineSimilarity", () => {
 describe("computeExpertiseScore via routeTask", () => {
 	const expertiseOnlyWeights: RoutingWeights = {
 		expertise: 1.0,
-		specialization: 0.0,
 		reliability: 0.0,
 		load: 0.0,
 		modelMatch: 0.0,
@@ -476,41 +470,11 @@ describe("computeExpertiseScore via routeTask", () => {
 		expect(result?.breakdown.expertiseScore).toBe(0.2);
 	});
 
-	test("tier 3 fallback: legacy specialization match when no role or vector", () => {
-		const instances = [
-			makeInstance({
-				instanceId: "inst-legacy",
-				specialization: "backend",
-				// No role, no expertiseVector
-				status: "idle",
-			}),
-		];
-
-		const context: RoutingContext = {
-			prompt: "Build an API",
-			domain: "backend",
-			// No taskVector
-		};
-
-		// Use specialization weight to verify the legacy path via specializationScore
-		const specWeights: RoutingWeights = {
-			expertise: 0.0,
-			specialization: 1.0,
-			reliability: 0.0,
-			load: 0.0,
-			modelMatch: 0.0,
-		};
-
-		const result = routeTask(instances, context, specWeights);
-		expect(result).not.toBeNull();
-		expect(result?.breakdown.specializationScore).toBe(1.0);
-	});
-
-	test("graceful degradation: no vectors, no role, no specialization returns neutral score", () => {
+	test("graceful degradation: no vectors, no role returns neutral score", () => {
 		const instances = [
 			makeInstance({
 				instanceId: "inst-bare",
-				// No role, no expertiseVector, no specialization
+				// No role, no expertiseVector
 				status: "idle",
 			}),
 		];
@@ -540,12 +504,6 @@ describe("computeExpertiseScore via routeTask", () => {
 				// No expertiseVector — falls to Tier 2 (role match)
 				status: "idle",
 			}),
-			makeInstance({
-				instanceId: "inst-legacy-only",
-				specialization: "backend",
-				// No role, no expertiseVector — falls to Tier 3
-				status: "idle",
-			}),
 		];
 
 		const context: RoutingContext = {
@@ -556,16 +514,14 @@ describe("computeExpertiseScore via routeTask", () => {
 
 		// Use dryRunRoute to see all scores
 		const results = dryRunRoute(instances, context, expertiseOnlyWeights);
-		expect(results).toHaveLength(3);
+		expect(results).toHaveLength(2);
 
-		// All three are scored — none excluded
+		// Both are scored — none excluded
 		const vectorResult = results.find((r) => r.instance.instanceId === "inst-vector");
 		const roleResult = results.find((r) => r.instance.instanceId === "inst-role-only");
-		const legacyResult = results.find((r) => r.instance.instanceId === "inst-legacy-only");
 
 		expect(vectorResult).toBeDefined();
 		expect(roleResult).toBeDefined();
-		expect(legacyResult).toBeDefined();
 
 		// inst-vector: Tier 1 cosine similarity — high but not 1.0 (vectors are similar, not identical)
 		expect(vectorResult?.breakdown.expertiseScore).toBeGreaterThan(0.5);
@@ -573,13 +529,5 @@ describe("computeExpertiseScore via routeTask", () => {
 		// inst-role-only: Tier 2 role match — exact match gives 1.0
 		// (role match can actually score higher than cosine similarity for non-identical vectors)
 		expect(roleResult?.breakdown.expertiseScore).toBe(1.0);
-
-		// inst-legacy-only: Tier 3 specialization match
-		// "backend" vs "product-engineering" → no exact/partial match → 0.2
-		expect(legacyResult?.breakdown.expertiseScore).toBe(0.2);
-
-		// Legacy instance should rank lowest
-		expect(legacyResult?.score).toBeLessThan(vectorResult?.score ?? 0);
-		expect(legacyResult?.score).toBeLessThan(roleResult?.score ?? 0);
 	});
 });

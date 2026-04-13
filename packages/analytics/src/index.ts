@@ -13,8 +13,6 @@ export {
 	categorizePrompt,
 	getPrimaryDomain,
 	DEFAULT_DOMAIN_KEYWORDS,
-	LEGACY_DOMAIN_MAP,
-	mapLegacyDomain,
 } from "./categorizer.js";
 
 export {

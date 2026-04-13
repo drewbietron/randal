@@ -130,45 +130,15 @@ markdown file containing a detailed expertise description. At boot, the file
 is read, concatenated with any `additional` text, and the full text is
 embedded for semantic matching.
 
-### `mesh.specialization` — legacy (deprecated)
-
-The original single-string specialization tag. Still supported for backward
-compatibility. When only `specialization` is set (no `role` or `expertise`),
-the router falls back to exact string matching — the original behavior.
-
-```yaml
-# Legacy config — still works, but consider migrating
-mesh:
-  specialization: frontend
-```
-
-### Migration from `specialization`
-
-Existing configs with `mesh.specialization` continue to work without changes.
-To take advantage of semantic routing, migrate to `role` + `expertise`:
-
-| Old config | New config |
-|---|---|
-| `specialization: frontend` | `role: product-engineering` + `expertise: "React, TypeScript, CSS..."` |
-| `specialization: backend` | `role: product-engineering` + `expertise: "Node.js, APIs, databases..."` |
-| `specialization: infra` | `role: platform-infrastructure` + `expertise: "Kubernetes, Terraform, CI/CD..."` |
-| `specialization: database` | `role: product-engineering` + `expertise: "PostgreSQL, migrations, schema design..."` |
-| `specialization: docs` | `role: content-communications` + `expertise: "Technical writing, API docs..."` |
-| `specialization: testing` | `role: product-engineering` + `expertise: "Test architecture, coverage, E2E..."` |
-
-You can set both `specialization` and `role`/`expertise` during a transition
-period — the router prefers the new fields when available.
-
 ---
 
 ## Routing algorithm
 
 When a job arrives, the mesh router scores every available instance and picks
-the best one. The score is a weighted sum of five factors:
+the best one. The score is a weighted sum of four factors:
 
 ```
 score = w_e × expertise_match
-      + w_s × specialization_match  (legacy, default weight 0.0)
       + w_r × reliability_score
       + w_l × (1 - load_ratio)
       + w_m × model_match
@@ -178,8 +148,7 @@ score = w_e × expertise_match
 
 | Factor | Key | Default | Description |
 |--------|-----|---------|-------------|
-| Expertise match | `expertise` | 0.4 | Semantic similarity between task and agent expertise profile (3-tier fallback) |
-| Specialization match | `specialization` | 0.0 | Legacy exact string match. Set to `0.4` (and `expertise` to `0.0`) for old-style routing. |
+| Expertise match | `expertise` | 0.4 | Semantic similarity between task and agent expertise profile (2-tier fallback) |
 | Reliability score | `reliability` | 0.3 | Historical success rate for this domain (from `@randal/analytics`) |
 | Load availability | `load` | 0.2 | Inverse of current load ratio (0 = fully loaded, 1 = idle) |
 | Model match | `modelMatch` | 0.1 | 1.0 if the instance has access to the requested model |
@@ -195,7 +164,7 @@ mesh:
     modelMatch: 0.1
 ```
 
-### 3-tier expertise scoring
+### 2-tier expertise scoring
 
 The expertise match factor uses a cascading fallback strategy:
 
@@ -209,10 +178,6 @@ The expertise match factor uses a cascading fallback strategy:
 2. **Role match (Tier 2)**: If embeddings are unavailable, the router performs
    an exact match on `mesh.role` against the auto-detected task domain. Score:
    1.0 for exact match, 0.2 for no match.
-
-3. **Legacy (Tier 3)**: If no `role` or embeddings are configured, the router
-   falls back to `mesh.specialization` string matching — the original
-   behavior. Exact match = 1.0, partial substring match = 0.7, no match = 0.2.
 
 ### Routing decision flow
 
@@ -240,7 +205,6 @@ Each instance sends heartbeats to all known peers at a configurable interval
   "name": "eng-agent",
   "role": "product-engineering",
   "expertise": "React, TypeScript, frontend architecture...",
-  "specialization": "frontend",
   "endpoint": "http://eng-agent:7600",
   "load": 0.35,
   "activeJobs": 2,
@@ -313,15 +277,15 @@ Preview which instance would handle a given prompt:
 $ randal mesh route "Fix the Docker build"
 
 Routing Analysis
-─────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────
 Domain detected: platform-infrastructure
 
-Instance        Expert  Spec    Rel    Load   Model  Score
-─────────────────────────────────────────────────────────────────
-local (self)    0.920   0.000  0.270  0.170  0.100  0.94
-eng-agent       0.310   0.000  0.210  0.200  0.100  0.51
-sec-agent       0.050   0.000  0.150  0.120  0.100  0.37
-─────────────────────────────────────────────────────────────────
+Instance        Expert  Rel    Load   Model  Score
+───────────────────────────────────────────────────────────
+local (self)    0.920  0.270  0.170  0.100  0.94
+eng-agent       0.310  0.210  0.200  0.100  0.51
+sec-agent       0.050  0.150  0.120  0.100  0.37
+───────────────────────────────────────────────────────────
 → Routing to: local (self)
 ```
 

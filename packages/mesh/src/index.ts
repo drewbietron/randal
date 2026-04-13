@@ -5,7 +5,7 @@ export {
 } from "./registry.js";
 export type { MeshRegistryOptions, MeiliClient, ExpertiseOptions } from "./registry.js";
 
-export { filterInstances, findBestForSpecialization, findBestForRole } from "./discovery.js";
+export { filterInstances, findBestForRole } from "./discovery.js";
 export type { DiscoveryOptions, DiscoveryResult } from "./discovery.js";
 
 export { routeTask, dryRunRoute, cosineSimilarity } from "./router.js";

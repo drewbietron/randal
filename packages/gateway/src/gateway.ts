@@ -336,7 +336,6 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 							load: inst.activeJobs,
 							role: inst.role ?? "",
 							expertise: inst.expertise ?? "",
-							specialization: inst.specialization ?? "",
 							lastSeen: inst.lastHeartbeat,
 						}));
 

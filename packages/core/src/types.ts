@@ -146,7 +146,6 @@ export interface MeshInstance {
 	name: string;
 	posse?: string;
 	capabilities: string[];
-	specialization?: string;
 	/** Broad domain role — one of 10 predefined MeshDomain slugs. Used for pre-filtering. */
 	role?: MeshDomain;
 	/** Resolved natural language expertise description (the agent's "resume"). */

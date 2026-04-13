@@ -279,27 +279,6 @@ export const DEFAULT_DOMAIN_KEYWORDS: Record<string, string[]> = {
 };
 
 /**
- * Maps legacy 6-domain names to the new 10-domain taxonomy slugs.
- * Used for backward compatibility when reading old analytics annotations.
- */
-export const LEGACY_DOMAIN_MAP: Record<string, MeshDomain> = {
-	frontend: "product-engineering",
-	backend: "product-engineering",
-	database: "product-engineering",
-	infra: "platform-infrastructure",
-	docs: "content-communications",
-	testing: "product-engineering",
-};
-
-/**
- * Map a legacy domain name to the new 10-domain taxonomy.
- * Returns the input unchanged if it's already a new domain name or unknown.
- */
-export function mapLegacyDomain(domain: string): string {
-	return LEGACY_DOMAIN_MAP[domain] ?? domain;
-}
-
-/**
  * Categorize a prompt text into domains based on keyword matching.
  * Returns all matching domains, sorted by match count (highest first).
  */

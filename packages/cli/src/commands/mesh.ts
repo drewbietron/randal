@@ -37,7 +37,6 @@ Usage:
 						load: number;
 						role: string;
 						expertise: string;
-						specialization: string;
 						lastSeen: string;
 					}>;
 				};
@@ -53,7 +52,7 @@ Usage:
 				console.log("-".repeat(110));
 				for (const inst of data.instances) {
 					const loadPct = `${Math.round(inst.load * 100)}%`;
-					const role = inst.role || inst.specialization || "-";
+					const role = inst.role || "-";
 					const expertise = inst.expertise
 						? inst.expertise.length > 25
 							? `${inst.expertise.slice(0, 25)}...`
@@ -101,7 +100,6 @@ Usage:
 						score: number;
 						breakdown: {
 							expertiseScore: number;
-							specializationScore: number;
 							reliabilityScore: number;
 							loadScore: number;
 							modelMatchScore: number;
@@ -114,12 +112,12 @@ Usage:
 				);
 				console.log("");
 				console.log("Score Breakdown:");
-				console.log("Instance       | Total  | Expert | Spec   | Reliab | Load   | Model");
-				console.log("-".repeat(85));
+				console.log("Instance       | Total  | Expert | Reliab | Load   | Model");
+				console.log("-".repeat(70));
 				for (const s of data.scores) {
 					const b = s.breakdown;
 					console.log(
-						`${s.name.padEnd(14)} | ${s.score.toFixed(3).padStart(6)} | ${(b.expertiseScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.specializationScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.reliabilityScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.loadScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.modelMatchScore?.toFixed(3) ?? "  N/A").padStart(6)}`,
+						`${s.name.padEnd(14)} | ${s.score.toFixed(3).padStart(6)} | ${(b.expertiseScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.reliabilityScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.loadScore?.toFixed(3) ?? "  N/A").padStart(6)} | ${(b.modelMatchScore?.toFixed(3) ?? "  N/A").padStart(6)}`,
 					);
 				}
 			} catch (err) {

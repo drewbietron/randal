@@ -135,7 +135,6 @@ async function handlePosseMembers(_params: Record<string, unknown>): Promise<unk
 						? `${doc.expertise.slice(0, 200)}...`
 						: doc.expertise
 					: undefined,
-				specialization: doc.specialization,
 				capabilities: doc.capabilities,
 				endpoint: doc.endpoint,
 				lastHeartbeat: doc.lastHeartbeat,

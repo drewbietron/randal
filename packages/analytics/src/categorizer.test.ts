@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	DEFAULT_DOMAIN_KEYWORDS,
-	LEGACY_DOMAIN_MAP,
 	categorizePrompt,
 	getPrimaryDomain,
-	mapLegacyDomain,
 } from "./categorizer.js";
 
 describe("categorizePrompt", () => {
@@ -217,51 +215,4 @@ describe("DEFAULT_DOMAIN_KEYWORDS", () => {
 	});
 });
 
-describe("LEGACY_DOMAIN_MAP", () => {
-	test("maps all 6 legacy domains", () => {
-		expect(Object.keys(LEGACY_DOMAIN_MAP)).toHaveLength(6);
-		expect(LEGACY_DOMAIN_MAP.frontend).toBe("product-engineering");
-		expect(LEGACY_DOMAIN_MAP.backend).toBe("product-engineering");
-		expect(LEGACY_DOMAIN_MAP.database).toBe("product-engineering");
-		expect(LEGACY_DOMAIN_MAP.infra).toBe("platform-infrastructure");
-		expect(LEGACY_DOMAIN_MAP.docs).toBe("content-communications");
-		expect(LEGACY_DOMAIN_MAP.testing).toBe("product-engineering");
-	});
-});
 
-describe("mapLegacyDomain", () => {
-	test("maps 'frontend' to 'product-engineering'", () => {
-		expect(mapLegacyDomain("frontend")).toBe("product-engineering");
-	});
-
-	test("maps 'backend' to 'product-engineering'", () => {
-		expect(mapLegacyDomain("backend")).toBe("product-engineering");
-	});
-
-	test("maps 'database' to 'product-engineering'", () => {
-		expect(mapLegacyDomain("database")).toBe("product-engineering");
-	});
-
-	test("maps 'infra' to 'platform-infrastructure'", () => {
-		expect(mapLegacyDomain("infra")).toBe("platform-infrastructure");
-	});
-
-	test("maps 'docs' to 'content-communications'", () => {
-		expect(mapLegacyDomain("docs")).toBe("content-communications");
-	});
-
-	test("maps 'testing' to 'product-engineering'", () => {
-		expect(mapLegacyDomain("testing")).toBe("product-engineering");
-	});
-
-	test("passes through new domain names unchanged", () => {
-		expect(mapLegacyDomain("product-engineering")).toBe("product-engineering");
-		expect(mapLegacyDomain("security-compliance")).toBe("security-compliance");
-		expect(mapLegacyDomain("platform-infrastructure")).toBe("platform-infrastructure");
-	});
-
-	test("passes through unknown domain names unchanged", () => {
-		expect(mapLegacyDomain("general")).toBe("general");
-		expect(mapLegacyDomain("custom-domain")).toBe("custom-domain");
-	});
-});
