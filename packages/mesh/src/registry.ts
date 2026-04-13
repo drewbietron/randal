@@ -65,6 +65,7 @@ export class MemoryMeshRegistry {
 	async discover(options?: {
 		posse?: string;
 		status?: MeshInstance["status"];
+		role?: string;
 	}): Promise<MeshInstance[]> {
 		let results = [...this.instances.values()];
 
@@ -73,6 +74,9 @@ export class MemoryMeshRegistry {
 		}
 		if (options?.status) {
 			results = results.filter((i) => i.status === options.status);
+		}
+		if (options?.role) {
+			results = results.filter((i) => i.role === options.role);
 		}
 
 		return results;
@@ -164,12 +168,14 @@ export class MeilisearchMeshRegistry {
 	async discover(options?: {
 		posse?: string;
 		status?: MeshInstance["status"];
+		role?: string;
 	}): Promise<MeshInstance[]> {
 		const index = this.client.index(this.indexName);
 		const filters: string[] = [];
 
 		if (options?.posse) filters.push(`posse = "${options.posse}"`);
 		if (options?.status) filters.push(`status = "${options.status}"`);
+		if (options?.role) filters.push(`role = "${options.role}"`);
 
 		const result = await index.search("", {
 			filter: filters.length > 0 ? filters.join(" AND ") : undefined,

@@ -9,14 +9,13 @@ import {
 	registryDocToMeshInstance,
 } from "./posse-registry.js";
 
-function makeConfig(posse?: string, mesh?: { endpoint?: string; specialization?: string }) {
+function makeConfig(posse?: string, mesh?: { endpoint?: string }) {
 	const posseConfig = posse ? `\nposse: ${posse}` : "";
 	const meshLines: string[] = [];
-	if (mesh?.endpoint || mesh?.specialization) {
+	if (mesh?.endpoint) {
 		meshLines.push("\nmesh:");
 		meshLines.push("  enabled: true");
 		if (mesh.endpoint) meshLines.push(`  endpoint: ${mesh.endpoint}`);
-		if (mesh.specialization) meshLines.push(`  specialization: ${mesh.specialization}`);
 	}
 	return parseConfig(`
 name: test-agent${posseConfig}${meshLines.join("\n")}
@@ -57,21 +56,18 @@ describe("buildRegistryDoc", () => {
 		expect(doc.status).toBe("idle");
 	});
 
-	test("includes endpoint and specialization from mesh config", () => {
+	test("includes endpoint from mesh config", () => {
 		const config = makeConfig("team", {
 			endpoint: "http://localhost:3100",
-			specialization: "frontend",
 		});
 		const doc = buildRegistryDoc(config);
 		expect(doc.endpoint).toBe("http://localhost:3100");
-		expect(doc.specialization).toBe("frontend");
 	});
 
-	test("leaves endpoint and specialization undefined when mesh config omits them", () => {
+	test("leaves endpoint undefined when mesh config omits them", () => {
 		const config = makeConfig("team");
 		const doc = buildRegistryDoc(config);
 		expect(doc.endpoint).toBeUndefined();
-		expect(doc.specialization).toBeUndefined();
 	});
 });
 
@@ -192,7 +188,6 @@ describe("registryDocToMeshInstance", () => {
 		lastHeartbeat: "2026-04-07T06:00:00.000Z",
 		registeredAt: "2026-04-07T05:00:00.000Z",
 		endpoint: "http://localhost:3100",
-		specialization: "backend",
 	};
 
 	test("converts RegistryDoc to MeshInstance with correct field mapping", () => {
@@ -201,7 +196,6 @@ describe("registryDocToMeshInstance", () => {
 		expect(instance.name).toBe("agent-1");
 		expect(instance.posse).toBe("team");
 		expect(instance.capabilities).toEqual(["git", "search"]);
-		expect(instance.specialization).toBe("backend");
 		expect(instance.status).toBe("idle");
 		expect(instance.lastHeartbeat).toBe("2026-04-07T06:00:00.000Z");
 		expect(instance.endpoint).toBe("http://localhost:3100");
@@ -228,7 +222,7 @@ describe("registryDocToMeshInstance", () => {
 		expect(instance.status).toBe("busy");
 	});
 
-	test("handles missing endpoint and specialization", () => {
+	test("handles missing endpoint", () => {
 		const minimalDoc: RegistryDoc = {
 			id: "agent-2",
 			name: "agent-2",
@@ -242,7 +236,6 @@ describe("registryDocToMeshInstance", () => {
 		};
 		const instance = registryDocToMeshInstance(minimalDoc);
 		expect(instance.endpoint).toBe("");
-		expect(instance.specialization).toBeUndefined();
 	});
 
 	test("handles empty posse string by converting to undefined", () => {
