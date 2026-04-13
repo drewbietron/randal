@@ -252,6 +252,11 @@ export class SignalChannel implements ChannelAdapter {
 		});
 	}
 
+	/** Public send for the ChannelAdapter interface. */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
+	}
+
 	stop(): void {
 		this.stopping = true;
 		if (this.pollTimer) {
