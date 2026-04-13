@@ -1,11 +1,4 @@
 /**
- * Domain categorizer — assigns task categories based on keyword matching.
- * Uses the 10-domain universal taxonomy for routing, analytics, and lens selection.
- */
-
-import type { MeshDomain } from "@randal/core";
-
-/**
  * Default keyword lists for the 10-domain universal taxonomy.
  * Keys are MeshDomain slugs. Values are lowercase keyword arrays.
  */

@@ -1,66 +1,50 @@
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-claude-auth@latest"],
-  "agent": {
-    "build": { "disable": true },
-    "plan": { "disable": true }
-  },
-  "mcp": {
-    "tavily": {
-      "type": "remote",
-      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey={env:TAVILY_API_KEY}",
-      "enabled": true
-    },
-    "memory": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/Users/drewbie/dev/randal/tools/mcp-memory/index.ts"
-      ],
-      "environment": {
-        "MEILI_URL": "http://localhost:7701",
-        "SUMMARY_MODEL": "anthropic/claude-haiku-3"
-      },
-      "enabled": true
-    },
-    "video": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/Users/drewbie/dev/randal/tools/video/mcp-server.ts"
-      ],
-      "environment": {
-        "VERTEX_AI_API_KEY": "{env:GOOGLE_VERTEX_API_KEY}"
-      },
-      "enabled": true
-    },
-    "image-gen": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/Users/drewbie/dev/randal/tools/image-gen/mcp-server.ts"
-      ],
-      "enabled": true
-    },
-    "scheduler": {
-      "type": "local",
-      "command": [
-        "bun",
-        "run",
-        "/Users/drewbie/dev/randal/tools/mcp-scheduler-server.ts"
-      ],
-      "environment": {
-        "RANDAL_GATEWAY_URL": "http://localhost:7600",
-        "RANDAL_GATEWAY_TOKEN": "{env:RANDAL_GATEWAY_TOKEN}"
-      },
-      "enabled": true
-    }
-  },
-  "tools": {
-    "video_*": true,
-    "image-gen_*": true
-  }
+	"$schema": "https://opencode.ai/config.json",
+	"plugin": ["opencode-claude-auth@latest"],
+	"agent": {
+		"build": { "disable": true },
+		"plan": { "disable": true }
+	},
+	"mcp": {
+		"tavily": {
+			"type": "remote",
+			"url": "https://mcp.tavily.com/mcp/?tavilyApiKey={env:TAVILY_API_KEY}",
+			"enabled": true
+		},
+		"memory": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory/index.ts"],
+			"environment": {
+				"MEILI_URL": "http://localhost:7701",
+				"SUMMARY_MODEL": "anthropic/claude-haiku-3"
+			},
+			"enabled": true
+		},
+		"video": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/video/mcp-server.ts"],
+			"environment": {
+				"VERTEX_AI_API_KEY": "{env:GOOGLE_VERTEX_API_KEY}"
+			},
+			"enabled": true
+		},
+		"image-gen": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/image-gen/mcp-server.ts"],
+			"enabled": true
+		},
+		"scheduler": {
+			"type": "local",
+			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-scheduler-server.ts"],
+			"environment": {
+				"RANDAL_GATEWAY_URL": "http://localhost:7600",
+				"RANDAL_GATEWAY_TOKEN": "{env:RANDAL_GATEWAY_TOKEN}"
+			},
+			"enabled": true
+		}
+	},
+	"tools": {
+		"video_*": true,
+		"image-gen_*": true
+	}
 }

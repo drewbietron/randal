@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-	DEFAULT_DOMAIN_KEYWORDS,
-	categorizePrompt,
-	getPrimaryDomain,
-} from "./categorizer.js";
+import { DEFAULT_DOMAIN_KEYWORDS, categorizePrompt, getPrimaryDomain } from "./categorizer.js";
 
 describe("categorizePrompt", () => {
 	test("returns ['product-engineering'] for React component prompt", () => {
@@ -214,5 +210,3 @@ describe("DEFAULT_DOMAIN_KEYWORDS", () => {
 		expect(DEFAULT_DOMAIN_KEYWORDS["platform-infrastructure"]).toContain("docker");
 	});
 });
-
-
