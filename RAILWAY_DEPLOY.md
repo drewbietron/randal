@@ -26,22 +26,38 @@ railway init
 
 ### 3. Configure Environment Variables
 
-Set these required variables in the Railway Dashboard:
+Set these variables in the Railway Dashboard:
 
-| Variable | Description | Get it from |
-|----------|-------------|-------------|
-| `ANTHROPIC_API_KEY` | Claude API access | [console.anthropic.com](https://console.anthropic.com) |
-| `RANDAL_API_TOKEN` | API authentication | Generate a secure random string |
-| `MEILI_MASTER_KEY` | Meilisearch auth | Generate a secure random string |
+**Required (Choose ONE):**
+- `OPENROUTER_API_KEY` - OpenRouter API key (recommended, provides access to multiple models)
+  - Get yours at: https://openrouter.ai/keys
+  - Supports: Claude, GPT-4, Llama, and 100+ models
+- `ANTHROPIC_API_KEY` - Direct Anthropic API key (Claude models only)
+  - Get yours at: https://console.anthropic.com/
 
-Optional variables for extended functionality:
+**Required:**
+- `RANDAL_API_TOKEN` - Secure random token for API authentication
+- `MEILI_MASTER_KEY` - Secure key for Meilisearch memory database
 
-| Variable | Description |
-|----------|-------------|
-| `OPENROUTER_API_KEY` | Alternative LLM provider |
-| `TAVILY_API_KEY` | Web search capability |
-| `GH_TOKEN` | GitHub CLI operations |
-| `DISCORD_BOT_TOKEN` | Discord integration |
+**Optional:**
+- `TAVILY_API_KEY` - For web search capabilities
+- `GH_TOKEN` - For GitHub CLI operations (PR creation, etc.)
+- `DISCORD_BOT_TOKEN` - For Discord integration
+
+### Choosing Your AI Model
+
+If using OpenRouter (recommended), set the model in your config:
+```yaml
+runner:
+  defaultModel: openrouter/anthropic/claude-sonnet-4
+  # Other options: openrouter/openai/gpt-4o, openrouter/meta-llama/llama-3.1-405b, etc.
+```
+
+If using direct Anthropic:
+```yaml
+runner:
+  defaultModel: anthropic/claude-sonnet-4
+```
 
 ### 4. Deploy
 

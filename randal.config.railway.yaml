@@ -5,14 +5,15 @@ name: randal-railway
 
 runner:
   defaultAgent: opencode
-  defaultModel: anthropic/claude-sonnet-4
+  # Use OpenRouter for multi-model access, or set to anthropic/claude-sonnet-4 for direct Anthropic
+  defaultModel: openrouter/anthropic/claude-sonnet-4  # or anthropic/claude-sonnet-4
   workdir: /app/workspace
 
 credentials:
   envFile: ./.env
   allow:
-    - ANTHROPIC_API_KEY
-    - OPENROUTER_API_KEY
+    - ANTHROPIC_API_KEY      # Optional - for direct Anthropic access
+    - OPENROUTER_API_KEY     # Alternative - access multiple models via OpenRouter
     - RANDAL_API_TOKEN
     - RANDAL_HOOK_TOKEN
     - TAVILY_API_KEY
