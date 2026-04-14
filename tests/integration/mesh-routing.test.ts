@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { getPrimaryDomain } from "@randal/analytics";
 import type { MeshInstance } from "@randal/core";
-import { MemoryMeshRegistry, routeTask } from "@randal/mesh";
+import { MemoryMeshRegistry, dryRunRoute, routeTask } from "@randal/mesh";
 
 function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 	return {
@@ -8,7 +9,9 @@ function makeInstance(overrides: Partial<MeshInstance> = {}): MeshInstance {
 		name: "test-instance",
 		posse: "test-posse",
 		capabilities: ["run", "delegate"],
-		specialization: undefined,
+		role: undefined,
+		expertise: undefined,
+		expertiseVector: undefined,
 		status: "idle",
 		lastHeartbeat: new Date().toISOString(),
 		endpoint: "http://localhost:3000",
@@ -27,12 +30,12 @@ describe("mesh routing integration", () => {
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
 		const backend = makeInstance({
 			instanceId: "inst-backend",
 			name: "backend-specialist",
-			specialization: "backend",
+			role: "product-engineering",
 		});
 		const general = makeInstance({
 			instanceId: "inst-general",
@@ -52,12 +55,12 @@ describe("mesh routing integration", () => {
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
 		const backend = makeInstance({
 			instanceId: "inst-backend",
 			name: "backend-specialist",
-			specialization: "backend",
+			role: "product-engineering",
 		});
 		const general = makeInstance({
 			instanceId: "inst-general",
@@ -71,40 +74,40 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Build a React component",
-			domain: "frontend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).not.toBeNull();
 		expect(decision?.instance.instanceId).toBe("inst-frontend");
-		expect(decision?.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 
-	test("routeTask selects backend-specialized instance for backend task", async () => {
+	test("routeTask selects infra-specialized instance for infra task", async () => {
 		const registry = new MemoryMeshRegistry();
 
 		const frontend = makeInstance({
 			instanceId: "inst-frontend",
 			name: "frontend-specialist",
-			specialization: "frontend",
+			role: "product-engineering",
 		});
-		const backend = makeInstance({
-			instanceId: "inst-backend",
-			name: "backend-specialist",
-			specialization: "backend",
+		const infra = makeInstance({
+			instanceId: "inst-infra",
+			name: "infra-specialist",
+			role: "platform-infrastructure",
 		});
 
 		await registry.register(frontend);
-		await registry.register(backend);
+		await registry.register(infra);
 
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
-			prompt: "Create REST API endpoint",
-			domain: "backend",
+			prompt: "Deploy Kubernetes cluster",
+			domain: "platform-infrastructure",
 		});
 
 		expect(decision).not.toBeNull();
-		expect(decision?.instance.instanceId).toBe("inst-backend");
-		expect(decision?.breakdown.specializationScore).toBe(1.0);
+		expect(decision?.instance.instanceId).toBe("inst-infra");
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 
 	test("routeTask prefers idle instances over busy ones", async () => {
@@ -113,14 +116,14 @@ describe("mesh routing integration", () => {
 		const busy = makeInstance({
 			instanceId: "inst-busy",
 			name: "busy-backend",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "busy",
 			activeJobs: 3,
 		});
 		const idle = makeInstance({
 			instanceId: "inst-idle",
 			name: "idle-backend",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "idle",
 			activeJobs: 0,
 		});
@@ -131,7 +134,7 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Create API endpoint",
-			domain: "backend",
+			domain: "product-engineering",
 		});
 
 		expect(decision).not.toBeNull();
@@ -145,7 +148,7 @@ describe("mesh routing integration", () => {
 		const unhealthy = makeInstance({
 			instanceId: "inst-1",
 			name: "unhealthy-agent",
-			specialization: "backend",
+			role: "product-engineering",
 			status: "unhealthy",
 		});
 
@@ -154,10 +157,173 @@ describe("mesh routing integration", () => {
 		const instances = await registry.discover();
 		const decision = routeTask(instances, {
 			prompt: "Build an API",
-			domain: "backend",
+			domain: "product-engineering",
 		});
 
 		// Should return null since the only instance is unhealthy
 		expect(decision).toBeNull();
+	});
+});
+
+describe("semantic mesh routing", () => {
+	test("routeTask selects instance by expertise vector similarity", async () => {
+		const registry = new MemoryMeshRegistry();
+
+		// Use L2-normalized vectors so dot product = cosine similarity
+		const instReact = makeInstance({
+			instanceId: "inst-react",
+			name: "react-specialist",
+			role: "product-engineering",
+			expertise: "React, TypeScript, frontend architecture",
+			expertiseVector: [0.9939, 0.1104, 0.0, 0.0], // normalized ~[0.9, 0.1]
+		});
+		const instSecurity = makeInstance({
+			instanceId: "inst-security",
+			name: "security-specialist",
+			role: "security-compliance",
+			expertise: "AppSec, penetration testing, OWASP",
+			expertiseVector: [0.0, 0.0, 0.9939, 0.1104], // normalized ~[0, 0, 0.9, 0.1]
+		});
+		const instGeneral = makeInstance({
+			instanceId: "inst-general",
+			name: "general-agent",
+		});
+
+		await registry.register(instReact);
+		await registry.register(instSecurity);
+		await registry.register(instGeneral);
+
+		const instances = await registry.discover();
+		const decision = routeTask(instances, {
+			prompt: "Fix the React component",
+			domain: "product-engineering",
+			taskVector: [0.9986, 0.0526, 0.0, 0.0], // normalized ~[0.95, 0.05]
+		});
+
+		expect(decision).not.toBeNull();
+		expect(decision?.instance.instanceId).toBe("inst-react");
+		// Cosine similarity of similar normalized vectors ≈ 0.998
+		expect(decision?.breakdown.expertiseScore).toBeGreaterThan(0.9);
+	});
+
+	test("routeTask falls back to role match when no vectors available", async () => {
+		const registry = new MemoryMeshRegistry();
+
+		const instEng = makeInstance({
+			instanceId: "inst-eng",
+			name: "eng-agent",
+			role: "product-engineering",
+		});
+		const instSec = makeInstance({
+			instanceId: "inst-sec",
+			name: "sec-agent",
+			role: "security-compliance",
+		});
+
+		await registry.register(instEng);
+		await registry.register(instSec);
+
+		const instances = await registry.discover();
+		const decision = routeTask(instances, {
+			prompt: "Build an API",
+			domain: "product-engineering",
+		});
+
+		expect(decision).not.toBeNull();
+		expect(decision?.instance.instanceId).toBe("inst-eng");
+		// Tier 2 exact role match gives 1.0
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
+	});
+
+	test("routeTask handles mixed mesh: some instances with vectors, some without", async () => {
+		const registry = new MemoryMeshRegistry();
+
+		// inst-a: has expertise vector that closely matches the task vector
+		// Using the same normalized vector as the task so cosine similarity = 1.0
+		const instA = makeInstance({
+			instanceId: "inst-a",
+			name: "vector-agent",
+			role: "product-engineering",
+			expertise: "React and TypeScript",
+			expertiseVector: [1.0, 0.0, 0.0, 0.0],
+		});
+		// inst-b: role-only, no expertise vector — uses Tier 2 role match
+		const instB = makeInstance({
+			instanceId: "inst-b",
+			name: "role-only-agent",
+			role: "product-engineering",
+		});
+		// inst-c: no role or vector — uses neutral score
+		const instC = makeInstance({
+			instanceId: "inst-c",
+			name: "bare-agent",
+			// No role, no expertiseVector
+		});
+
+		await registry.register(instA);
+		await registry.register(instB);
+		await registry.register(instC);
+
+		const instances = await registry.discover();
+		const decisions = dryRunRoute(instances, {
+			prompt: "Build a React component",
+			domain: "product-engineering",
+			taskVector: [1.0, 0.0, 0.0, 0.0],
+		});
+
+		// All 3 should be scored
+		expect(decisions.length).toBe(3);
+
+		// inst-a and inst-b both get expertiseScore 1.0 (vector match vs role match)
+		// but both should rank above inst-c (neutral score)
+		const instADecision = decisions.find((d) => d.instance.instanceId === "inst-a");
+		const instBDecision = decisions.find((d) => d.instance.instanceId === "inst-b");
+		const instCDecision = decisions.find((d) => d.instance.instanceId === "inst-c");
+
+		expect(instADecision).toBeDefined();
+		expect(instBDecision).toBeDefined();
+		expect(instCDecision).toBeDefined();
+
+		// inst-a uses Tier 1 (semantic): expertiseScore = 1.0 (identical vectors)
+		expect(instADecision?.breakdown.expertiseScore).toBe(1.0);
+		// inst-b uses Tier 2 (role match): expertiseScore = 1.0
+		expect(instBDecision?.breakdown.expertiseScore).toBe(1.0);
+		// inst-c has no data: neutral score
+		expect(instCDecision?.breakdown.expertiseScore).toBe(0.5);
+
+		// inst-c should rank last
+		expect(decisions[2].instance.instanceId).toBe("inst-c");
+	});
+
+	test("categorizer → router integration: auto-detected domain routes correctly", async () => {
+		const registry = new MemoryMeshRegistry();
+
+		const instEng = makeInstance({
+			instanceId: "inst-eng",
+			name: "eng-agent",
+			role: "product-engineering",
+		});
+		const instInfra = makeInstance({
+			instanceId: "inst-infra",
+			name: "infra-agent",
+			role: "platform-infrastructure",
+		});
+
+		await registry.register(instEng);
+		await registry.register(instInfra);
+
+		// Auto-detect domain from task prompt
+		const domain = getPrimaryDomain("deploy docker to kubernetes cluster");
+		expect(domain).toBe("platform-infrastructure");
+
+		const instances = await registry.discover();
+		const decision = routeTask(instances, {
+			prompt: "deploy docker to kubernetes cluster",
+			domain,
+		});
+
+		expect(decision).not.toBeNull();
+		expect(decision?.instance.instanceId).toBe("inst-infra");
+		expect(decision?.breakdown.expertiseScore).toBe(1.0);
 	});
 });

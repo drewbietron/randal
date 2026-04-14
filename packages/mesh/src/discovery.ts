@@ -10,7 +10,8 @@ const logger = createLogger({ context: { component: "mesh:discovery" } });
 
 export interface DiscoveryOptions {
 	posse?: string;
-	specialization?: string;
+	/** Filter by broad domain role (one of 10 MeshDomain slugs). */
+	role?: string;
 	status?: MeshInstance["status"];
 	excludeInstanceId?: string;
 }
@@ -41,9 +42,9 @@ export function filterInstances(
 		instances = instances.filter((i) => i.posse === options.posse);
 	}
 
-	// Filter by specialization
-	if (options.specialization) {
-		instances = instances.filter((i) => i.specialization === options.specialization);
+	// Filter by role (broad domain pre-filter)
+	if (options.role) {
+		instances = instances.filter((i) => i.role === options.role);
 	}
 
 	// Filter by status
@@ -72,16 +73,12 @@ export function filterInstances(
 }
 
 /**
- * Find the best instance for a given specialization.
+ * Find the best instance for a given role (broad domain).
  * Returns null if no suitable instance found.
  */
-export function findBestForSpecialization(
-	instances: MeshInstance[],
-	specialization: string,
-): MeshInstance | null {
+export function findBestForRole(instances: MeshInstance[], role: string): MeshInstance | null {
 	const matching = instances.filter(
-		(i) =>
-			i.specialization === specialization && i.status !== "unhealthy" && i.status !== "offline",
+		(i) => i.role === role && i.status !== "unhealthy" && i.status !== "offline",
 	);
 
 	if (matching.length === 0) return null;

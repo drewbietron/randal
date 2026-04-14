@@ -11,7 +11,7 @@ collection of single agents into a coordinated mesh.
 A **mesh** is a peer-to-peer network of Randal instances. Each instance:
 
 - **Registers** itself with the mesh on startup.
-- **Advertises** its specialization, current load, and health.
+- **Advertises** its role, expertise profile, current load, and health.
 - **Accepts** delegated jobs from other instances.
 - **Routes** incoming jobs to the best peer when a better match exists.
 
@@ -19,17 +19,19 @@ There is no central controller. Every instance maintains a local view of the
 mesh by exchanging lightweight heartbeats over HTTP.
 
 ```
-┌──────────┐       heartbeat       ┌──────────┐
-│ Instance │ ◄──────────────────► │ Instance │
-│  "infra" │                       │ "frontend"│
-└────┬─────┘                       └─────┬────┘
-     │          heartbeat                │
-     └──────────────┬────────────────────┘
-                    ▼
-              ┌──────────┐
-              │ Instance │
-              │ "backend"│
-              └──────────┘
+┌──────────────┐     heartbeat     ┌──────────────┐
+│   Instance   │ ◄──────────────► │   Instance   │
+│  platform-   │                   │  product-    │
+│  infra       │                   │  engineering │
+└──────┬───────┘                   └──────┬───────┘
+       │          heartbeat               │
+       └──────────────┬───────────────────┘
+                      ▼
+               ┌──────────────┐
+               │   Instance   │
+               │  security-   │
+               │  compliance  │
+               └──────────────┘
 ```
 
 ---
@@ -42,7 +44,7 @@ When `mesh.enabled` is `true`, the instance:
 2. Contacts known peers (listed in `.env` or discovered via DNS/mDNS).
 3. Exchanges a registration payload containing:
    - Instance name
-   - Specialization tag
+   - Role and expertise profile
    - Gateway endpoint
    - Current load (active jobs / capacity)
    - Model availability
@@ -60,32 +62,73 @@ and begins periodic heartbeats.
 
 ---
 
-## Specialization configuration
+## Agent profiles
 
-Each instance can declare a specialization — a domain it excels at:
+Each instance declares an expertise profile that the mesh uses for intelligent
+task routing. The profile has three tiers:
+
+### `mesh.role` — broad domain (recommended)
+
+One of 10 predefined domain slugs. Used for pre-filtering candidates and
+analytics categorization.
+
+| Domain Slug | Description | Typical expertise areas |
+|---|---|---|
+| `product-engineering` | Full-stack development | React, TypeScript, APIs, databases, architecture |
+| `platform-infrastructure` | DevOps and SRE | Docker, Kubernetes, CI/CD, Terraform, observability |
+| `security-compliance` | Application and infra security | AppSec, OWASP, GDPR, SOC2, penetration testing |
+| `data-intelligence` | Data engineering and analytics | ETL, ML, BigQuery, Spark, dashboards, BI |
+| `design-experience` | UX/UI and accessibility | Figma, design systems, a11y, i18n, prototyping |
+| `content-communications` | Technical writing and comms | Docs, blog, release notes, marketing copy |
+| `revenue-growth` | Sales and business development | GTM, partnerships, pricing, conversion funnels |
+| `customer-operations` | Support and success | Zendesk, onboarding, SLAs, churn, NPS |
+| `strategy-finance` | Product management and finance | Roadmaps, OKRs, budgets, sprint planning |
+| `legal-governance` | Legal and policy | Contracts, NDAs, IP, licensing, regulatory |
 
 ```yaml
 mesh:
-  enabled: true
-  specialization: frontend
-  endpoint: http://frontend-agent:7600
+  role: product-engineering
 ```
 
-Specialization tags are free-form strings. Common examples:
+### `mesh.expertise` — rich skill description (recommended)
 
-| Tag | Typical use |
-|-----|------------|
-| `frontend` | React, CSS, UI components |
-| `backend` | API design, server logic |
-| `infra` | Docker, CI/CD, Terraform |
-| `database` | SQL, migrations, schema design |
-| `docs` | Documentation, READMEs |
-| `testing` | Test suites, coverage |
-| `general` | No specific focus (default) |
+A natural language description of the agent's detailed skills. This text is
+embedded (vectorized) at startup and used for semantic matching at routing
+time.
 
-When the analytics package is also enabled, specialization is informed by
-reliability scores — instances that consistently succeed in a domain get
-routed more of that domain's work.
+Three formats are supported:
+
+**Inline string:**
+
+```yaml
+mesh:
+  expertise: >
+    Expert in React, TypeScript, and frontend architecture.
+    Deep knowledge of Next.js SSR, design systems, and
+    responsive UI patterns.
+```
+
+**File reference:**
+
+```yaml
+mesh:
+  expertise:
+    file: ./profiles/frontend-eng.md
+```
+
+**Combined (file + additional context):**
+
+```yaml
+mesh:
+  expertise:
+    file: ./profiles/frontend-eng.md
+    additional: "Also experienced with the internal billing system and Stripe integration"
+```
+
+The file format follows the same pattern as `identity.knowledge` — point to a
+markdown file containing a detailed expertise description. At boot, the file
+is read, concatenated with any `additional` text, and the full text is
+embedded for semantic matching.
 
 ---
 
@@ -95,7 +138,7 @@ When a job arrives, the mesh router scores every available instance and picks
 the best one. The score is a weighted sum of four factors:
 
 ```
-score = w_s × specialization_match
+score = w_e × expertise_match
       + w_r × reliability_score
       + w_l × (1 - load_ratio)
       + w_m × model_match
@@ -105,7 +148,7 @@ score = w_s × specialization_match
 
 | Factor | Key | Default | Description |
 |--------|-----|---------|-------------|
-| Specialization match | `specialization` | 0.4 | 1.0 if the job's detected domain matches the instance's specialization, 0.0 otherwise |
+| Expertise match | `expertise` | 0.4 | Semantic similarity between task and agent expertise profile (2-tier fallback) |
 | Reliability score | `reliability` | 0.3 | Historical success rate for this domain (from `@randal/analytics`) |
 | Load availability | `load` | 0.2 | Inverse of current load ratio (0 = fully loaded, 1 = idle) |
 | Model match | `modelMatch` | 0.1 | 1.0 if the instance has access to the requested model |
@@ -115,21 +158,40 @@ Configure weights in your config:
 ```yaml
 mesh:
   routingWeights:
-    specialization: 0.4
+    expertise: 0.4
     reliability: 0.3
     load: 0.2
     modelMatch: 0.1
 ```
 
+### 2-tier expertise scoring
+
+The expertise match factor uses a cascading fallback strategy:
+
+1. **Semantic (Tier 1)**: If both the task prompt and the agent's expertise
+   profile have been embedded (requires `OPENROUTER_API_KEY`), the router
+   computes cosine similarity between the two vectors. This is the most
+   accurate tier — it understands that "fix the login flow" matches an agent
+   with "authentication and session management" expertise, even though the
+   words differ.
+
+2. **Role match (Tier 2)**: If embeddings are unavailable, the router performs
+   an exact match on `mesh.role` against the auto-detected task domain. Score:
+   1.0 for exact match, 0.2 for no match.
+
 ### Routing decision flow
 
-1. Classify the incoming job's domain (using analytics keywords or explicit
-   tag).
-2. Score all healthy peers (including self).
-3. If the top-scoring peer is self, execute locally.
-4. If the top-scoring peer is remote, delegate via
-   `POST /api/mesh/delegate`.
-5. Stream results back to the original requester.
+1. **Auto-detect domain**: Classify the task's domain from keywords using the
+   10-domain taxonomy — or accept an explicit `domain` hint from the caller.
+2. **Embed the task**: If the embedding service is available, vectorize the
+   task description (single API call, <500ms).
+3. **Pre-filter candidates**: If enough peers exist (>2), narrow to those
+   whose `role` matches the detected domain. If no role matches, keep all
+   candidates.
+4. **Score all candidates**: Compute the weighted sum for each remaining peer
+   (including self).
+5. **Route**: If the top-scoring peer is self, execute locally. If remote,
+   delegate via `POST /api/mesh/delegate` and stream results back.
 
 ---
 
@@ -140,9 +202,10 @@ Each instance sends heartbeats to all known peers at a configurable interval
 
 ```json
 {
-  "name": "infra-agent",
-  "specialization": "infra",
-  "endpoint": "http://infra-agent:7600",
+  "name": "eng-agent",
+  "role": "product-engineering",
+  "expertise": "React, TypeScript, frontend architecture...",
+  "endpoint": "http://eng-agent:7600",
   "load": 0.35,
   "activeJobs": 2,
   "uptime": 86400,
@@ -195,14 +258,14 @@ Display the current mesh topology:
 $ randal mesh status
 
 Mesh Status
-───────────────────────────────────────────────────
-Instance        Specialization  Load   Health
-───────────────────────────────────────────────────
-local (self)    infra           0.15   healthy
-frontend-agent  frontend        0.42   healthy
-backend-agent   backend         0.00   healthy
-docs-agent      docs            0.78   degraded
-───────────────────────────────────────────────────
+──────────────────────────────────────────────────────────────────────────────────
+Instance        Role                     Expertise                   Load   Health
+──────────────────────────────────────────────────────────────────────────────────
+local (self)    platform-infrastructure   K8s, Terraform, CI/CD...   0.15   healthy
+eng-agent       product-engineering       React, TypeScript, APIs..  0.42   healthy
+sec-agent       security-compliance       AppSec, OWASP, audits...   0.00   healthy
+docs-agent      content-communications    Tech writing, guides...    0.78   degraded
+──────────────────────────────────────────────────────────────────────────────────
 Total instances: 4 │ Healthy: 3 │ Unhealthy: 1
 ```
 
@@ -214,15 +277,15 @@ Preview which instance would handle a given prompt:
 $ randal mesh route "Fix the Docker build"
 
 Routing Analysis
-─────────────────────────────────────────────
-Domain detected: infra
+───────────────────────────────────────────────────────────
+Domain detected: platform-infrastructure
 
-Instance        Spec    Rel    Load   Model  Score
-─────────────────────────────────────────────
-local (self)    0.40   0.27   0.17   0.10   0.94
-backend-agent   0.00   0.21   0.20   0.10   0.51
-frontend-agent  0.00   0.15   0.12   0.10   0.37
-─────────────────────────────────────────────
+Instance        Expert  Rel    Load   Model  Score
+───────────────────────────────────────────────────────────
+local (self)    0.920  0.270  0.170  0.100  0.94
+eng-agent       0.310  0.210  0.200  0.100  0.51
+sec-agent       0.050  0.150  0.120  0.100  0.37
+───────────────────────────────────────────────────────────
 → Routing to: local (self)
 ```
 
@@ -231,6 +294,9 @@ frontend-agent  0.00   0.15   0.12   0.10   0.37
 ## Configuration examples
 
 ### Minimal mesh instance
+
+No profile fields required — the instance participates in the mesh but
+receives a neutral expertise score (0.5) during routing.
 
 ```yaml
 name: worker-1
@@ -242,7 +308,7 @@ mesh:
   endpoint: http://localhost:7600
 ```
 
-### Specialized infrastructure agent
+### Infrastructure agent with expertise profile
 
 ```yaml
 name: infra-agent
@@ -252,16 +318,39 @@ runner:
 
 mesh:
   enabled: true
-  specialization: infra
+  role: platform-infrastructure
+  expertise: >
+    Kubernetes cluster management, Terraform IaC, GitHub Actions CI/CD,
+    Docker containerization, Prometheus/Grafana observability stack,
+    AWS EKS and GCP GKE administration.
   endpoint: http://infra-agent:7600
   routingWeights:
-    specialization: 0.5
+    expertise: 0.5
     reliability: 0.25
     load: 0.15
     modelMatch: 0.1
 ```
 
+### File-based expertise profile
+
+```yaml
+name: frontend-agent
+runner:
+  workdir: ./workspace
+
+mesh:
+  enabled: true
+  role: product-engineering
+  expertise:
+    file: ./profiles/frontend-eng.md
+    additional: "Also experienced with the internal billing system"
+  endpoint: http://frontend-agent:7600
+```
+
 ### Three-node mesh (docker-compose)
+
+Each `configs/*.yaml` file should have `mesh.role` and `mesh.expertise` set
+for optimal routing. See the examples above for the config format.
 
 ```yaml
 # docker-compose.yml
@@ -294,6 +383,10 @@ services:
 
 - Start with 2 instances and add more as your workload grows.
 - Use `randal mesh route` to verify routing before deploying.
+- Write detailed expertise descriptions — the more specific, the better the
+  semantic routing. Include technologies, frameworks, and domain knowledge.
+- Use `randal mesh route 'your task'` to preview how the expertise matcher
+  scores your peers.
 - Combine with `@randal/analytics` for reliability-informed routing.
 - Monitor the `/api/mesh/status` endpoint from your infrastructure tooling.
 - Set `MESH_PEERS` via environment variables so the same config image works

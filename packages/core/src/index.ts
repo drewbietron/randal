@@ -53,9 +53,12 @@ export type {
 	AnnotationVerdict,
 	Annotation,
 	MeshInstance,
+	MeshDomain,
 	ReliabilityScore,
 	Recommendation,
 } from "./types.js";
+
+export { MESH_DOMAINS } from "./types.js";
 
 export { posseConfigSchema, parsePosseConfig } from "./posse-config.js";
 export type { PosseConfig } from "./posse-config.js";

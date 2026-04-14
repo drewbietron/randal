@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { type ZodError, z } from "zod";
+import { MESH_DOMAINS } from "./types.js";
 
 // ---- Sub-schemas ----
 
@@ -474,11 +475,26 @@ export const configSchema = z.object({
 	mesh: z
 		.object({
 			enabled: z.boolean().default(false),
-			specialization: z.string().optional(),
+			/** Broad domain role — one of 10 predefined MeshDomain slugs. */
+			role: z.enum(MESH_DOMAINS as unknown as [string, ...string[]]).optional(),
+			/**
+			 * Rich natural language expertise description.
+			 * Supports inline string, file reference, or combined format.
+			 */
+			expertise: z
+				.union([
+					z.string(),
+					z.object({
+						file: z.string(),
+						additional: z.string().optional(),
+					}),
+				])
+				.optional(),
 			endpoint: z.string().optional(),
 			routingWeights: z
 				.object({
-					specialization: z.number().default(0.4),
+					/** Weight for semantic expertise matching (2-tier: vector cosine → role match). */
+					expertise: z.number().default(0.4),
 					reliability: z.number().default(0.3),
 					load: z.number().default(0.2),
 					modelMatch: z.number().default(0.1),
@@ -494,42 +510,31 @@ export const configSchema = z.object({
 			feedbackInjection: z.boolean().default(true),
 			recommendationFrequency: z.enum(["daily", "weekly", "on-demand"]).default("on-demand"),
 			domainKeywords: z.record(z.array(z.string())).default({
-				frontend: [
+				"product-engineering": [
 					"react",
 					"vue",
 					"angular",
 					"css",
 					"html",
 					"component",
-					"ui",
-					"ux",
-					"tailwind",
-					"next.js",
-					"svelte",
-				],
-				backend: [
 					"api",
 					"server",
 					"endpoint",
 					"rest",
 					"graphql",
 					"middleware",
-					"express",
-					"hono",
-					"fastify",
-				],
-				database: [
 					"sql",
-					"query",
 					"migration",
 					"schema",
 					"postgres",
-					"mysql",
-					"sqlite",
 					"prisma",
-					"drizzle",
+					"typescript",
+					"test",
+					"spec",
+					"jest",
+					"vitest",
 				],
-				infra: [
+				"platform-infrastructure": [
 					"docker",
 					"kubernetes",
 					"ci",
@@ -540,9 +545,42 @@ export const configSchema = z.object({
 					"gcp",
 					"azure",
 					"nginx",
+					"monitoring",
+					"k8s",
 				],
-				docs: ["readme", "documentation", "docs", "guide", "tutorial", "changelog"],
-				testing: ["test", "spec", "jest", "vitest", "cypress", "playwright", "coverage"],
+				"security-compliance": [
+					"security",
+					"vulnerability",
+					"audit",
+					"compliance",
+					"gdpr",
+					"owasp",
+					"encryption",
+				],
+				"data-intelligence": [
+					"analytics",
+					"ml",
+					"machine learning",
+					"etl",
+					"warehouse",
+					"dashboard",
+					"bi",
+				],
+				"design-experience": ["design", "ux", "ui", "figma", "accessibility", "a11y", "i18n"],
+				"content-communications": [
+					"readme",
+					"documentation",
+					"docs",
+					"guide",
+					"tutorial",
+					"changelog",
+					"blog",
+					"marketing",
+				],
+				"revenue-growth": ["sales", "revenue", "pricing", "conversion", "growth", "gtm"],
+				"customer-operations": ["support", "ticket", "customer", "onboarding", "churn", "zendesk"],
+				"strategy-finance": ["roadmap", "okr", "budget", "sprint", "finance", "strategy"],
+				"legal-governance": ["contract", "legal", "policy", "license", "nda", "governance"],
 			}),
 			agingHalfLife: z.number().default(30),
 		})

@@ -3,12 +3,12 @@ export {
 	MeilisearchMeshRegistry,
 	createInstanceFromConfig,
 } from "./registry.js";
-export type { MeshRegistryOptions, MeiliClient } from "./registry.js";
+export type { MeshRegistryOptions, MeiliClient, ExpertiseOptions } from "./registry.js";
 
-export { filterInstances, findBestForSpecialization } from "./discovery.js";
+export { filterInstances, findBestForRole } from "./discovery.js";
 export type { DiscoveryOptions, DiscoveryResult } from "./discovery.js";
 
-export { routeTask, dryRunRoute } from "./router.js";
+export { routeTask, dryRunRoute, cosineSimilarity } from "./router.js";
 export type { RoutingWeights, RoutingContext, RoutingDecision } from "./router.js";
 
 export {

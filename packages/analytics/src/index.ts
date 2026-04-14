@@ -9,7 +9,11 @@ export type {
 	AnnotationFilters,
 } from "./annotations.js";
 
-export { categorizePrompt, getPrimaryDomain, DEFAULT_DOMAIN_KEYWORDS } from "./categorizer.js";
+export {
+	categorizePrompt,
+	getPrimaryDomain,
+	DEFAULT_DOMAIN_KEYWORDS,
+} from "./categorizer.js";
 
 export {
 	computeReliabilityScores,

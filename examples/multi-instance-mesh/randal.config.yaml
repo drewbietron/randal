@@ -1,6 +1,6 @@
 # Multi-instance mesh node
-# This config represents a single node specialized in frontend work.
-# Deploy multiple instances with different specializations to form a mesh.
+# This config represents a single node specialized in frontend engineering.
+# Deploy multiple instances with different roles and expertise profiles to form a mesh.
 # See docs/mesh-guide.md for setup instructions
 #
 # Run `randal setup` to generate opencode.json from this config.
@@ -18,8 +18,9 @@ runner:
 identity:
   persona: >
     You are a frontend development specialist. You excel at React, TypeScript,
-    CSS, and UI/UX implementation. When you receive tasks outside your
-    expertise, the mesh will route them to a better-suited instance.
+    CSS, and UI/UX implementation. The mesh routes tasks to you based on your
+    expertise profile — tasks outside your strengths are automatically routed
+    to better-suited peers.
   knowledge:
     - ./knowledge/frontend-patterns.md
     - ./knowledge/design-system.md
@@ -36,10 +37,15 @@ gateway:
 
 mesh:
   enabled: true
-  specialization: frontend
+  role: product-engineering
+  expertise: >
+    Frontend development specialist. Expert in React, TypeScript, CSS,
+    component architecture, and design system implementation. Experienced
+    with Next.js SSR, state management (Zustand, Redux), and responsive
+    UI patterns.
   endpoint: http://frontend-agent:7600
   routingWeights:
-    specialization: 0.4
+    expertise: 0.4
     reliability: 0.3
     load: 0.2
     modelMatch: 0.1

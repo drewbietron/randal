@@ -637,6 +637,66 @@ describe("formatZodError", () => {
 	});
 });
 
+describe("mesh config schema", () => {
+	const minimalConfig = {
+		name: "test-agent",
+		runner: {
+			workdir: "/tmp/test",
+		},
+	};
+
+	test("validates mesh.role with valid domain slug", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			mesh: { role: "product-engineering" },
+		});
+		expect(result.mesh.role).toBe("product-engineering");
+	});
+
+	test("rejects mesh.role with invalid domain slug", () => {
+		expect(() =>
+			configSchema.parse({
+				...minimalConfig,
+				mesh: { role: "invalid-domain" },
+			}),
+		).toThrow();
+	});
+
+	test("validates mesh.expertise as inline string", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			mesh: { expertise: "Expert in React and TypeScript" },
+		});
+		expect(result.mesh.expertise).toBe("Expert in React and TypeScript");
+	});
+
+	test("validates mesh.expertise as file reference object", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			mesh: { expertise: { file: "./profiles/eng.md" } },
+		});
+		expect(result.mesh.expertise).toEqual({ file: "./profiles/eng.md" });
+	});
+
+	test("validates mesh.expertise as file reference with additional", () => {
+		const result = configSchema.parse({
+			...minimalConfig,
+			mesh: {
+				expertise: { file: "./profiles/eng.md", additional: "Also knows billing" },
+			},
+		});
+		expect(result.mesh.expertise).toEqual({
+			file: "./profiles/eng.md",
+			additional: "Also knows billing",
+		});
+	});
+
+	test("defaults routing weight expertise to 0.4", () => {
+		const result = configSchema.parse(minimalConfig);
+		expect(result.mesh.routingWeights.expertise).toBe(0.4);
+	});
+});
+
 describe("config error integration", () => {
 	test("parseConfig throws human-readable error, not JSON", () => {
 		const badYaml = "name: 123\n";

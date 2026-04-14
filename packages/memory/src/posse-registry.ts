@@ -28,8 +28,20 @@ export interface RegistryDoc {
 	registeredAt: string;
 	/** HTTP endpoint URL for this agent's gateway (e.g. "http://localhost:3100"). */
 	endpoint?: string;
-	/** Agent's domain specialization (e.g. "frontend", "backend", "devops"). */
-	specialization?: string;
+	/** Broad domain role — one of 10 MeshDomain slugs (e.g., "product-engineering"). */
+	role?: string;
+	/** Resolved natural language expertise description. */
+	expertise?: string;
+	/** Embedding vector for the expertise text, used for semantic routing. */
+	expertiseVector?: number[];
+}
+
+/** Options for passing pre-resolved expertise data to registry functions. */
+export interface PosseExpertiseOptions {
+	/** Resolved natural language expertise text (from inline string or file). */
+	resolvedExpertise?: string;
+	/** Pre-computed embedding vector for the expertise text. */
+	expertiseVector?: number[];
 }
 
 /** Stale threshold: agents with lastHeartbeat older than this are considered stale. */
@@ -37,10 +49,12 @@ const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Build a registry document from config.
+ * Accepts optional pre-resolved expertise data (text + embedding vector).
  */
 export function buildRegistryDoc(
 	config: RandalConfig,
 	status: "idle" | "busy" = "idle",
+	options?: PosseExpertiseOptions,
 ): RegistryDoc {
 	const now = new Date().toISOString();
 	return {
@@ -54,7 +68,9 @@ export function buildRegistryDoc(
 		lastHeartbeat: now,
 		registeredAt: now,
 		endpoint: config.mesh.endpoint,
-		specialization: config.mesh.specialization,
+		role: config.mesh.role,
+		expertise: options?.resolvedExpertise,
+		expertiseVector: options?.expertiseVector,
 	};
 }
 
@@ -104,13 +120,18 @@ export function getRegistryIndexName(posseName: string): string {
 /**
  * Register an agent in the posse registry (Meilisearch).
  * Registration failure is non-fatal (R3.3).
+ * Accepts optional pre-resolved expertise data for semantic routing.
  */
-export async function registerAgent(config: RandalConfig, client: RegistryClient): Promise<void> {
+export async function registerAgent(
+	config: RandalConfig,
+	client: RegistryClient,
+	options?: PosseExpertiseOptions,
+): Promise<void> {
 	if (!config.posse) return;
 
 	try {
 		const indexName = getRegistryIndexName(config.posse);
-		const doc = buildRegistryDoc(config);
+		const doc = buildRegistryDoc(config, "idle", options);
 		const index = client.index(indexName);
 		await index.addDocuments([doc as unknown as Record<string, unknown>]);
 		logger.info("Agent registered in posse registry", {
@@ -126,17 +147,19 @@ export async function registerAgent(config: RandalConfig, client: RegistryClient
 
 /**
  * Update heartbeat in the posse registry.
+ * Accepts optional expertise data to preserve in the full document re-write.
  */
 export async function updateHeartbeat(
 	config: RandalConfig,
 	client: RegistryClient,
 	status?: "idle" | "busy",
+	options?: PosseExpertiseOptions,
 ): Promise<void> {
 	if (!config.posse) return;
 
 	try {
 		const indexName = getRegistryIndexName(config.posse);
-		const doc = buildRegistryDoc(config, status);
+		const doc = buildRegistryDoc(config, status, options);
 		doc.lastHeartbeat = new Date().toISOString();
 		const index = client.index(indexName);
 		await index.addDocuments([doc as unknown as Record<string, unknown>]);
@@ -209,7 +232,9 @@ export function registryDocToMeshInstance(doc: RegistryDoc): MeshInstance {
 		name: doc.name,
 		posse: doc.posse || undefined,
 		capabilities: doc.capabilities,
-		specialization: doc.specialization,
+		role: doc.role as MeshInstance["role"],
+		expertise: doc.expertise,
+		expertiseVector: doc.expertiseVector,
 		status: statusMap[doc.status],
 		lastHeartbeat: doc.lastHeartbeat,
 		endpoint: doc.endpoint ?? "",

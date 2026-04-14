@@ -64,19 +64,19 @@ export class MemoryMeshRegistry {
 
 	async discover(options?: {
 		posse?: string;
-		specialization?: string;
 		status?: MeshInstance["status"];
+		role?: string;
 	}): Promise<MeshInstance[]> {
 		let results = [...this.instances.values()];
 
 		if (options?.posse) {
 			results = results.filter((i) => i.posse === options.posse);
 		}
-		if (options?.specialization) {
-			results = results.filter((i) => i.specialization === options.specialization);
-		}
 		if (options?.status) {
 			results = results.filter((i) => i.status === options.status);
+		}
+		if (options?.role) {
+			results = results.filter((i) => i.role === options.role);
 		}
 
 		return results;
@@ -128,12 +128,7 @@ export class MeilisearchMeshRegistry {
 	async init(): Promise<void> {
 		try {
 			const index = this.client.index(this.indexName);
-			await index.updateFilterableAttributes([
-				"posse",
-				"specialization",
-				"status",
-				"lastHeartbeat",
-			]);
+			await index.updateFilterableAttributes(["posse", "role", "status", "lastHeartbeat"]);
 			await index.updateSortableAttributes(["lastHeartbeat"]);
 		} catch (err) {
 			logger.warn("Failed to configure mesh index", {
@@ -172,15 +167,15 @@ export class MeilisearchMeshRegistry {
 
 	async discover(options?: {
 		posse?: string;
-		specialization?: string;
 		status?: MeshInstance["status"];
+		role?: string;
 	}): Promise<MeshInstance[]> {
 		const index = this.client.index(this.indexName);
 		const filters: string[] = [];
 
 		if (options?.posse) filters.push(`posse = "${options.posse}"`);
-		if (options?.specialization) filters.push(`specialization = "${options.specialization}"`);
 		if (options?.status) filters.push(`status = "${options.status}"`);
+		if (options?.role) filters.push(`role = "${options.role}"`);
 
 		const result = await index.search("", {
 			filter: filters.length > 0 ? filters.join(" AND ") : undefined,
@@ -200,16 +195,30 @@ export class MeilisearchMeshRegistry {
 	}
 }
 
+/** Options for passing pre-resolved expertise data to instance creation. */
+export interface ExpertiseOptions {
+	/** Resolved natural language expertise text (from inline string or file). */
+	resolvedExpertise?: string;
+	/** Pre-computed embedding vector for the expertise text. */
+	expertiseVector?: number[];
+}
+
 /**
  * Create a MeshInstance object from config.
+ * Accepts optional pre-resolved expertise data (text + embedding vector).
  */
-export function createInstanceFromConfig(config: RandalConfig): MeshInstance {
+export function createInstanceFromConfig(
+	config: RandalConfig,
+	options?: ExpertiseOptions,
+): MeshInstance {
 	return {
 		instanceId: randomBytes(8).toString("hex"),
 		name: config.name,
 		posse: config.posse,
 		capabilities: ["run", "delegate"],
-		specialization: config.mesh.specialization,
+		role: config.mesh.role,
+		expertise: options?.resolvedExpertise,
+		expertiseVector: options?.expertiseVector,
 		status: "idle",
 		lastHeartbeat: new Date().toISOString(),
 		endpoint: config.mesh.endpoint ?? "",

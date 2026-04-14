@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { createLogger } from "@randal/core";
 import type { RandalConfig, RunnerEvent } from "@randal/core";
 import { Hono } from "hono";
@@ -57,9 +58,25 @@ export class WhatsAppChannel implements ChannelAdapter {
 						this.logger.warn("Missing Twilio signature");
 						return c.text("Unauthorized", 401);
 					}
-					// Note: Full signature validation would require the request URL
-					// and the twilio SDK. For now, we check the header exists.
-					// Production deployments should validate with twilio.validateRequest().
+
+					// Validate signature: HMAC-SHA1(authToken, webhookUrl + sorted key=value pairs) → base64
+					const webhookUrl = (this.channelConfig as Record<string, unknown>).webhookUrl as
+						| string
+						| undefined;
+					if (webhookUrl) {
+						const sortedKeys = Object.keys(payload).sort();
+						let data = webhookUrl;
+						for (const key of sortedKeys) {
+							data += key + (payload as Record<string, string>)[key];
+						}
+						const expected = createHmac("sha1", this.channelConfig.authToken)
+							.update(data)
+							.digest("base64");
+						if (twilioSignature !== expected) {
+							this.logger.warn("Invalid Twilio signature");
+							return c.text("Forbidden", 403);
+						}
+					}
 				}
 
 				// Process in background — return 200 immediately to Twilio
@@ -211,6 +228,11 @@ export class WhatsAppChannel implements ChannelAdapter {
 				jobId: event.jobId,
 			});
 		});
+	}
+
+	/** Public send for the ChannelAdapter interface. */
+	async send(target: string, message: string): Promise<void> {
+		await this.sendMessage(target, message);
 	}
 
 	stop(): void {

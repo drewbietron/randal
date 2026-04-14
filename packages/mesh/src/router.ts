@@ -9,7 +9,8 @@ import { createLogger } from "@randal/core";
 const logger = createLogger({ context: { component: "mesh:router" } });
 
 export interface RoutingWeights {
-	specialization: number;
+	/** Weight for semantic expertise matching (2-tier: vector cosine → role match). */
+	expertise: number;
 	reliability: number;
 	load: number;
 	modelMatch: number;
@@ -18,19 +19,22 @@ export interface RoutingWeights {
 export interface RoutingContext {
 	/** The task prompt to evaluate */
 	prompt: string;
-	/** Task domain (frontend, backend, etc.) */
+	/** Task domain (e.g., "product-engineering", "security-compliance") */
 	domain?: string;
 	/** Requested model */
 	model?: string;
 	/** Reliability scores for routing decisions */
 	reliabilityScores?: ReliabilityScore[];
+	/** Pre-computed embedding vector of the task prompt for semantic matching */
+	taskVector?: number[];
 }
 
 export interface RoutingDecision {
 	instance: MeshInstance;
 	score: number;
 	breakdown: {
-		specializationScore: number;
+		/** Semantic expertise score (2-tier: cosine similarity → role match). */
+		expertiseScore: number;
 		reliabilityScore: number;
 		loadScore: number;
 		modelMatchScore: number;
@@ -39,7 +43,7 @@ export interface RoutingDecision {
 }
 
 const DEFAULT_WEIGHTS: RoutingWeights = {
-	specialization: 0.4,
+	expertise: 0.4,
 	reliability: 0.3,
 	load: 0.2,
 	modelMatch: 0.1,
@@ -62,13 +66,13 @@ export function routeTask(
 	}
 
 	const scored: RoutingDecision[] = available.map((instance) => {
-		const specializationScore = computeSpecializationScore(instance, context);
+		const expertiseScore = computeExpertiseScore(instance, context);
 		const reliabilityScore = computeReliabilityScore(instance, context);
 		const loadScore = computeLoadScore(instance);
 		const modelMatchScore = computeModelMatchScore(instance, context);
 
 		const totalScore =
-			specializationScore * weights.specialization +
+			expertiseScore * weights.expertise +
 			reliabilityScore * weights.reliability +
 			loadScore * weights.load +
 			modelMatchScore * weights.modelMatch;
@@ -77,13 +81,13 @@ export function routeTask(
 			instance,
 			score: totalScore,
 			breakdown: {
-				specializationScore,
+				expertiseScore,
 				reliabilityScore,
 				loadScore,
 				modelMatchScore,
 			},
 			reason: buildReason(instance, {
-				specializationScore,
+				expertiseScore,
 				reliabilityScore,
 				loadScore,
 				modelMatchScore,
@@ -124,13 +128,13 @@ export function dryRunRoute(
 
 	return available
 		.map((instance) => {
-			const specializationScore = computeSpecializationScore(instance, context);
+			const expertiseScore = computeExpertiseScore(instance, context);
 			const reliabilityScore = computeReliabilityScore(instance, context);
 			const loadScore = computeLoadScore(instance);
 			const modelMatchScore = computeModelMatchScore(instance, context);
 
 			const totalScore =
-				specializationScore * weights.specialization +
+				expertiseScore * weights.expertise +
 				reliabilityScore * weights.reliability +
 				loadScore * weights.load +
 				modelMatchScore * weights.modelMatch;
@@ -139,13 +143,13 @@ export function dryRunRoute(
 				instance,
 				score: totalScore,
 				breakdown: {
-					specializationScore,
+					expertiseScore,
 					reliabilityScore,
 					loadScore,
 					modelMatchScore,
 				},
 				reason: buildReason(instance, {
-					specializationScore,
+					expertiseScore,
 					reliabilityScore,
 					loadScore,
 					modelMatchScore,
@@ -155,23 +159,45 @@ export function dryRunRoute(
 		.sort((a, b) => b.score - a.score);
 }
 
-function computeSpecializationScore(instance: MeshInstance, context: RoutingContext): number {
-	if (!instance.specialization || !context.domain) return 0.5;
+/**
+ * Compute cosine similarity between two vectors.
+ * Assumes vectors are L2-normalized (as produced by text-embedding-3-small),
+ * so dot product equals cosine similarity.
+ * Returns 0 if vectors are empty or have different lengths.
+ */
+export function cosineSimilarity(a: number[], b: number[]): number {
+	if (a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
 
-	// Exact match
-	if (instance.specialization.toLowerCase() === context.domain.toLowerCase()) {
-		return 1.0;
+	let dotProduct = 0;
+	for (let i = 0; i < a.length; i++) {
+		dotProduct += a[i] * b[i];
 	}
 
-	// Partial match (specialization appears in domain or vice versa)
-	if (
-		instance.specialization.toLowerCase().includes(context.domain.toLowerCase()) ||
-		context.domain.toLowerCase().includes(instance.specialization.toLowerCase())
-	) {
-		return 0.7;
+	// Clamp to [0, 1] — vectors should be normalized, but clamp for safety
+	return Math.max(0, Math.min(1, dotProduct));
+}
+
+/**
+ * Compute expertise score using a 2-tier fallback chain:
+ *   Tier 1 — Semantic: cosine similarity between task vector and instance expertise vector
+ *   Tier 2 — Role match: exact match on instance.role vs context.domain
+ *   No data: return 0.5 (neutral)
+ */
+function computeExpertiseScore(instance: MeshInstance, context: RoutingContext): number {
+	// Tier 1: Semantic cosine similarity
+	if (context.taskVector && instance.expertiseVector) {
+		return cosineSimilarity(context.taskVector, instance.expertiseVector);
 	}
 
-	return 0.2;
+	// Tier 2: Role string match
+	if (instance.role && context.domain) {
+		if (instance.role === context.domain) return 1.0;
+		// No match on role — low score
+		return 0.2;
+	}
+
+	// No data available — neutral score
+	return 0.5;
 }
 
 function computeReliabilityScore(instance: MeshInstance, context: RoutingContext): number {
@@ -211,7 +237,7 @@ function computeModelMatchScore(instance: MeshInstance, context: RoutingContext)
 function buildReason(
 	instance: MeshInstance,
 	scores: {
-		specializationScore: number;
+		expertiseScore: number;
 		reliabilityScore: number;
 		loadScore: number;
 		modelMatchScore: number;
@@ -219,8 +245,8 @@ function buildReason(
 ): string {
 	const parts: string[] = [];
 
-	if (scores.specializationScore >= 0.8) {
-		parts.push(`specialization match (${instance.specialization})`);
+	if (scores.expertiseScore >= 0.8) {
+		parts.push(`expertise match (${instance.role ?? "semantic"})`);
 	}
 	if (scores.reliabilityScore >= 0.8) {
 		parts.push("high reliability");

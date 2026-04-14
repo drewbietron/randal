@@ -105,14 +105,14 @@ describe("MemoryMeshRegistry", () => {
 		expect(results.every((i) => i.posse === "team-a")).toBe(true);
 	});
 
-	test("discover filters by specialization", async () => {
-		await registry.register(makeInstance({ instanceId: "inst-1", specialization: "frontend" }));
-		await registry.register(makeInstance({ instanceId: "inst-2", specialization: "backend" }));
-		await registry.register(makeInstance({ instanceId: "inst-3", specialization: "frontend" }));
+	test("discover filters by role", async () => {
+		await registry.register(makeInstance({ instanceId: "inst-1", role: "frontend" }));
+		await registry.register(makeInstance({ instanceId: "inst-2", role: "backend" }));
+		await registry.register(makeInstance({ instanceId: "inst-3", role: "frontend" }));
 
-		const results = await registry.discover({ specialization: "backend" });
+		const results = await registry.discover({ role: "backend" });
 		expect(results).toHaveLength(1);
-		expect(results[0].specialization).toBe("backend");
+		expect(results[0].role).toBe("backend");
 	});
 
 	test("discover filters by status", async () => {
@@ -130,7 +130,7 @@ describe("MemoryMeshRegistry", () => {
 			makeInstance({
 				instanceId: "inst-1",
 				posse: "team-a",
-				specialization: "frontend",
+				role: "frontend",
 				status: "idle",
 			}),
 		);
@@ -138,7 +138,7 @@ describe("MemoryMeshRegistry", () => {
 			makeInstance({
 				instanceId: "inst-2",
 				posse: "team-a",
-				specialization: "backend",
+				role: "backend",
 				status: "idle",
 			}),
 		);
@@ -146,14 +146,14 @@ describe("MemoryMeshRegistry", () => {
 			makeInstance({
 				instanceId: "inst-3",
 				posse: "team-b",
-				specialization: "frontend",
+				role: "frontend",
 				status: "idle",
 			}),
 		);
 
 		const results = await registry.discover({
 			posse: "team-a",
-			specialization: "frontend",
+			role: "frontend",
 		});
 		expect(results).toHaveLength(1);
 		expect(results[0].instanceId).toBe("inst-1");

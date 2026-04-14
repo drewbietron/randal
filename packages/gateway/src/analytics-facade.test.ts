@@ -244,7 +244,7 @@ describe("AnalyticsEngineFacade.addAnnotation", () => {
 		expect(annotations[0].verdict).toBe("pass");
 		expect(annotations[0].feedback).toBe("All tests pass");
 		expect(annotations[0].agent).toBe("opencode");
-		expect(annotations[0].domain).toBe("frontend"); // auto-detected from "React component"
+		expect(annotations[0].domain).toBe("product-engineering"); // auto-detected from "React component"
 	});
 
 	test("uses 'general' domain when job not found", async () => {
