@@ -39,10 +39,8 @@ if [ "${RANDAL_SKIP_MEILISEARCH}" != "true" ]; then
     --http-addr "127.0.0.1:7700" \
     --no-analytics \
     --log-level WARN \
-    --schedule-snapshot \
-    --snapshot-interval-sec 86400 \
-    --snapshot-dir /app/meili-data/snapshots \
-    --dump-dir /app/meili-data/dumps &
+    --schedule-snapshot=86400 \
+    --snapshot-dir /app/meeli-data/snapshots &
   MEILI_PID=$!
 
   # Wait for Meilisearch to be ready (up to 10 seconds)
