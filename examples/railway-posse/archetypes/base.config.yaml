@@ -1,0 +1,140 @@
+# Base Randal Configuration for Railway Posse Agents
+# This configuration is inherited by all specialized agents in the posse
+
+# Model Configuration
+model:
+  provider: anthropic
+  name: claude-sonnet-4.5
+  temperature: 0.7
+  max_tokens: 8192
+
+# Memory Configuration
+memory:
+  enabled: true
+  meilisearch:
+    # Host will be set via MEILISEARCH_HOST environment variable
+    # Master key will be set via MEILISEARCH_MASTER_KEY environment variable
+    index_prefix: "randal"
+  
+  # Posse discovery configuration
+  posse:
+    enabled: true
+    heartbeat_interval: 300  # 5 minutes
+    discovery_method: "meilisearch"  # Agents discover each other via shared Meilisearch
+
+# Agent Identity (will be overridden by specific agent configs)
+agent:
+  name: "randal-base"
+  role: "general"
+  expertise: []
+  specialization: "General purpose AI assistant"
+
+# Capabilities
+capabilities:
+  - code_analysis
+  - code_generation
+  - debugging
+  - testing
+  - documentation
+  - research
+  - planning
+
+# Tools Configuration
+tools:
+  # File operations
+  file_operations:
+    max_file_size: 10485760  # 10MB
+    allowed_extensions: "*"
+  
+  # Web access
+  web_access:
+    enabled: true
+    timeout: 30
+  
+  # Git operations
+  git:
+    enabled: true
+    default_branch: "main"
+  
+  # Shell operations
+  shell:
+    enabled: true
+    timeout: 120
+
+# Behavior Configuration
+behavior:
+  # Communication style
+  communication:
+    tone: "professional"
+    verbosity: "balanced"
+    emoji: false  # No emojis unless explicitly requested
+  
+  # Task management
+  tasks:
+    max_concurrent: 5
+    timeout: 3600  # 1 hour
+    auto_checkpoint: true
+  
+  # Collaboration
+  collaboration:
+    delegate_when_appropriate: true
+    consult_specialists: true
+    share_learnings: true
+
+# Security & Compliance
+security:
+  # Never commit secrets
+  secret_scanning: true
+  
+  # Code review before commit
+  pre_commit_review: true
+  
+  # Respect .gitignore
+  respect_gitignore: true
+
+# Logging & Observability
+logging:
+  level: "info"
+  structured: true
+  destination: "stdout"
+
+# Resource Limits
+limits:
+  # Memory usage
+  max_memory_mb: 2048
+  
+  # Storage
+  max_storage_mb: 5120
+  
+  # Token budget per task
+  max_tokens_per_task: 1000000
+
+# Railway-Specific Configuration
+railway:
+  # Health check endpoint
+  health_check:
+    enabled: true
+    port: 3000
+    path: "/health"
+  
+  # Graceful shutdown
+  shutdown:
+    grace_period: 30
+    
+  # Resource allocation (can be overridden per agent)
+  resources:
+    cpu: "0.5"  # 0.5 vCPU
+    memory: "1Gi"  # 1GB RAM
+    
+  # Networking
+  networking:
+    internal: true  # All agents can communicate internally
+    public: false   # No public internet exposure by default
+
+# Environment Variables (will be set by Railway)
+# MEILISEARCH_HOST - Meilisearch service URL
+# MEILISEARCH_MASTER_KEY - Meilisearch master key
+# AGENT_NAME - Unique agent name
+# AGENT_ROLE - Agent role/domain
+# AGENT_EXPERTISE - Comma-separated expertise areas
+# OPENROUTER_API_KEY - OpenRouter API key for model access

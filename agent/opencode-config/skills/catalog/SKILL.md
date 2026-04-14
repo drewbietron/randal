@@ -12,6 +12,7 @@ Load a capability's skill to get its full workflow guide and learn which tools t
 | Skill | Category | Description | MCP Tools | Required Env |
 |---|---|---|---|---|
 | `video` | media | Generate images, video clips (text-to-video, image-to-video), stitch clips, compose with Remotion | `video_*` | `OPENROUTER_API_KEY`, `GOOGLE_AI_STUDIO_KEY` |
+| `research` | agent | Systematic research workflow for multi-source investigation, synthesis, and documentation | `tavily_*`, `memory_*` | — |
 | `planning` | agent | Planning loop phases 1-3: dispatch templates, checkpoint parsing, quick-mode rules | — | — |
 | `building` | agent | Build pipeline steps 1-11, dispatch templates, parallel execution, error handling, stall detection | — | — |
 | `git-ops` | agent | Branch naming, slug generation, worktree strategy, auto-push, auto-PR, branch consolidation, cleanup | — | `gh` CLI |

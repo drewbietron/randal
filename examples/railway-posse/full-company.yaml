@@ -1,0 +1,251 @@
+# Full Company Posse Configuration
+# 10 specialized Randal agents covering all business functions
+
+# Posse Metadata
+posse:
+  name: "full-company"
+  description: "Complete business operations posse with 10 specialized agents"
+  version: "1.0.0"
+  
+# Shared Resources
+shared:
+  meilisearch:
+    plan: "pro"  # Railway Pro plan for production workloads
+    memory: "4Gi"
+    cpu: "2"
+    storage: "20Gi"
+
+# Agent Definitions
+agents:
+  # 1. Product Engineering - Full-stack development
+  - name: "product-engineering"
+    role: "product-engineering"
+    expertise:
+      - "react"
+      - "typescript"
+      - "nodejs"
+      - "postgresql"
+      - "rest-api"
+      - "graphql"
+      - "frontend"
+      - "backend"
+      - "full-stack"
+    specialization: "Full-stack web development, React/TypeScript frontend, Node.js backend, PostgreSQL databases"
+    expertise_file: "archetypes/expertise/product-engineering.md"
+    resources:
+      memory: "2Gi"
+      cpu: "1"
+    replicas: 1
+    
+  # 2. Platform Infrastructure - DevOps, cloud, Kubernetes
+  - name: "platform-infrastructure"
+    role: "platform-infrastructure"
+    expertise:
+      - "kubernetes"
+      - "docker"
+      - "terraform"
+      - "aws"
+      - "gcp"
+      - "cicd"
+      - "monitoring"
+      - "devops"
+      - "sre"
+    specialization: "Cloud infrastructure, Kubernetes orchestration, CI/CD pipelines, observability, DevOps practices"
+    expertise_file: "archetypes/expertise/platform-infrastructure.md"
+    resources:
+      memory: "2Gi"
+      cpu: "1"
+    replicas: 1
+    
+  # 3. Security & Compliance - AppSec, compliance, pen testing
+  - name: "security-compliance"
+    role: "security-compliance"
+    expertise:
+      - "appsec"
+      - "owasp"
+      - "soc2"
+      - "gdpr"
+      - "penetration-testing"
+      - "security-audit"
+      - "compliance"
+      - "cryptography"
+    specialization: "Application security, regulatory compliance (SOC2, GDPR, HIPAA), penetration testing, security architecture"
+    expertise_file: "archetypes/expertise/security-compliance.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 4. Data & Intelligence - Data engineering, analytics, ML
+  - name: "data-intelligence"
+    role: "data-intelligence"
+    expertise:
+      - "data-engineering"
+      - "etl"
+      - "bigquery"
+      - "snowflake"
+      - "dbt"
+      - "airflow"
+      - "machine-learning"
+      - "analytics"
+    specialization: "Data pipelines, data warehousing, analytics engineering, BI dashboards, ML infrastructure"
+    expertise_file: "archetypes/expertise/data-intelligence.md"
+    resources:
+      memory: "2Gi"
+      cpu: "1"
+    replicas: 1
+    
+  # 5. Design & Experience - UX/UI, design systems, accessibility
+  - name: "design-experience"
+    role: "design-experience"
+    expertise:
+      - "ux-design"
+      - "ui-design"
+      - "figma"
+      - "design-systems"
+      - "accessibility"
+      - "user-research"
+      - "prototyping"
+    specialization: "User experience design, interface design, design systems, accessibility (WCAG), user research"
+    expertise_file: "archetypes/expertise/design-experience.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 6. Content & Communications - Technical writing, marketing copy, docs
+  - name: "content-communications"
+    role: "content-communications"
+    expertise:
+      - "technical-writing"
+      - "documentation"
+      - "content-strategy"
+      - "marketing-copy"
+      - "api-docs"
+      - "blog-writing"
+    specialization: "Technical documentation, API docs, content marketing, blog posts, marketing copy, communications strategy"
+    expertise_file: "archetypes/expertise/content-communications.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 7. Revenue & Growth - Sales, GTM, partnerships, pricing
+  - name: "revenue-growth"
+    role: "revenue-growth"
+    expertise:
+      - "sales"
+      - "go-to-market"
+      - "pricing"
+      - "partnerships"
+      - "revenue-ops"
+      - "growth-marketing"
+    specialization: "Sales strategy, go-to-market planning, pricing optimization, partnership development, revenue operations"
+    expertise_file: "archetypes/expertise/revenue-growth.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 8. Customer Operations - Support, success, onboarding
+  - name: "customer-operations"
+    role: "customer-operations"
+    expertise:
+      - "customer-support"
+      - "customer-success"
+      - "onboarding"
+      - "knowledge-base"
+      - "ticketing"
+      - "retention"
+    specialization: "Customer support operations, customer success programs, onboarding, knowledge management, retention"
+    expertise_file: "archetypes/expertise/customer-operations.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 9. Strategy & Finance - Product management, OKRs, financial modeling
+  - name: "strategy-finance"
+    role: "strategy-finance"
+    expertise:
+      - "product-management"
+      - "product-strategy"
+      - "okrs"
+      - "financial-modeling"
+      - "business-case"
+      - "roadmap-planning"
+    specialization: "Product strategy, roadmap planning, OKR frameworks, financial modeling, business case development"
+    expertise_file: "archetypes/expertise/strategy-finance.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+    
+  # 10. Legal & Governance - Contracts, compliance, IP, privacy
+  - name: "legal-governance"
+    role: "legal-governance"
+    expertise:
+      - "contracts"
+      - "compliance"
+      - "intellectual-property"
+      - "data-privacy"
+      - "employment-law"
+      - "corporate-governance"
+    specialization: "Commercial contracts, regulatory compliance, intellectual property, data privacy, employment law, corporate governance"
+    expertise_file: "archetypes/expertise/legal-governance.md"
+    resources:
+      memory: "1Gi"
+      cpu: "0.5"
+    replicas: 1
+
+# Routing Rules
+routing:
+  # Direct queries to appropriate specialist based on keywords/intent
+  rules:
+    - keywords: ["react", "frontend", "typescript", "ui", "component", "api", "backend", "database", "sql"]
+      route_to: "product-engineering"
+      
+    - keywords: ["kubernetes", "docker", "deploy", "infrastructure", "terraform", "aws", "gcp", "cicd"]
+      route_to: "platform-infrastructure"
+      
+    - keywords: ["security", "vulnerability", "penetration", "compliance", "gdpr", "soc2", "hipaa", "encryption"]
+      route_to: "security-compliance"
+      
+    - keywords: ["data", "pipeline", "etl", "analytics", "bigquery", "snowflake", "dashboard", "ml", "machine learning"]
+      route_to: "data-intelligence"
+      
+    - keywords: ["design", "ux", "ui", "figma", "accessibility", "wireframe", "prototype", "user research"]
+      route_to: "design-experience"
+      
+    - keywords: ["documentation", "docs", "writing", "content", "blog", "marketing copy", "technical writing"]
+      route_to: "content-communications"
+      
+    - keywords: ["sales", "revenue", "pricing", "partnership", "go-to-market", "gtm", "growth"]
+      route_to: "revenue-growth"
+      
+    - keywords: ["support", "customer", "onboarding", "success", "ticket", "knowledge base"]
+      route_to: "customer-operations"
+      
+    - keywords: ["strategy", "roadmap", "okr", "financial", "budget", "business case", "product management"]
+      route_to: "strategy-finance"
+      
+    - keywords: ["legal", "contract", "compliance", "privacy", "ip", "intellectual property", "trademark"]
+      route_to: "legal-governance"
+
+# Cost Estimation (Railway pricing as of 2024)
+cost_estimate:
+  # Meilisearch: Pro plan (~$50/month)
+  meilisearch: 50
+  
+  # 10 agents with varying resource allocations
+  # Average ~$0.02/hour per GB RAM + $0.01/hour per vCPU
+  # Total: ~$150-200/month for all agents running 24/7
+  agents: 175
+  
+  # Total estimated monthly cost
+  total_monthly: 225
+  
+  notes:
+    - "Actual cost depends on usage and Railway's current pricing"
+    - "Agents can be scaled down when not in use"
+    - "Consider using spot instances or scheduled scaling for cost optimization"
