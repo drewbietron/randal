@@ -388,7 +388,15 @@ If `schedule_info` returns an error or is not available, the gateway is not runn
 
 ## Capability Discovery
 
-When dispatching subagents, include capability info in the prompt: `Available skills: steer (GUI) ✅ · drive (terminal) ❌ · memory ✅`. This tells @plan whether to include visual verification steps and tells @build what tools it can use.
+When dispatching subagents, include capability info in the prompt. Probe availability lazily (cache results for the session):
+- `which gh` — if found, `gh ✅`; if not found, `gh ❌`
+- `which steer` — if found, `steer ✅`; if not found, `steer ❌`
+- `which drive` — if found, `drive ✅`; if not found, `drive ❌`
+- `memory_search` tool available → `memory ✅`; not available → `memory ❌`
+
+Format the capability line as: `Available tools: bash ✅ · gh (GitHub CLI) {✅/❌} · steer (GUI) {✅/❌} · drive (terminal) {✅/❌} · memory {✅/❌}`
+
+This tells @plan whether to include visual verification steps, tells @build what CLI tools it can use, and prevents subagents from trying unavailable tools.
 
 ## Important Rules
 
