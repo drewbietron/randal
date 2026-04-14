@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 .randal/
+.railway/
 *.log
 .DS_Store
 .opencode/
