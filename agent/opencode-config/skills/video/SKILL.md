@@ -7,18 +7,16 @@ description: Video production toolkit. Generate images, create video clips (text
 
 You are a video director. These tools give you the primitives — you provide the story, consistency, and creative direction.
 
-## Tools
+## Tool Reference
 
-Use the `video_*` MCP tools:
-
-| Tool | What it does |
-|---|---|
-| `video_generate_asset` | Generate a still image from a prompt (Gemini 3.1 Flash Image via OpenRouter) |
-| `video_generate_clip` | Generate a video clip — text-to-video OR image-to-video (Veo, or any configured provider) |
-| `video_stitch_clips` | Concatenate clips into a final video (ffmpeg — simple concat or crossfade) |
-| `video_compose_video` | Rich composition via Remotion (overlays, transitions, text, audio) |
-| `video_scaffold_project` | Create a new Remotion project from template |
-| `video_list_providers` | List available video generation providers |
+| Tool | Args | Returns |
+|------|------|---------|
+| `video_generate_asset` | `prompt`, `filename`, `output_dir?`, `style_prefix?` | Image path + metadata (width, height, mimeType) |
+| `video_generate_clip` | `prompt`, `duration?` (4/6/8s), `aspect_ratio?`, `reference_image_path?`, `filename?`, `provider?` | Clip path + metadata (mimeType, model, sizeBytes) |
+| `video_stitch_clips` | `clip_paths` (JSON array), `output_path`, `transition?`, `transition_duration?` | Final video path + sizeBytes |
+| `video_compose_video` | `script` (JSON), `output_path`, `template?`, `project_dir?` | Rendered video path + sizeBytes |
+| `video_scaffold_project` | `project_name`, `output_dir?` | Project path + available compositionIds |
+| `video_list_providers` | _(none)_ | Array of providers with name, models, configured status |
 
 ## Two Paths
 
@@ -235,16 +233,100 @@ video_compose_video(script_json, output_path)
 - Pass `provider: "name"` to `video_generate_clip` for alternatives
 - New providers can be added by implementing the VideoProvider interface
 
-## Prompt Tips
+## Prompt Engineering Tips
 
-**For image generation** (static details):
-- Be specific about composition, lighting, camera angle, color palette
-- Avoid describing action/motion — that's for the video prompt
-- Good: "Low angle, golden hour, silhouette of pine trees, warm orange sky, anamorphic lens flare"
-- Bad: "A beautiful sunset"
+### For image generation (`video_generate_asset`)
+Be specific about **static visual details**. The image is a photograph — describe what the camera sees.
 
-**For video generation** (motion):
-- Describe camera movement and subject motion
-- The reference image handles the visual details
-- Good: "Slow dolly forward, mist swirling, gentle water ripples"
-- Bad: "A lake with mountains and trees" (already in the image)
+| Instead of | Use |
+|-----------|-----|
+| "A beautiful sunset" | "Golden hour, low angle, sun touching the horizon line, silhouette of pine trees, warm orange and purple gradient sky, anamorphic lens flare" |
+| "A man in an office" | "Medium shot, 40s businessman in navy suit, sitting at mahogany desk, warm tungsten desk lamp, venetian blinds casting horizontal shadows, shallow depth of field" |
+| "A futuristic city" | "Wide establishing shot, cyberpunk cityscape, neon signs in Japanese and English, rain-wet streets reflecting purple and blue light, flying vehicles in mid-ground, towering glass skyscrapers, low camera angle" |
+
+**Key elements to specify:** camera angle, focal length/lens type, lighting source and color, depth of field, composition (rule of thirds, leading lines), color palette, textures and materials.
+
+### For video generation (`video_generate_clip`)
+Be specific about **motion and change**. The reference image already defines the scene — your prompt drives what MOVES.
+
+| Instead of | Use |
+|-----------|-----|
+| "A sunset scene" | "Sun slowly sinks below horizon, clouds drift left to right, light shifts from orange to deep purple" |
+| "A man working" | "Man picks up phone, glances at it, puts it down, runs hand through hair, leans back in chair" |
+| "City at night" | "Camera slowly tracks forward through street, neon signs flicker, rain drops streak across lens, a taxi passes left to right" |
+
+**Key elements to specify:** camera movement (push in, pull out, pan, track, crane, static), character actions (specific gestures, not vibes), environmental motion (wind, water, particles, lights), timing (slow, sudden, gradual).
+
+## Example Video Scripts
+
+### 1. Product Showcase (30 seconds, 5 scenes)
+
+```
+Style prefix: "Product photography, clean white background, soft studio lighting, shallow depth of field, minimalist"
+
+Scene 1 (6s): Wide shot of product on white surface
+  Image: "[prefix]. Sleek wireless headphones on white marble surface, subtle shadow, single spotlight from upper right"
+  Motion: "Slow 360-degree rotate, spotlight creates moving highlight across surface"
+
+Scene 2 (6s): Detail shot of ear cup
+  Image: "[prefix]. Extreme close-up of headphone ear cup, memory foam padding visible, brushed aluminum trim"
+  Motion: "Slow push in, rack focus from outer rim to inner padding"
+
+Scene 3 (6s): Someone putting them on
+  Image: "[prefix]. Side profile of person reaching for headphones on desk, hand halfway to product"
+  Motion: "Person picks up headphones and places them over ears, slight smile"
+
+Scene 4 (6s): Lifestyle shot
+  Image: "[prefix]. Person walking through city street wearing headphones, blurred urban background, golden hour"
+  Motion: "Tracking shot following person walking, background bokeh lights shift"
+
+Scene 5 (6s): Logo card
+  → Use video_compose_video with TitleCard template, or video_generate_asset for a static card
+
+Assembly: video_stitch_clips with crossfade transitions (0.5s each)
+```
+
+### 2. Explainer Video (2 minutes, 15 scenes)
+
+```
+Style prefix: "Flat illustration style, vibrant colors, clean lines, 2D animation aesthetic, pastel background"
+
+Act 1 — The Problem (4 scenes, 30s)
+  Scene 1 (8s): Title card with hook question
+  Scene 2 (8s): Illustration of the problem (confused user at computer)
+  Scene 3 (8s): Statistics/data visualization
+  Scene 4 (6s): "There's a better way" transition
+
+Act 2 — The Solution (6 scenes, 45s)
+  Scene 5-10: Step-by-step walkthrough of the product/concept
+
+Act 3 — The Payoff (5 scenes, 45s)
+  Scene 11-14: Before/after comparison, testimonials
+  Scene 15 (8s): CTA card
+
+Assembly: video_compose_video with Explainer template for text overlays and section transitions
+```
+
+### 3. Social Media Post (3 scenes, 9:16 vertical)
+
+```
+Style prefix: "Bold, high contrast, saturated colors, clean typography space at top and bottom"
+
+Scene 1 (4s): Hook shot — eye-catching visual
+  Image: "[prefix]. Overhead shot of colorful smoothie bowl, 9:16 vertical, bright fruits arranged in pattern"
+  Motion: "Slow zoom out revealing the full arrangement, slight rotation"
+  aspect_ratio: "9:16"
+
+Scene 2 (4s): Process shot
+  Image: "[prefix]. Hands holding blender with colorful ingredients, kitchen counter, 9:16 vertical"
+  Motion: "Blender starts, ingredients swirl, vibrant colors mix"
+  aspect_ratio: "9:16"
+
+Scene 3 (4s): Final reveal
+  Image: "[prefix]. Finished smoothie in glass with straw, garnish, condensation on glass, 9:16 vertical"
+  Motion: "Hand reaches in and picks up glass, slight tilt toward camera"
+  aspect_ratio: "9:16"
+
+Assembly: video_stitch_clips with crossfade (0.3s)
+→ Add text overlay with video_compose_video if needed
+```
