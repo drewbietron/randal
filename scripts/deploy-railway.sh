@@ -118,15 +118,45 @@ check_env_file() {
     log_success "Found .env file"
 }
 
-# Validate that we're in a Railway project
-validate_railway_project() {
-    if ! railway status &> /dev/null; then
-        log_error "Not in a Railway project or not authenticated"
-        echo "Please run: railway login"
-        echo "Then link your project: railway link"
-        exit 1
+# Ensure we're linked to a Railway project (auto init+link if needed)
+ensure_railway_project() {
+    # Check if already linked (has .railway/ directory)
+    if [[ -d "$PROJECT_ROOT/.railway" ]]; then
+        log_success "Railway project already linked (.railway/ found)"
+        return 0
     fi
-    log_success "Railway project connection verified"
+
+    log_warning "No .railway/ directory found — not linked to a Railway project"
+
+    if [[ "$DRY_RUN" == true ]]; then
+        log_info "[DRY-RUN] Would prompt to init/link Railway project"
+        return 0
+    fi
+
+    echo ""
+    echo "Would you like to:"
+    echo "  1) Create a new Railway project (railway init)"
+    echo "  2) Link to an existing Railway project (railway link)"
+    echo "  3) Abort"
+    echo ""
+    read -rp "Choose [1/2/3]: " choice
+
+    case "$choice" in
+        1)
+            log_info "Creating new Railway project..."
+            railway init --name "$(basename "$PROJECT_ROOT")"
+            log_success "Railway project created"
+            ;;
+        2)
+            log_info "Linking to existing Railway project..."
+            railway link
+            log_success "Railway project linked"
+            ;;
+        *)
+            log_info "Aborted by user"
+            exit 0
+            ;;
+    esac
 }
 
 # Read and set environment variables
@@ -164,7 +194,7 @@ set_env_variables() {
             log_info "[DRY-RUN] Would set: $var_name=***"
         else
             log_info "Setting: $var_name"
-            if railway variables set "$var_name" "$var_value"; then
+            if railway variable set "${var_name}=${var_value}"; then
                 vars_set+=("$var_name")
                 ((count++))
             else
@@ -222,7 +252,7 @@ main() {
     # Pre-deployment checks
     check_railway_cli
     check_env_file
-    validate_railway_project
+    ensure_railway_project
 
     echo ""
     log_info "Starting deployment process..."
