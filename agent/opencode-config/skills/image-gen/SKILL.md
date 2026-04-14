@@ -1,3 +1,8 @@
+---
+name: image-gen
+description: Image generation and analysis toolkit. Generate images from text prompts, analyze existing images with vision models, and maintain character consistency across generations using structured Character Identity Descriptors (CIDs).
+---
+
 # Image Generation & Analysis Skill
 
 ## Overview

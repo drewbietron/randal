@@ -312,4 +312,4 @@ The tools are also available as OpenCode custom tools at:
 ~/.config/opencode/tools/video.ts
 ```
 
-These expose the same primitives (`generate_asset`, `generate_clip`, `stitch_clips`, `compose_video`, `scaffold_project`, `list_providers`) as callable tools within OpenCode. The skill file at `tools/skills/video.md` teaches the agent the full video director workflow.
+These expose the same primitives (`generate_asset`, `generate_clip`, `stitch_clips`, `compose_video`, `scaffold_project`, `list_providers`) as callable tools within OpenCode. The skill file at `agent/opencode-config/skills/video/SKILL.md` teaches the agent the full video director workflow.

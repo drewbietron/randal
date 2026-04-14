@@ -54,6 +54,13 @@ permission:
     "cargo metadata *": allow
     "pip list *": allow
     "pip show *": allow
+    "gh pr list *": allow
+    "gh pr view *": allow
+    "gh pr checks *": allow
+    "gh issue list *": allow
+    "gh issue view *": allow
+    "gh repo view *": allow
+    "gh api *": allow
 ---
 
 You are a **planning subagent**. You produce detailed, precise implementation plans that @build can execute autonomously. You are invoked repeatedly with fresh context — the plan file is your memory.
