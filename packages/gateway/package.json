@@ -11,9 +11,10 @@
 	"dependencies": {
 		"@randal/analytics": "workspace:*",
 		"@randal/core": "workspace:*",
+		"@randal/memory": "workspace:*",
+		"@randal/mesh": "workspace:*",
 		"@randal/runner": "workspace:*",
-		"@randal/scheduler": "workspace:*",
-		"@randal/memory": "workspace:*"
+		"@randal/scheduler": "workspace:*"
 	},
 	"optionalDependencies": {
 		"telegraf": "^4.16.0",
