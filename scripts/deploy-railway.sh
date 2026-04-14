@@ -101,11 +101,11 @@ parse_args() {
 check_railway_cli() {
     if ! command -v railway &> /dev/null; then
         log_error "Railway CLI is not installed"
-        echo "Install it with: npm install -g @railway/cli"
-        echo "Or visit: https://docs.railway.app/develop/cli"
+        echo "Install it with: curl -fsSL https://railway.com/install.sh | sh"
+        echo "Or visit: https://docs.railway.com/guides/cli"
         exit 1
     fi
-    log_success "Railway CLI found"
+    log_success "Railway CLI found ($(railway --version 2>/dev/null || echo 'unknown version'))"
 }
 
 # Check if .env file exists
@@ -118,12 +118,39 @@ check_env_file() {
     log_success "Found .env file"
 }
 
-# Ensure we're linked to a Railway project (auto init+link if needed)
+# Check if a service is linked to the current project
+has_linked_service() {
+    # railway status exits non-zero or prints "No service linked" when no service is linked
+    local status_output
+    status_output=$(railway status 2>&1 || true)
+    if echo "$status_output" | grep -qi "no service"; then
+        return 1
+    fi
+    return 0
+}
+
+# Ensure we're linked to a Railway project and service
 ensure_railway_project() {
     # Check if already linked (has .railway/ directory)
     if [[ -d "$PROJECT_ROOT/.railway" ]]; then
         log_success "Railway project already linked (.railway/ found)"
-        return 0
+
+        # Even if project is linked, we might not have a service linked
+        if has_linked_service; then
+            log_success "Railway service is linked"
+            return 0
+        else
+            log_warning "Project linked but no service selected"
+            if [[ "$DRY_RUN" == true ]]; then
+                log_info "[DRY-RUN] Would prompt to link a service"
+                return 0
+            fi
+            log_info "Running 'railway service' to link a service..."
+            log_info "(Select an existing service or create a new one)"
+            railway service
+            log_success "Service linked"
+            return 0
+        fi
     fi
 
     log_warning "No .railway/ directory found — not linked to a Railway project"
@@ -146,11 +173,27 @@ ensure_railway_project() {
             log_info "Creating new Railway project..."
             railway init --name "$(basename "$PROJECT_ROOT")"
             log_success "Railway project created"
+
+            # New project has no service yet — do an initial deploy to create one
+            log_info "Running initial deploy to create a service..."
+            log_info "(This builds and deploys your app for the first time)"
+            railway up -d
+            log_success "Initial deploy started — service created"
+
+            # Give Railway a moment to register the service
+            log_info "Waiting for service to register..."
+            sleep 5
+
+            # Now link to the newly created service
+            log_info "Linking to the new service..."
+            railway service
+            log_success "Service linked"
             ;;
         2)
             log_info "Linking to existing Railway project..."
+            log_info "(This will prompt you to select a project AND a service)"
             railway link
-            log_success "Railway project linked"
+            log_success "Railway project and service linked"
             ;;
         *)
             log_info "Aborted by user"
@@ -164,6 +207,7 @@ set_env_variables() {
     log_info "Reading environment variables from .env..."
 
     local count=0
+    local failed=0
     local vars_set=()
 
     # Read .env file line by line
@@ -192,13 +236,15 @@ set_env_variables() {
 
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY-RUN] Would set: $var_name=***"
+            ((count++))
         else
             log_info "Setting: $var_name"
-            if railway variable set "${var_name}=${var_value}"; then
+            if railway variable set "${var_name}=${var_value}" 2>/dev/null; then
                 vars_set+=("$var_name")
                 ((count++))
             else
                 log_error "Failed to set $var_name"
+                ((failed++))
             fi
         fi
     done < "$ENV_FILE"
@@ -207,6 +253,9 @@ set_env_variables() {
         log_info "[DRY-RUN] Would set $count variables"
     else
         log_success "Successfully set $count environment variables"
+        if [[ $failed -gt 0 ]]; then
+            log_warning "$failed variables failed to set"
+        fi
         if [[ ${#vars_set[@]} -gt 0 ]]; then
             log_info "Variables set: ${vars_set[*]}"
         fi
@@ -218,19 +267,21 @@ set_env_variables() {
 # Deploy to Railway
 deploy() {
     if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would run: railway up"
+        log_info "[DRY-RUN] Would run: railway up -d"
         log_info "[DRY-RUN] Deployment preview complete"
         return 0
     fi
 
-    log_info "Starting Railway deployment..."
-    if railway up; then
-        log_success "Deployment completed successfully!"
+    log_info "Deploying to Railway..."
+    if railway up -d; then
+        log_success "Deployment started!"
         echo ""
-        echo "Your app is now live on Railway!"
-        railway status
+        echo "Your app is deploying on Railway."
+        echo "View logs:     railway logs"
+        echo "Open dashboard: railway open"
     else
         log_error "Deployment failed"
+        echo "Check the Railway dashboard for details: railway open"
         exit 1
     fi
 }
@@ -255,7 +306,7 @@ main() {
     ensure_railway_project
 
     echo ""
-    log_info "Starting deployment process..."
+    log_info "Setting environment variables..."
     echo ""
 
     # Set environment variables
@@ -263,7 +314,7 @@ main() {
 
     echo ""
 
-    # Deploy
+    # Deploy (redeploy to pick up new env vars)
     deploy
 
     echo ""
