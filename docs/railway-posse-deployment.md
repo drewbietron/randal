@@ -135,23 +135,21 @@ Randal provides pre-built posse configurations:
 # Check project status
 railway status
 
-# View all services
-railway ps
-
 # Check Meilisearch health
-railway logs --service meilisearch | grep "healthy"
+railway logs -s meilisearch | grep "healthy"
 
 # Check agent status
-railway logs --service product-engineering | grep "initialized"
+railway logs -s product-engineering | grep "initialized"
 ```
 
 ### Step 4: Test Agent Communication
 
 ```bash
-# Get Meilisearch URL
-railway variables --service meilisearch | grep RAILWAY_PRIVATE_DOMAIN
+# Check Meilisearch variables
+railway variable list -s meilisearch -k
 
-# Test agent discovery
+# Agents access Meilisearch via private networking:
+#   ${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}
 # (Agents should automatically discover each other via Meilisearch)
 
 # Send a test task
@@ -278,22 +276,16 @@ How this agent works with other specialists
 
 ```bash
 # View agent logs
-railway logs --service agent-name
+railway logs -s agent-name
 
 # Follow logs in real-time
-railway logs --service agent-name --follow
+railway logs -s agent-name --follow
 
-# Restart an agent
-railway restart --service agent-name
+# Restart an agent (redeploy the service)
+railway up -s agent-name
 
-# Scale an agent
-railway scale --service agent-name --replicas 2
-
-# Stop an agent (cost savings)
-railway down --service agent-name
-
-# Start a stopped agent
-railway up --service agent-name
+# Note: Scaling (replicas) and stop/start are managed via
+# the Railway dashboard or numReplicas in railway.toml
 ```
 
 ### Managing the Posse
@@ -306,7 +298,7 @@ railway up --service agent-name
 railway status
 
 # Update environment variables
-railway variables set KEY=value --service agent-name
+railway variable set KEY=value -s agent-name
 
 # Delete a posse
 ./scripts/delete-railway-posse.sh posse-name
@@ -315,11 +307,11 @@ railway variables set KEY=value --service agent-name
 ### Updating Agents
 
 ```bash
-# Update agent code (assumes Docker image)
-railway up --service agent-name
+# Update agent code (redeploy from current directory)
+railway up -s agent-name
 
 # Update environment variables
-railway variables set AGENT_EXPERTISE="new,skills" --service agent-name
+railway variable set AGENT_EXPERTISE="new,skills" -s agent-name
 
 # Update resources
 # (Must be done via Railway dashboard or API)
@@ -349,13 +341,13 @@ curl https://<agent-url>/health
 
 ```bash
 # View recent logs
-railway logs --service agent-name
+railway logs -s agent-name
 
 # Search logs
-railway logs --service agent-name | grep "ERROR"
+railway logs -s agent-name | grep "ERROR"
 
 # Export logs
-railway logs --service agent-name > agent-logs.txt
+railway logs -s agent-name > agent-logs.txt
 ```
 
 ### Metrics
@@ -388,16 +380,16 @@ Set up alerts in Railway dashboard:
 **Solutions**:
 ```bash
 # 1. Check Meilisearch is running
-railway logs --service meilisearch
+railway logs -s meilisearch
 
 # 2. Verify environment variables
-railway variables --service agent-name | grep MEILISEARCH
+railway variable list -s agent-name -k | grep MEILISEARCH
 
-# 3. Check Meilisearch health
-curl https://<meilisearch-url>/health
+# 3. Check Meilisearch health (via private networking from another service)
+# Meilisearch uses Railway private networking, not a public URL
 
 # 4. Verify master key is correct
-railway variables --service meilisearch | grep MASTER_KEY
+railway variable list -s meilisearch -k | grep MASTER_KEY
 ```
 
 #### Agent Out of Memory
@@ -407,14 +399,14 @@ railway variables --service meilisearch | grep MASTER_KEY
 **Solutions**:
 ```bash
 # 1. Check memory usage
-railway logs --service agent-name | grep "memory"
+railway logs -s agent-name | grep "memory"
 
 # 2. Increase memory allocation
 # (Railway dashboard → Service settings → Resources)
 
-# 3. Monitor after restart
-railway restart --service agent-name
-railway logs --service agent-name --follow
+# 3. Monitor after redeploy
+railway up -s agent-name
+railway logs -s agent-name --follow
 ```
 
 #### Agent Not Responding
@@ -424,16 +416,16 @@ railway logs --service agent-name --follow
 **Solutions**:
 ```bash
 # 1. Check service status
-railway ps
+railway status
 
-# 2. Restart agent
-railway restart --service agent-name
+# 2. Redeploy agent
+railway up -s agent-name
 
 # 3. Check recent logs
-railway logs --service agent-name
+railway logs -s agent-name
 
 # 4. Verify environment variables
-railway variables --service agent-name
+railway variable list -s agent-name -k
 ```
 
 #### High Costs
@@ -445,8 +437,8 @@ railway variables --service agent-name
 # 1. Check resource usage
 # (Railway dashboard → Usage tab)
 
-# 2. Scale down unused agents
-railway down --service agent-name
+# 2. Remove unused services or scale to 0 replicas
+# (Railway dashboard → Service settings)
 
 # 3. Reduce resource allocations
 # (Railway dashboard → Service settings)
@@ -482,25 +474,13 @@ Meilisearch:     $25  (2GB RAM, 1 vCPU)
 
 #### 1. Right-Size Resources
 
-```yaml
-# Instead of:
-resources:
-  memory: "2Gi"
-  cpu: "1"
-
-# Use:
-resources:
-  memory: "1Gi"
-  cpu: "0.5"
-```
+Resource allocation (memory, CPU) is managed via the Railway dashboard,
+not in configuration files. Start small and scale up based on actual usage.
 
 #### 2. Scale Down Off-Hours
 
-```bash
-# Create a cron job to scale down at night
-0 22 * * * railway down --service agent-name
-0 6 * * * railway up --service agent-name
-```
+Use the Railway dashboard to manage service scaling, or set `numReplicas`
+in `railway.toml` and redeploy as needed.
 
 #### 3. Deploy Only Needed Agents
 
@@ -524,14 +504,11 @@ Railway offers $5/month free credit:
 ### Monitoring Costs
 
 ```bash
-# View current usage
-railway usage
+# View current project status
+railway status
 
-# Set budget alerts
-# (Railway dashboard → Billing → Alerts)
-
-# Review historical costs
-# (Railway dashboard → Billing → History)
+# Set budget alerts and review costs via the Railway dashboard:
+#   https://railway.app/dashboard → Billing
 ```
 
 ## Best Practices
@@ -646,16 +623,14 @@ agents:
 
 ### High Availability
 
-Implement HA for critical agents:
+Implement HA for critical agents by setting `numReplicas` in `railway.toml`:
 
-```yaml
-agents:
-  - name: "critical-agent"
-    replicas: 2  # Multiple instances
-    resources:
-      memory: "2Gi"
-      cpu: "1"
+```toml
+[deploy]
+numReplicas = 2
 ```
+
+Resource allocation (memory, CPU) is configured via the Railway dashboard.
 
 ### Automated Scaling
 
