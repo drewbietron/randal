@@ -60,10 +60,13 @@ export async function installOpenCode(): Promise<boolean> {
 
 	// Fallback: Official install script
 	console.log("  Installing OpenCode via install script...");
-	const scriptInstall = Bun.spawnSync(["bash", "-c", "curl -fsSL https://opencode.ai/install | bash"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	const scriptInstall = Bun.spawnSync(
+		["bash", "-c", "curl -fsSL https://opencode.ai/install | bash"],
+		{
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
 	if (scriptInstall.exitCode === 0) {
 		const verify = Bun.spawnSync(["opencode", "--version"]);
 		if (verify.exitCode === 0) {

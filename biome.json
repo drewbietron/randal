@@ -27,7 +27,8 @@
 			".ralph",
 			"bun.lock",
 			"tools/steer/.build",
-			"tools/drive"
+			"tools/drive",
+			"railway-posse-*-deployment.json"
 		]
 	}
 }
