@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.*
+.claude/
 .randal/
 .railway/
 *.log

@@ -363,6 +363,70 @@ Does not require a config file.
 
 ---
 
+## 🚀 `randal deploy`
+
+Deploy to Railway. Wraps the Railway deployment scripts with a consistent CLI interface.
+
+```bash
+randal deploy agent                                    # Deploy single agent
+randal deploy agent --dry-run                          # Preview without deploying
+randal deploy posse --name my-team                     # Deploy multi-agent posse
+randal deploy posse --name my-team --config posse.yaml # Deploy with custom config
+randal deploy env                                      # Set Railway env vars only
+randal deploy list                                     # List deployed posses
+randal deploy delete my-team                           # Delete a posse
+```
+
+### Subcommands
+
+| Subcommand | Description |
+|------------|-------------|
+| `agent` | Deploy a single Randal agent to Railway. Reads `.env`, sets Railway variables, deploys. |
+| `posse --name <name>` | Deploy a multi-agent posse with shared Meilisearch. Requires `--name`. |
+| `env` | Set environment variables on Railway from `.env` without deploying. |
+| `list` | List all deployed posses (local deployment summaries). |
+| `delete <name>` | Delete a deployed posse. Use `--force` to skip confirmation. |
+
+### Agent Options
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview what would be set and deployed without making changes. |
+
+### Posse Options
+
+| Flag | Description |
+|------|-------------|
+| `--name <name>` | Posse name (required). Used as the Railway project name prefix. |
+| `--config <file>` | Path to posse config YAML. Default: `examples/railway-posse/full-company.yaml`. |
+| `--dry-run` | Preview without deploying. |
+
+### Prerequisites
+
+- **Railway CLI**: `curl -fsSL https://railway.com/install.sh | sh`
+- **Railway auth**: `railway login`
+- **`.env` file**: Must exist in project root with API keys
+- **Posse only**: `yq` and `jq` must be installed (`brew install yq jq`)
+
+### Examples
+
+```bash
+# First-time single agent deploy
+railway login
+randal deploy agent
+
+# Deploy a 10-agent company
+randal deploy posse --name acme-corp --config examples/railway-posse/full-company.yaml
+
+# Update env vars without redeploying
+randal deploy env
+
+# Clean up
+randal deploy delete acme-corp
+```
+
+---
+
 ## 📚 Skills Commands
 
 ### `randal skills list`

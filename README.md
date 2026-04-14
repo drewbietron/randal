@@ -247,6 +247,7 @@ Full reference: [📖 docs/discord-guide.md](docs/discord-guide.md) · Channel a
 | `randal setup` | 🔩 Generate opencode.json and configure runtime |
 | `randal doctor` | 🩺 Validate deployment (config, MCP, symlinks) |
 | `randal update` | ⬆️ Self-update (`--check`, `--pin`, `--dry-run`) |
+| `randal deploy agent\|posse\|env\|list\|delete` | 🚀 Railway deployment |
 
 Full reference: [📖 docs/cli-reference.md](docs/cli-reference.md)
 
@@ -272,12 +273,23 @@ See [`examples/local-mac/`](examples/local-mac/) for a full-featured local setup
 <details>
 <summary>🚂 <strong>Railway (Cloud)</strong></summary>
 
-```dockerfile
-FROM ghcr.io/drewbietron/randal:latest
-COPY randal.config.yaml /app/randal.config.yaml
+Deploy a single agent or a full multi-agent posse with the CLI:
+
+```bash
+# Single agent
+railway login
+randal deploy agent
+
+# Multi-agent posse (shared Meilisearch + N agents)
+randal deploy posse --name my-team
+
+# Preview without deploying
+randal deploy agent --dry-run
 ```
 
-The official Docker image includes Bun, Meilisearch, OpenCode, and Randal. Just provide your config. See [`examples/cloud-railway/`](examples/cloud-railway/) for the full setup with `railway.toml`.
+The official Docker image (`ghcr.io/drewbietron/randal:latest`) bundles Bun, Meilisearch, OpenCode, and Randal. Manage deployed posses with `randal deploy list` and `randal deploy delete <name>`.
+
+See [`examples/cloud-railway/`](examples/cloud-railway/) for config examples and [`docs/deployment-guide.md`](docs/deployment-guide.md) for the full guide.
 
 </details>
 
