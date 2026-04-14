@@ -61,7 +61,29 @@ else
   echo "  + Bun: $(bun --version)"
 fi
 
-# ── 3. Install GitHub CLI ────────────────────────────────────
+# ── 3. Install OpenCode CLI ─────────────────────────────────
+if ! command -v opencode &> /dev/null; then
+  echo "  Installing OpenCode CLI..."
+  if [ "$IS_MACOS" = true ] && command -v brew &> /dev/null; then
+    brew install opencode 2>/dev/null && echo "  + OpenCode CLI installed" || echo "  ! OpenCode CLI install failed"
+  else
+    # Direct download for Linux or macOS without Homebrew
+    ensure_local_bin
+    ARCH=$(uname -m)
+    OS="unknown-linux-gnu"
+    if [ "$IS_MACOS" = true ]; then
+      OS="apple-darwin"
+    fi
+    curl -fsSL "https://github.com/opencode-ai/opencode/releases/latest/download/opencode-${ARCH}-${OS}" -o "$HOME/.local/bin/opencode" 2>/dev/null && {
+      chmod +x "$HOME/.local/bin/opencode"
+      echo "  + OpenCode CLI installed"
+    } || echo "  ! OpenCode CLI install failed"
+  fi
+else
+  echo "  + OpenCode CLI: $(opencode --version 2>&1)"
+fi
+
+# ── 3b. Install GitHub CLI ───────────────────────────────────
 if ! command -v gh &> /dev/null; then
   echo "  Installing GitHub CLI..."
   if [ "$IS_MACOS" = true ] && command -v brew &> /dev/null; then

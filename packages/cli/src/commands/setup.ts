@@ -16,6 +16,7 @@ import {
 	resolvePromptValue,
 } from "@randal/core";
 import type { CompileResult, PromptContext, RandalConfig, ResolvedIdentity } from "@randal/core";
+import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
 // ---- Constants ----
 
@@ -329,6 +330,22 @@ export async function setupCommand(args: string[]): Promise<void> {
 	if (args.includes("--help") || args.includes("-h")) {
 		printSetupHelp();
 		return;
+	}
+
+	// Auto-install OpenCode CLI if not present
+	const openCodeInfo = detectOpenCode();
+	if (!openCodeInfo.installed) {
+		console.log("  OpenCode CLI not found. Installing...");
+		const installed = await installOpenCode();
+		if (installed) {
+			const newInfo = detectOpenCode();
+			console.log(`  ✅ OpenCode CLI installed: ${newInfo.version || "success"}`);
+		} else {
+			console.log("  ⚠️  OpenCode CLI auto-install failed. Continuing anyway...");
+			console.log("     Install manually: brew install opencode");
+		}
+	} else if (verbose) {
+		console.log(`  OpenCode CLI: ${openCodeInfo.version || "installed"}`);
 	}
 
 	try {

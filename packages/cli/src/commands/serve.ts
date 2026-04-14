@@ -1,5 +1,6 @@
 import { type RandalConfig, loadConfig } from "@randal/core";
 import { type CliContext, requireConfig } from "../cli.js";
+import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
 /**
  * Auto-start Meilisearch if the config uses it and it's not already running.
@@ -148,7 +149,60 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	return envModified;
 }
 
+/**
+ * Run preflight checks before starting the gateway.
+ * Returns true if checks pass, false otherwise.
+ */
+async function runPreflightChecks(): Promise<boolean> {
+	let allPassed = true;
+
+	console.log("\n  🔍 Running preflight checks...\n");
+
+	// Check 1: OpenCode CLI installed
+	const openCodeInfo = detectOpenCode();
+	if (openCodeInfo.installed) {
+		console.log(`  ✅ OpenCode CLI: ${openCodeInfo.version || "installed"}`);
+	} else {
+		console.log("  ⬜ OpenCode CLI: not found");
+		console.log("     Installing OpenCode CLI...");
+		const installed = await installOpenCode();
+		if (installed) {
+			const newInfo = detectOpenCode();
+			console.log(`     ✅ Installed: ${newInfo.version || "success"}`);
+		} else {
+			console.log("     ❌ Installation failed");
+			console.log("");
+			console.log("     Install manually:");
+			console.log("       macOS: brew install opencode");
+			console.log("       Linux: curl -fsSL https://github.com/opencode-ai/opencode/releases/latest/download/opencode-$(uname -m)-unknown-linux-gnu -o ~/.local/bin/opencode && chmod +x ~/.local/bin/opencode");
+			allPassed = false;
+		}
+	}
+
+	// Check 2: Node.js/Bun available
+	try {
+		const bunCheck = Bun.spawnSync(["which", "bun"]);
+		if (bunCheck.exitCode === 0) {
+			const version = Bun.version;
+			console.log(`  ✅ Bun: v${version}`);
+		} else {
+			console.log("  ⚠️  Bun: not in PATH");
+		}
+	} catch {
+		console.log("  ⚠️  Bun: check failed");
+	}
+
+	console.log("");
+	return allPassed;
+}
+
 export async function serveCommand(args: string[], ctx: CliContext): Promise<void> {
+	// Run preflight checks first
+	if (!await runPreflightChecks()) {
+		console.error("  ❌ Preflight checks failed. Please fix the issues above and try again.\n");
+		process.exit(1);
+	}
+
 	let config = requireConfig(ctx);
 	const { startGateway } = await import("@randal/gateway");
 
