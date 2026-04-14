@@ -53,6 +53,7 @@ function printHelp(): void {
     \x1b[36msetup\x1b[0m                   🔩 Generate opencode.json and configure runtime
     \x1b[36mdoctor\x1b[0m                  🩺 Validate deployment (config, MCP, symlinks)
     \x1b[36mupdate\x1b[0m                  ⬆️  Self-update (--check, --pin, --dry-run)
+    \x1b[36mdeploy\x1b[0m <sub>            🚀 Railway deployment (agent, posse, env, list, delete)
 
   \x1b[1mGlobal options:\x1b[0m
     --config <path>       Path to config file
@@ -131,6 +132,13 @@ export async function run(argv: string[]): Promise<void> {
 		const { updateCommand } = await import("./commands/update.js");
 		const ctx: CliContext = { config: null, configPath, url };
 		await updateCommand(args.slice(1), ctx);
+		return;
+	}
+
+	if (command === "deploy") {
+		// Deploy doesn't need config — it wraps Railway scripts
+		const { deployCommand } = await import("./commands/deploy.js");
+		await deployCommand(args.slice(1));
 		return;
 	}
 
