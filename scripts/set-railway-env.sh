@@ -234,7 +234,7 @@ set_env_variables() {
 
         log_info "Setting: $var_name"
 
-        if railway variables set "$var_name" "$var_value" &> /dev/null; then
+        if railway variable set "${var_name}=${var_value}" &> /dev/null; then
             ((count++))
             vars_set+=("$var_name")
             log_verbose "Successfully set $var_name"
@@ -298,7 +298,7 @@ main() {
 
     echo ""
     log_info "You can now deploy with: ./scripts/deploy-railway.sh"
-    log_info "Or view variables with: railway variables"
+    log_info "Or view variables with: railway variable list"
 }
 
 # Run main function

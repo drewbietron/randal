@@ -13,26 +13,5 @@ restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
 numReplicas = 1
 
-[deploy.resources]
-# Randal needs at least 2GB RAM for agent operations
-memory = "2Gi"
-
-# CPU allocation - adjust based on workload
-# "1" = 1 vCPU
-# "2" = 2 vCPU
-# Leave commented to use Railway's default
-# cpu = "2"
-
-# Storage (ephemeral, cleared on redeploy)
-# Reserve space for:
-# - Meilisearch data (~1GB)
-# - Workspace files (~1GB)
-# - Knowledge base (~1GB)
-# ephemeralStorage = "5Gi"
-
-# Persistent disk for Meilisearch and workspace
-# Enable if you want data to survive redeploys
-# [[deploy.persistentDisk]]
-# mountPath = "/app/meeli-data"
-# size = 5
-# name = "meili-data"
+# NOTE: Resource allocation (memory, CPU) is not configurable in railway.toml.
+# Use the Railway dashboard or API to set resource limits.

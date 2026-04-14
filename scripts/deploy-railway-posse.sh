@@ -178,33 +178,24 @@ generate_meilisearch_key() {
 deploy_meilisearch() {
   log_info "Deploying Meilisearch service..."
   
-  # Get Meilisearch configuration from posse config
-  local meilisearch_memory=$(yq eval '.shared.meilisearch.memory // "2Gi"' "$POSSE_CONFIG")
-  local meilisearch_cpu=$(yq eval '.shared.meilisearch.cpu // "1"' "$POSSE_CONFIG")
-  local meilisearch_storage=$(yq eval '.shared.meilisearch.storage // "10Gi"' "$POSSE_CONFIG")
+  # Resource config (memory/CPU) must be set via Railway dashboard or API, not CLI/TOML
+  log_info "Note: Resource limits (CPU/memory) must be configured in the Railway dashboard"
   
-  log_info "Meilisearch resources: CPU=${meilisearch_cpu}, Memory=${meilisearch_memory}, Storage=${meilisearch_storage}"
+  # Add Meilisearch as a Docker image service (creates service + deploys image)
+  run_command railway add --image getmeili/meilisearch:v1.12
   
-  # Create Meilisearch service
-  run_command railway add --service
-  run_command railway service --name meilisearch
+  # Set environment variables for the meilisearch service
+  run_command railway variable set MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY" -s meilisearch
+  run_command railway variable set MEILI_ENV=production -s meilisearch
+  run_command railway variable set MEILI_NO_ANALYTICS=true -s meilisearch
   
-  # Set environment variables
-  run_command railway variables set MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY"
-  run_command railway variables set MEILI_ENV=production
-  run_command railway variables set MEILI_NO_ANALYTICS=true
+  # Meilisearch is internal-only — use private networking, no public domain needed
+  # Other services reference it via ${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}
   
-  # Deploy using Meilisearch Docker image
-  run_command railway up --service meilisearch --image getmeili/meilisearch:v1.7
-  
-  # Wait for Meilisearch to be healthy
   if [ "$DRY_RUN" = false ]; then
     log_info "Waiting for Meilisearch to be healthy..."
     sleep 10
-    
-    # Get Meilisearch URL
-    local meilisearch_url=$(railway domain --service meilisearch)
-    log_success "Meilisearch deployed at: $meilisearch_url"
+    log_success "Meilisearch deployed (accessible via private networking)"
   fi
 }
 
@@ -219,37 +210,32 @@ deploy_agent() {
   local role=$(echo "$agent_config" | yq eval '.role' -)
   local specialization=$(echo "$agent_config" | yq eval '.specialization' -)
   local expertise=$(echo "$agent_config" | yq eval '.expertise | join(",")' -)
-  local memory=$(echo "$agent_config" | yq eval '.resources.memory // "1Gi"' -)
-  local cpu=$(echo "$agent_config" | yq eval '.resources.cpu // "0.5"' -)
-  local expertise_file=$(echo "$agent_config" | yq eval '.expertise_file' -)
   
   log_info "  Role: $role"
   log_info "  Specialization: $specialization"
-  log_info "  Resources: CPU=${cpu}, Memory=${memory}"
   
-  # Create service for agent
-  run_command railway add --service
-  run_command railway service --name "$agent_name"
+  # Create empty service for agent
+  run_command railway add --service "$agent_name"
   
-  # Set environment variables
-  run_command railway variables set AGENT_NAME="$agent_name"
-  run_command railway variables set AGENT_ROLE="$role"
-  run_command railway variables set AGENT_EXPERTISE="$expertise"
-  run_command railway variables set AGENT_SPECIALIZATION="$specialization"
-  run_command railway variables set MEILISEARCH_HOST="\${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}"
-  run_command railway variables set MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY"
+  # Set environment variables for this service
+  run_command railway variable set AGENT_NAME="$agent_name" -s "$agent_name"
+  run_command railway variable set AGENT_ROLE="$role" -s "$agent_name"
+  run_command railway variable set AGENT_EXPERTISE="$expertise" -s "$agent_name"
+  run_command railway variable set AGENT_SPECIALIZATION="$specialization" -s "$agent_name"
+  # Cross-service reference to Meilisearch via Railway private networking
+  run_command railway variable set 'MEILISEARCH_HOST=${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}' -s "$agent_name"
+  run_command railway variable set MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY" -s "$agent_name"
   
   # Set OpenRouter API key (assumes it's set in current environment)
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    run_command railway variables set OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
+    run_command railway variable set OPENROUTER_API_KEY="$OPENROUTER_API_KEY" -s "$agent_name"
   else
     log_warning "OPENROUTER_API_KEY not set in environment. Remember to set it manually."
   fi
   
-  # Deploy Randal agent
-  # TODO: This assumes a Randal Docker image is available
-  # You'll need to build and push a Randal Docker image to a registry
-  run_command railway up --service "$agent_name" --dockerfile ./Dockerfile
+  # Deploy current directory's Dockerfile to this service
+  # railway.toml controls the build config (builder, Dockerfile path, etc.)
+  run_command railway up -d -s "$agent_name"
   
   log_success "Agent $agent_name deployed"
 }
@@ -285,7 +271,7 @@ create_summary() {
   "railway_project": "$RAILWAY_PROJECT_NAME",
   "deployed_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
   "meilisearch": {
-    "url": "$(railway domain --service meilisearch 2>/dev/null || echo 'TBD')",
+    "networking": "private (use \${{meilisearch.RAILWAY_PRIVATE_DOMAIN}} for cross-service access)",
     "master_key": "$MEILISEARCH_MASTER_KEY"
   },
   "agents": $(yq eval '.agents | map(.name)' "$POSSE_CONFIG" -o=json)

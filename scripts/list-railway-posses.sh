@@ -37,29 +37,26 @@ check_dependencies() {
 list_projects() {
   log_info "Fetching Railway projects..."
   
-  # Get all projects (Railway CLI doesn't have a native list command, so we work around it)
-  # This assumes projects follow the naming convention: randal-posse-*
-  
   railway whoami > /dev/null 2>&1 || {
     log_error "Not logged in to Railway. Run: railway login"
     exit 1
   }
   
   echo ""
-  echo -e "${GREEN}=== Railway Posses ===${NC}"
+  echo -e "${GREEN}=== Railway Projects ===${NC}"
   echo ""
   
-  # Note: Railway CLI doesn't provide a direct way to list all projects
-  # Users will need to use the Railway dashboard or API
-  echo "To view all your Railway posses:"
-  echo "  1. Visit: https://railway.app/dashboard"
-  echo "  2. Look for projects starting with 'randal-posse-'"
+  # Use 'railway list' to show all projects
+  # Look for projects following the naming convention: randal-posse-*
+  log_info "All Railway projects:"
   echo ""
-  echo "Or use the Railway API:"
-  echo "  railway api query 'query { projects { edges { node { id name createdAt } } } }'"
+  railway list
   echo ""
   
-  # Try to read local deployment summaries
+  log_info "Posse projects follow the naming pattern: randal-posse-*"
+  echo ""
+  
+  # Also show local deployment summaries if any exist
   local summary_files=(railway-posse-*-deployment.json)
   
   if [ -e "${summary_files[0]}" ]; then
