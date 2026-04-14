@@ -173,10 +173,9 @@ async function runPreflightChecks(): Promise<boolean> {
 			console.log("     ❌ Installation failed");
 			console.log("");
 			console.log("     Install manually:");
-			console.log("       macOS: brew install opencode");
-			console.log(
-				"       Linux: curl -fsSL https://github.com/opencode-ai/opencode/releases/latest/download/opencode-$(uname -m)-unknown-linux-gnu -o ~/.local/bin/opencode && chmod +x ~/.local/bin/opencode",
-			);
+			console.log("       macOS: brew install anomalyco/tap/opencode");
+			console.log("       Any:   bun add -g opencode-ai");
+			console.log("       Any:   curl -fsSL https://opencode.ai/install | bash");
 			allPassed = false;
 		}
 	}
