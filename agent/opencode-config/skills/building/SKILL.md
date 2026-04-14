@@ -24,7 +24,7 @@ description: Build pipeline steps 1-11, dispatch templates, checkpoint parsing, 
    Git branch: {branch-prefix}/{plan-slug}
    Commit after each completed step using the format in your instructions.
    
-   Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
+    Available tools: bash ✅ · gh (GitHub CLI) {✅/❌} · steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
    ```
    If resuming, include: `task_id: {saved_task_id}` for warm resume.
 
