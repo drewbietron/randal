@@ -1,0 +1,12 @@
+[build]
+dockerfile = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+startCommand = ""  # Uses Dockerfile ENTRYPOINT
+
+[[services]]
+name = "randal"

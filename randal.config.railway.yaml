@@ -1,0 +1,39 @@
+name: randal-railway
+runner:
+  defaultAgent: opencode
+  defaultModel: anthropic/claude-sonnet-4
+  workdir: /app/workspace
+credentials:
+  envFile: ./.env
+  allow:
+    - ANTHROPIC_API_KEY
+    - OPENROUTER_API_KEY
+    - RANDAL_API_TOKEN
+    - RANDAL_HOOK_TOKEN
+    - TAVILY_API_KEY
+    - MEILI_MASTER_KEY
+    - GH_TOKEN
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+memory:
+  store: meilisearch
+  url: http://127.0.0.1:7700
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-railway
+identity:
+  persona: |
+    You are Randal, an autonomous AI agent running in the cloud.
+    You help users with software development tasks via the gateway API.
+heartbeat:
+  enabled: true
+  every: 30m
+  prompt: |
+    Review any pending tasks and check for jobs that need attention.
+  activeHours:
+    start: "00:00"
+    end: "23:59"
+sandbox:
+  enforcement: env-scrub

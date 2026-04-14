@@ -70,4 +70,7 @@ EXPOSE 7600
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD curl -f http://localhost:7600/health || exit 1
 
+# Default config for Railway deployment (can be overridden at runtime)
+COPY randal.config.railway.yaml /app/randal.config.yaml
+
 ENTRYPOINT ["/app/entrypoint.sh"]
