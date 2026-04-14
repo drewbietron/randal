@@ -18,7 +18,8 @@ export PATH="/app/tools/bin:$PATH"
 #   1. Starts embedded Meilisearch (unless RANDAL_SKIP_MEILISEARCH=true)
 #   2. Runs consumer's pre-start hook (if /app/pre-start.sh exists)
 #   3. Configures GitHub CLI (if GH_TOKEN is set)
-#   4. Starts Randal via `randal serve`
+#   4. Runs randal setup (generate opencode.json, wire MCP servers)
+#   5. Starts Randal via `randal serve`
 #
 # Environment Variables:
 #   MEILI_MASTER_KEY        — Meilisearch API key (default: randal-dev-key)
@@ -39,10 +40,8 @@ if [ "${RANDAL_SKIP_MEILISEARCH}" != "true" ]; then
     --http-addr "127.0.0.1:7700" \
     --no-analytics \
     --log-level WARN \
-    --schedule-snapshot \
-    --snapshot-interval-sec 86400 \
-    --snapshot-dir /app/meili-data/snapshots \
-    --dump-dir /app/meili-data/dumps &
+    --schedule-snapshot=86400 \
+    --snapshot-dir /app/meeli-data/snapshots &
   MEILI_PID=$!
 
   # Wait for Meilisearch to be ready (up to 10 seconds)
@@ -78,7 +77,17 @@ else
 fi
 
 # ──────────────────────────────────────────────────────
-# 4. Start Randal
+# 4. Run Randal setup (generate opencode.json, wire MCP servers)
+# ──────────────────────────────────────────────────────
+echo "[randal] Running setup..."
+if bun run /app/packages/cli/src/index.ts setup --config /app/randal.config.yaml; then
+  echo "[randal] Setup complete"
+else
+  echo "[randal] WARNING: Setup failed — some features may not work"
+fi
+
+# ──────────────────────────────────────────────────────
+# 5. Start Randal
 # ──────────────────────────────────────────────────────
 echo "[randal] Starting Randal..."
 exec bun run /app/packages/cli/src/index.ts serve "$@"

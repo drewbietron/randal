@@ -45,6 +45,14 @@ RUN set -eux; \
 # Install Claude Code (default agent CLI)
 RUN bun install -g @anthropic-ai/claude-code
 
+# Install OpenCode CLI (required agent runtime)
+RUN bun add -g opencode-ai
+
+# NOTE: steer (macOS GUI automation) and drive (tmux terminal automation) are
+# local-only tools that require macOS/tmux respectively. They are NOT installed
+# in the Docker image. The agent brain detects their absence and skips GUI/terminal
+# automation features. Install locally with: randal setup
+
 # Copy Randal source and install dependencies
 # Must include all workspace members (packages/* and tools/*) referenced in
 # package.json so bun's frozen-lockfile check finds them.

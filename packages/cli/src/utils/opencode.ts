@@ -1,5 +1,3 @@
-import { join, resolve } from "node:path";
-
 /**
  * Check if OpenCode CLI is installed
  * Returns info about the installation
@@ -31,12 +29,12 @@ export function detectOpenCode(): {
 export async function installOpenCode(): Promise<boolean> {
 	const platform = process.platform;
 
-	// macOS: Try Homebrew first
+	// macOS: Try Homebrew first (fastest, stays up to date)
 	if (platform === "darwin") {
 		const brewCheck = Bun.spawnSync(["which", "brew"]);
 		if (brewCheck.exitCode === 0) {
 			console.log("  Installing OpenCode via Homebrew...");
-			const install = Bun.spawnSync(["brew", "install", "opencode"], {
+			const install = Bun.spawnSync(["brew", "install", "anomalyco/tap/opencode"], {
 				stdout: "pipe",
 				stderr: "pipe",
 			});
@@ -46,42 +44,35 @@ export async function installOpenCode(): Promise<boolean> {
 		}
 	}
 
-	// Fallback: Direct download to ~/.local/bin
-	console.log("  Installing OpenCode via direct download...");
-
-	const home = process.env.HOME || "~";
-	const binDir = resolve(home, ".local", "bin");
-	const opencodePath = join(binDir, "opencode");
-
-	// Ensure ~/.local/bin exists
-	const mkdir = Bun.spawnSync(["mkdir", "-p", binDir]);
-	if (mkdir.exitCode !== 0) {
-		return false;
-	}
-
-	// Determine architecture
-	const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
-	const os = platform === "darwin" ? "apple-darwin" : "unknown-linux-gnu";
-
-	// Download from GitHub releases
-	const downloadUrl = `https://github.com/opencode-ai/opencode/releases/latest/download/opencode-${arch}-${os}`;
-
-	const download = Bun.spawnSync(["curl", "-fsSL", "-o", opencodePath, downloadUrl], {
+	// Primary method: bun global install (works in Docker and locally)
+	console.log("  Installing OpenCode via bun...");
+	const bunInstall = Bun.spawnSync(["bun", "add", "-g", "opencode-ai"], {
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-
-	if (download.exitCode !== 0) {
-		return false;
+	if (bunInstall.exitCode === 0) {
+		// Verify it works
+		const verify = Bun.spawnSync(["opencode", "--version"]);
+		if (verify.exitCode === 0) {
+			return true;
+		}
 	}
 
-	// Make executable
-	const chmod = Bun.spawnSync(["chmod", "+x", opencodePath]);
-	if (chmod.exitCode !== 0) {
-		return false;
+	// Fallback: Official install script
+	console.log("  Installing OpenCode via install script...");
+	const scriptInstall = Bun.spawnSync(
+		["bash", "-c", "curl -fsSL https://opencode.ai/install | bash"],
+		{
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	);
+	if (scriptInstall.exitCode === 0) {
+		const verify = Bun.spawnSync(["opencode", "--version"]);
+		if (verify.exitCode === 0) {
+			return true;
+		}
 	}
 
-	// Verify it works
-	const verify = Bun.spawnSync([opencodePath, "--version"]);
-	return verify.exitCode === 0;
+	return false;
 }
