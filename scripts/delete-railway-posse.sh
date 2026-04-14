@@ -116,10 +116,10 @@ delete_project() {
   
   log_info "Deleting Railway project: $project_name"
   
-  # Note: Railway CLI doesn't have a direct delete command
-  # Users need to delete via the dashboard or API
+  # Railway CLI v4 doesn't have a direct project delete command.
+  # Users need to delete via the dashboard.
   echo ""
-  log_warning "Railway CLI doesn't support project deletion via command line"
+  log_warning "Railway CLI does not support project deletion"
   echo ""
   echo "To delete this project:"
   echo "  1. Visit: https://railway.app/dashboard"
@@ -127,16 +127,16 @@ delete_project() {
   echo "  3. Go to project settings"
   echo "  4. Click 'Delete Project'"
   echo ""
-  echo "Or use the Railway API:"
-  echo "  railway api mutation 'mutation { projectDelete(id: \"PROJECT_ID\") }'"
+  echo "You can list your projects to find the right one:"
+  echo "  railway list"
   echo ""
   
   if [ "$DRY_RUN" = false ]; then
-    # Try to unlink local project
-    if railway status 2>/dev/null | grep -q "$project_name"; then
-      log_info "Unlinking local Railway project..."
-      run_command railway unlink || true
-      log_success "Local project unlinked"
+    # Clean up local .railway/ link if it points to this project
+    if [ -d ".railway" ]; then
+      log_info "Removing local .railway/ directory..."
+      run_command rm -rf .railway
+      log_success "Local project link removed"
     fi
   fi
 }
