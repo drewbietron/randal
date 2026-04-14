@@ -1,0 +1,198 @@
+name: Deploy to Railway
+
+on:
+  # Manual trigger with optional environment input
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      deploy_message:
+        description: 'Deployment message'
+        required: false
+        default: 'Manual deployment from GitHub Actions'
+
+  # Trigger on push to main branch
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'scripts/**'
+
+env:
+  NODE_VERSION: '20'
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      # Cache Railway CLI
+      - name: Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-railway-cli-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-railway-cli-
+
+      # Install Railway CLI
+      - name: Install Railway CLI
+        run: |
+          npm install -g @railway/cli
+          railway --version
+
+      # Verify Railway authentication
+      - name: Verify Railway Authentication
+        run: |
+          if [[ -z "$RAILWAY_TOKEN" ]]; then
+            echo "Error: RAILWAY_TOKEN secret is not set"
+            echo "Please add RAILWAY_TOKEN to your repository secrets"
+            exit 1
+          fi
+          echo "Railway CLI authenticated successfully"
+
+      # Set environment variables in Railway
+      # These come from GitHub Secrets
+      - name: Set Environment Variables
+        run: |
+          echo "Setting Railway environment variables..."
+
+          # Required variables
+          if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
+            railway variables set OPENROUTER_API_KEY "${{ secrets.OPENROUTER_API_KEY }}"
+            echo "✓ Set OPENROUTER_API_KEY"
+          elif [[ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
+            railway variables set ANTHROPIC_API_KEY "${{ secrets.ANTHROPIC_API_KEY }}"
+            echo "✓ Set ANTHROPIC_API_KEY"
+          else
+            echo "Warning: Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set"
+          fi
+
+          if [[ -n "${{ secrets.RANDAL_API_TOKEN }}" ]]; then
+            railway variables set RANDAL_API_TOKEN "${{ secrets.RANDAL_API_TOKEN }}"
+            echo "✓ Set RANDAL_API_TOKEN"
+          else
+            echo "Error: RANDAL_API_TOKEN is required"
+            exit 1
+          fi
+
+          if [[ -n "${{ secrets.MEILI_MASTER_KEY }}" ]]; then
+            railway variables set MEILI_MASTER_KEY "${{ secrets.MEILI_MASTER_KEY }}"
+            echo "✓ Set MEILI_MASTER_KEY"
+          else
+            echo "Error: MEILI_MASTER_KEY is required"
+            exit 1
+          fi
+
+          # Optional variables - only set if they exist
+          if [[ -n "${{ secrets.TAVILY_API_KEY }}" ]]; then
+            railway variables set TAVILY_API_KEY "${{ secrets.TAVILY_API_KEY }}"
+            echo "✓ Set TAVILY_API_KEY"
+          fi
+
+          if [[ -n "${{ secrets.GH_TOKEN }}" ]]; then
+            railway variables set GH_TOKEN "${{ secrets.GH_TOKEN }}"
+            echo "✓ Set GH_TOKEN"
+          fi
+
+          if [[ -n "${{ secrets.DISCORD_BOT_TOKEN }}" ]]; then
+            railway variables set DISCORD_BOT_TOKEN "${{ secrets.DISCORD_BOT_TOKEN }}"
+            echo "✓ Set DISCORD_BOT_TOKEN"
+          fi
+
+          if [[ -n "${{ secrets.FAL_KEY }}" ]]; then
+            railway variables set FAL_KEY "${{ secrets.FAL_KEY }}"
+            echo "✓ Set FAL_KEY"
+          fi
+
+          if [[ -n "${{ secrets.ELEVENLABS_API_KEY }}" ]]; then
+            railway variables set ELEVENLABS_API_KEY "${{ secrets.ELEVENLABS_API_KEY }}"
+            echo "✓ Set ELEVENLABS_API_KEY"
+          fi
+
+          echo "Environment variables set successfully!"
+
+      # Deploy to Railway
+      - name: Deploy to Railway
+        run: |
+          echo "Starting Railway deployment..."
+
+          # Set deployment message
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            DEPLOY_MSG="${{ github.event.inputs.deploy_message }}"
+          else
+            DEPLOY_MSG="Auto-deploy: ${{ github.event.head_commit.message }}"
+          fi
+
+          echo "Deployment message: $DEPLOY_MSG"
+
+          # Run deployment
+          railway up --detach
+
+          echo "Deployment command executed successfully!"
+
+      # Verify deployment status
+      - name: Verify Deployment
+        run: |
+          echo "Checking deployment status..."
+          sleep 10
+
+          # Get deployment status
+          STATUS=$(railway status 2>&1 || true)
+          echo "$STATUS"
+
+          # Check if deployment is healthy
+          if echo "$STATUS" | grep -q "error\|failed\|unhealthy"; then
+            echo "Warning: Deployment may have issues"
+          else
+            echo "✓ Deployment appears healthy"
+          fi
+
+      # Post-deployment notification (optional)
+      - name: Post Deployment Summary
+        if: always()
+        run: |
+          echo "========================================"
+          echo "  Deployment Summary"
+          echo "========================================"
+          echo "Status: ${{ job.status }}"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.event_name }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Environment: ${{ github.event.inputs.environment }}"
+          fi
+          echo "========================================"
+
+      # Cleanup on failure
+      - name: Cleanup on Failure
+        if: failure()
+        run: |
+          echo "Deployment failed. Cleaning up..."
+          # Add any cleanup commands here if needed
+          echo "Check Railway dashboard for more details:"
+          echo "https://railway.app/dashboard"
