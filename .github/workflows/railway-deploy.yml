@@ -28,7 +28,6 @@ on:
       - 'scripts/**'
 
 env:
-  NODE_VERSION: '20'
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
 jobs:
@@ -43,41 +42,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      # Cache Railway CLI
-      - name: Cache Railway CLI
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-railway-cli-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-railway-cli-
-
-      # Install Railway CLI
-      - name: Install Railway CLI
-        run: |
-          npm install -g @railway/cli
-          railway --version
-
-      # Verify Railway authentication
-      - name: Verify Railway Authentication
+      # Guard: skip entire deploy if RAILWAY_TOKEN is not configured
+      - name: Check Railway token
         run: |
           if [[ -z "$RAILWAY_TOKEN" ]]; then
-            echo "Error: RAILWAY_TOKEN secret is not set"
-            echo "Please add RAILWAY_TOKEN to your repository secrets"
-            exit 1
+            echo "::notice::RAILWAY_TOKEN not configured — skipping Railway deploy."
+            echo "Set the RAILWAY_TOKEN secret in this repository when you're ready for auto-deploy."
+            echo "SKIP_DEPLOY=true" >> "$GITHUB_ENV"
+          else
+            echo "SKIP_DEPLOY=false" >> "$GITHUB_ENV"
+            echo "Railway token found"
           fi
-          echo "Railway CLI authenticated successfully"
+
+      # Install Railway CLI (no Node.js needed)
+      - name: Install Railway CLI
+        if: env.SKIP_DEPLOY != 'true'
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Railway CLI
+        if: env.SKIP_DEPLOY != 'true'
+        run: railway --version
 
       # Set environment variables in Railway
       # These come from GitHub Secrets
       - name: Set Environment Variables
+        if: env.SKIP_DEPLOY != 'true'
         run: |
           echo "Setting Railway environment variables..."
 
@@ -138,6 +129,7 @@ jobs:
 
       # Deploy to Railway
       - name: Deploy to Railway
+        if: env.SKIP_DEPLOY != 'true'
         run: |
           echo "Starting Railway deployment..."
 
@@ -157,6 +149,7 @@ jobs:
 
       # Verify deployment status
       - name: Verify Deployment
+        if: env.SKIP_DEPLOY != 'true'
         run: |
           echo "Checking deployment status..."
           sleep 10
@@ -176,21 +169,30 @@ jobs:
       - name: Post Deployment Summary
         if: always()
         run: |
-          echo "========================================"
-          echo "  Deployment Summary"
-          echo "========================================"
-          echo "Status: ${{ job.status }}"
-          echo "Branch: ${{ github.ref }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Triggered by: ${{ github.event_name }}"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "Environment: ${{ github.event.inputs.environment }}"
+          if [[ "$SKIP_DEPLOY" == "true" ]]; then
+            echo "========================================"
+            echo "  Railway Deploy — Skipped"
+            echo "========================================"
+            echo "Reason: RAILWAY_TOKEN secret not configured"
+            echo "To enable: add RAILWAY_TOKEN to repository secrets"
+            echo "========================================"
+          else
+            echo "========================================"
+            echo "  Deployment Summary"
+            echo "========================================"
+            echo "Status: ${{ job.status }}"
+            echo "Branch: ${{ github.ref }}"
+            echo "Commit: ${{ github.sha }}"
+            echo "Triggered by: ${{ github.event_name }}"
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "Environment: ${{ github.event.inputs.environment }}"
+            fi
+            echo "========================================"
           fi
-          echo "========================================"
 
       # Cleanup on failure
       - name: Cleanup on Failure
-        if: failure()
+        if: failure() && env.SKIP_DEPLOY != 'true'
         run: |
           echo "Deployment failed. Cleaning up..."
           # Add any cleanup commands here if needed
