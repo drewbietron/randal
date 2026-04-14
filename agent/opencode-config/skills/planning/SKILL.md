@@ -16,7 +16,7 @@ description: Planning loop phases 1-3 — discovery, drafting, verification. Dis
    OR: Draft at most {M} steps this turn.
    OR: Verify at most {M} steps this turn.
    
-   Available skills: steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
+    Available tools: bash ✅ · gh (GitHub CLI) {✅/❌} · steer (GUI) {yes/no} · drive (terminal) {yes/no} · memory {yes/no}
    
    When you reach your budget or complete your current phase, 
    checkpoint and return your progress.
