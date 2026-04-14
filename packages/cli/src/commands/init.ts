@@ -15,6 +15,7 @@ import {
 } from "@clack/prompts";
 import { configSchema } from "@randal/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
 // ── Agent / Model Definitions ───────────────────────────────────────────
 
@@ -1336,8 +1337,35 @@ export async function initCommand(args: string[]): Promise<void> {
 	// Parse flags
 	const hasWizard = args.includes("--wizard");
 	const hasYes = args.includes("--yes") || args.includes("--non-interactive");
+	const hasFull = args.includes("--full");
 	const fromIdx = args.indexOf("--from");
 	const fromPath = fromIdx !== -1 ? args[fromIdx + 1] : undefined;
+
+	// --full mode: init + setup in one command
+	if (hasFull) {
+		// First run init non-interactively
+		initNonInteractive();
+
+		// Then auto-install OpenCode if needed
+		const openCodeInfo = detectOpenCode();
+		if (!openCodeInfo.installed) {
+			console.log("\n  Installing OpenCode CLI...");
+			const installed = await installOpenCode();
+			if (installed) {
+				const newInfo = detectOpenCode();
+				console.log(`  ✅ OpenCode CLI installed: ${newInfo.version || "success"}`);
+			} else {
+				console.log("  ⚠️  OpenCode CLI installation failed");
+				console.log("     Install manually: brew install opencode");
+			}
+		}
+
+		// Finally run setup
+		console.log("\n  Running randal setup...");
+		const { setupCommand } = await import("./setup.js");
+		await setupCommand([]);
+		return;
+	}
 
 	// Non-interactive mode — no TUI at all
 	if (hasYes) {

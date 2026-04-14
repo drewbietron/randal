@@ -1,0 +1,30 @@
+# Minimal Railway deployment configuration for Randal
+name: randal-railway
+version: "0.1"
+
+# Simple HTTP gateway for Railway
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN:-test-token}"
+
+# Runner configuration
+runner:
+  defaultAgent: opencode
+  defaultModel: claude-sonnet-4
+  workdir: /app/workspace
+
+# Mesh configuration for posse
+mesh:
+  endpoint: http://localhost:7600
+
+# Memory: embedded Meilisearch (bundled in the official Randal image)
+memory:
+  store: meilisearch
+  url: http://127.0.0.1:7700
+  apiKey: "${MEILI_MASTER_KEY:-randal-dev-key}"
+  index: memory-railway
+
+# Capabilities
+capabilities: [memory, scheduler]

@@ -1,185 +1,184 @@
-# 🚂 Railway Deployment Guide
+# Railway Deployment Guide
 
-Deploy Randal to Railway in minutes with automatic HTTPS, health checks, and zero-config scaling.
+This guide walks you through deploying Randal to [Railway](https://railway.app/) — a simple, scalable cloud platform.
 
-## Quick Deploy (3 steps)
+## Quick Start
 
-### 1. Fork/Clone and Configure
+### 1. Fork/Clone This Repository
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/randal.git
+git clone https://github.com/drewbietron/randal.git
 cd randal
-
-# The railway.toml and randal.config.railway.yaml are already configured
 ```
 
-### 2. Set Environment Variables
+### 2. Create a Railway Project
 
-In Railway Dashboard → Your Project → Variables, add:
+```bash
+# Install Railway CLI if you haven't already
+npm install -g @railway/cli
+
+# Login to Railway
+railway login
+
+# Initialize a new project
+railway init
+```
+
+### 3. Configure Environment Variables
+
+Set these variables in the Railway Dashboard:
+
+**Required (Choose ONE):**
+- `OPENROUTER_API_KEY` - OpenRouter API key (recommended, provides access to multiple models)
+  - Get yours at: https://openrouter.ai/keys
+  - Supports: Claude, GPT-4, Llama, and 100+ models
+- `ANTHROPIC_API_KEY` - Direct Anthropic API key (Claude models only)
+  - Get yours at: https://console.anthropic.com/
 
 **Required:**
-- `ANTHROPIC_API_KEY` - Your Anthropic API key (starts with `sk-ant-`)
-- `RANDAL_API_TOKEN` - Generate a secure random token (e.g., `openssl rand -hex 32`)
-- `MEILI_MASTER_KEY` - Generate another secure key for Meilisearch
+- `RANDAL_API_TOKEN` - Secure random token for API authentication
+- `MEILI_MASTER_KEY` - Secure key for Meilisearch memory database
 
 **Optional:**
-- `OPENROUTER_API_KEY` - For OpenRouter model access
-- `TAVILY_API_KEY` - For web search capabilities  
+- `TAVILY_API_KEY` - For web search capabilities
 - `GH_TOKEN` - For GitHub CLI operations (PR creation, etc.)
 - `DISCORD_BOT_TOKEN` - For Discord integration
 
-### 3. Deploy
+### Choosing Your AI Model
+
+If using OpenRouter (recommended), set the model in your config:
+```yaml
+runner:
+  defaultModel: openrouter/anthropic/claude-sonnet-4
+  # Other options: openrouter/openai/gpt-4o, openrouter/meta-llama/llama-3.1-405b, etc.
+```
+
+If using direct Anthropic:
+```yaml
+runner:
+  defaultModel: anthropic/claude-sonnet-4
+```
+
+### 4. Deploy
 
 ```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login
-railway login
-
-# Link to your project
-railway link
-
-# Deploy
 railway up
 ```
 
-## Accessing Your Deployed Randal
+Your Randal instance will be available at the URL Railway provides.
 
-Once deployed, Railway provides a public URL:
+## Configuration
 
-```
-🎉 Randal is running!
-   Dashboard: https://your-project.railway.app
-   Gateway: https://your-project.railway.app
-   Health: https://your-project.railway.app/health
-   
-   Authentication: Bearer Token (set in RANDAL_API_TOKEN)
-```
+### railway.toml
 
-### Using the Dashboard
+The `railway.toml` file defines how Railway builds and deploys your app:
 
-Open `https://your-project.railway.app` in your browser. You'll see the real-time dashboard with:
-- Active jobs
-- Memory search
-- Cost tracking
-- System health
+- **Builder**: Uses Dockerfile for custom build
+- **Health Check**: Monitors `/health` endpoint
+- **Resources**: Configured for 2GB RAM minimum
+- **Persistent Disk**: Optional (see below)
 
-### Using the API
+### randal.config.railway.yaml
+
+The headless configuration file optimized for cloud deployment:
+
+- **Gateway**: HTTP API on port 7600
+- **Memory**: Embedded Meilisearch
+- **Heartbeat**: Checks for pending tasks every 30 minutes
+- **Sandbox**: Environment variable scrubbing enabled
+
+## API Usage
+
+Once deployed, interact with Randal via the HTTP API:
 
 ```bash
 # Check health
-curl https://your-project.railway.app/health
+curl https://your-app.railway.app/health
 
-# Submit a job
-curl -X POST https://your-project.railway.app/api/v1/run \
-  -H "Authorization: Bearer YOUR_RANDAL_API_TOKEN" \
+# Create a job
+curl -X POST https://your-app.railway.app/api/jobs \
+  -H "Authorization: Bearer $RANDAL_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "refactor the auth module"}'
-
-# List jobs
-curl https://your-project.railway.app/api/v1/jobs \
-  -H "Authorization: Bearer YOUR_RANDAL_API_TOKEN"
-
-# Check job status
-curl https://your-project.railway.app/api/v1/jobs/JOB_ID \
-  -H "Authorization: Bearer YOUR_RANDAL_API_TOKEN"
+  -d '{
+    "agent": "opencode",
+    "prompt": "Create a Python script that fetches weather data"
+  }'
 ```
 
-### Using the CLI Locally
+## Persistent Data
 
-Point your local CLI at the Railway deployment:
+By default, Railway uses ephemeral storage — data is lost on redeploy. To persist Meilisearch data and workspace files:
 
-```bash
-# Set the remote gateway
-export RANDAL_GATEWAY_URL=https://your-project.railway.app
-export RANDAL_API_TOKEN=your-token-here
+### Option 1: Enable Persistent Disk (Recommended)
 
-# Now use randal commands against your cloud instance
-randal jobs
-randal status JOB_ID
+Uncomment in `railway.toml`:
+
+```toml
+[[deploy.persistentDisk]]
+mountPath = "/app/meeli-data"
+size = 5  # GB
+name = "meili-data"
 ```
 
-## Architecture
+### Option 2: External Meilisearch
 
+Update `randal.config.railway.yaml` to use an external Meilisearch instance:
+
+```yaml
+memory:
+  store: meilisearch
+  url: https://your-meili-instance.railway.app
+  apiKey: "${MEILI_MASTER_KEY}"
 ```
-┌─────────────────────────────────────────┐
-│           Railway.app                   │
-│  ┌─────────────────────────────────┐   │
-│  │      Randal Container           │   │
-│  │  ┌─────────────────────────┐   │   │
-│  │  │    randal serve         │   │   │
-│  │  │    Port: 7600           │───┼───┼──→ https://...railway.app
-│  │  └─────────────────────────┘   │   │
-│  │  ┌─────────────────────────┐   │   │
-│  │  │  Embedded Meilisearch   │   │   │
-│  │  │  Port: 7700 (internal)  │   │   │
-│  │  └─────────────────────────┘   │   │
-│  └─────────────────────────────────┘   │
-└─────────────────────────────────────────┘
-```
+
+## Examples
+
+See the `examples/cloud-railway/` directory for:
+
+- `Dockerfile` — Extended image with custom config
+- `randal.config.railway.yaml` — Example configuration
+- `.env.example` — Environment variable template
 
 ## Troubleshooting
 
-### Build Fails
-- Check that `railway.toml` exists at project root
-- Verify `Dockerfile` is at project root
-- Ensure `randal.config.railway.yaml` exists
+### Build Failures
 
-### Health Check Fails
-- Check Railway logs: `railway logs`
-- Verify `RANDAL_API_TOKEN` is set
-- Ensure `ANTHROPIC_API_KEY` is valid
+Check Railway build logs. Common issues:
+- Missing required env vars
+- Network timeouts (retry the deployment)
 
-### Can't Access Dashboard
-- Check that port 7600 is exposed in Dockerfile
-- Verify health endpoint responds: `curl https://.../health`
-- Check Railway domain settings
+### Container Crashes
 
-### Memory Not Persisting
-- Meilisearch data is stored in container at `/app/meeli-data`
-- Railway volumes are ephemeral unless you configure persistent storage
-- For production, consider external Meilisearch: set `RANDAL_SKIP_MEILISEARCH=true` and point to external instance
+- Ensure `MEILI_MASTER_KEY` is set
+- Check memory allocation (needs 2GB+)
+- Review application logs in Railway dashboard
 
-## Updates
+### API Authentication Errors
 
-To update to the latest Randal version:
+Verify `RANDAL_API_TOKEN` is set and included in request headers:
 
 ```bash
-# Pull latest
-git pull origin main
+curl -H "Authorization: Bearer $RANDAL_API_TOKEN" ...
+```
 
-# Redeploy
+## Security Notes
+
+- Never commit `.env` files or API keys
+- Use Railway's secret management for all credentials
+- Enable persistent disk if storing sensitive data
+- Rotate `RANDAL_API_TOKEN` and `MEILI_MASTER_KEY` regularly
+
+## Updating
+
+To update to the latest version:
+
+```bash
+git pull origin main
 railway up
 ```
 
-The new image will be built from the updated `ghcr.io/drewbietron/randal:latest`.
+## Support
 
-## Advanced Configuration
-
-### Custom Domain
-
-In Railway Dashboard → Settings → Domains:
-1. Add your custom domain
-2. Update DNS records as instructed
-3. Randal will be available at your domain
-
-### Scaling
-
-Railway automatically scales based on load. For dedicated resources:
-- Railway Dashboard → Your Service → Settings
-- Configure CPU/RAM limits
-
-### External Meilisearch
-
-For persistent memory across deploys:
-
-1. Set `RANDAL_SKIP_MEILISEARCH=true` in Railway variables
-2. Deploy Meilisearch separately (Meilisearch Cloud or self-hosted)
-3. Update config:
-   ```yaml
-   memory:
-     url: https://your-meilisearch-instance.com
-     apiKey: "${MEILI_MASTER_KEY}"
-   ```
+- **Issues**: [GitHub Issues](https://github.com/drewbietron/randal/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/drewbietron/randal/discussions)
+- **Documentation**: See `README.md` and `AGENTS.md`

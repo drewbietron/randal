@@ -3,8 +3,13 @@
 #   docker build -t randal ../.. && docker build -t my-agent .
 FROM ghcr.io/drewbietron/randal:latest
 
-# Copy deployment config
-COPY randal.config.yaml /app/randal.config.yaml
+# Copy Railway-optimized config
+COPY randal.config.railway.yaml /app/randal.config.yaml
 
 # Copy knowledge files (if any)
 # COPY knowledge/ /app/knowledge/
+
+# Install any additional custom tools here (optional)
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     your-custom-package \
+#     && rm -rf /var/lib/apt/lists/*

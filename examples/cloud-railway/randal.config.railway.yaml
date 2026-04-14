@@ -1,7 +1,7 @@
 # Randal Headless Configuration for Railway Deployment
-# This config is optimized for running Randal as an API service in the cloud
+# This is an example config - copy and customize for your deployment
 
-name: randal-railway
+name: randal-railway-example
 
 runner:
   defaultAgent: opencode
@@ -37,9 +37,8 @@ memory:
 
 identity:
   persona: |
-    You are Randal, an autonomous AI agent running in the cloud on Railway.
-    You help users with software engineering and creative tasks via the HTTP gateway API.
-    You're headless (no TUI), so all interactions are through the API or scheduled tasks.
+    You are Randal, an autonomous AI agent running on Railway.
+    You help users with software development and creative tasks.
 
 heartbeat:
   enabled: true

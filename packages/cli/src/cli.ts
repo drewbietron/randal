@@ -30,7 +30,7 @@ function printHelp(): void {
     randal <command> [options]
 
   \x1b[1mCommands:\x1b[0m
-    \x1b[36minit\x1b[0m                    🔧 Scaffold config (--wizard, --from, --yes)
+    \x1b[36minit\x1b[0m                    🔧 Scaffold config (--wizard, --from, --yes, --full)
     \x1b[36mreset\x1b[0m                   🧹 Clean slate — remove config and state (--all, --yes)
     \x1b[36mrun\x1b[0m <prompt|file>      🎯 Run agent locally (one-shot)
     \x1b[36mserve\x1b[0m                   🏗️  Start daemon (gateway + runner + scheduler)
