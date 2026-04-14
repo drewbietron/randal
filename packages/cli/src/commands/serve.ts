@@ -174,7 +174,9 @@ async function runPreflightChecks(): Promise<boolean> {
 			console.log("");
 			console.log("     Install manually:");
 			console.log("       macOS: brew install opencode");
-			console.log("       Linux: curl -fsSL https://github.com/opencode-ai/opencode/releases/latest/download/opencode-$(uname -m)-unknown-linux-gnu -o ~/.local/bin/opencode && chmod +x ~/.local/bin/opencode");
+			console.log(
+				"       Linux: curl -fsSL https://github.com/opencode-ai/opencode/releases/latest/download/opencode-$(uname -m)-unknown-linux-gnu -o ~/.local/bin/opencode && chmod +x ~/.local/bin/opencode",
+			);
 			allPassed = false;
 		}
 	}
@@ -198,7 +200,7 @@ async function runPreflightChecks(): Promise<boolean> {
 
 export async function serveCommand(args: string[], ctx: CliContext): Promise<void> {
 	// Run preflight checks first
-	if (!await runPreflightChecks()) {
+	if (!(await runPreflightChecks())) {
 		console.error("  ❌ Preflight checks failed. Please fix the issues above and try again.\n");
 		process.exit(1);
 	}

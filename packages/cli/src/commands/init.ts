@@ -1345,7 +1345,7 @@ export async function initCommand(args: string[]): Promise<void> {
 	if (hasFull) {
 		// First run init non-interactively
 		initNonInteractive();
-		
+
 		// Then auto-install OpenCode if needed
 		const openCodeInfo = detectOpenCode();
 		if (!openCodeInfo.installed) {
@@ -1359,7 +1359,7 @@ export async function initCommand(args: string[]): Promise<void> {
 				console.log("     Install manually: brew install opencode");
 			}
 		}
-		
+
 		// Finally run setup
 		console.log("\n  Running randal setup...");
 		const { setupCommand } = await import("./setup.js");
