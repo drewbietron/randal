@@ -83,17 +83,17 @@ jobs:
 
           # Required variables
           if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
-            railway variables set OPENROUTER_API_KEY "${{ secrets.OPENROUTER_API_KEY }}"
+            railway variable set OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}"
             echo "✓ Set OPENROUTER_API_KEY"
           elif [[ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
-            railway variables set ANTHROPIC_API_KEY "${{ secrets.ANTHROPIC_API_KEY }}"
+            railway variable set ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
             echo "✓ Set ANTHROPIC_API_KEY"
           else
             echo "Warning: Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set"
           fi
 
           if [[ -n "${{ secrets.RANDAL_API_TOKEN }}" ]]; then
-            railway variables set RANDAL_API_TOKEN "${{ secrets.RANDAL_API_TOKEN }}"
+            railway variable set RANDAL_API_TOKEN="${{ secrets.RANDAL_API_TOKEN }}"
             echo "✓ Set RANDAL_API_TOKEN"
           else
             echo "Error: RANDAL_API_TOKEN is required"
@@ -101,7 +101,7 @@ jobs:
           fi
 
           if [[ -n "${{ secrets.MEILI_MASTER_KEY }}" ]]; then
-            railway variables set MEILI_MASTER_KEY "${{ secrets.MEILI_MASTER_KEY }}"
+            railway variable set MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}"
             echo "✓ Set MEILI_MASTER_KEY"
           else
             echo "Error: MEILI_MASTER_KEY is required"
@@ -110,27 +110,27 @@ jobs:
 
           # Optional variables - only set if they exist
           if [[ -n "${{ secrets.TAVILY_API_KEY }}" ]]; then
-            railway variables set TAVILY_API_KEY "${{ secrets.TAVILY_API_KEY }}"
+            railway variable set TAVILY_API_KEY="${{ secrets.TAVILY_API_KEY }}"
             echo "✓ Set TAVILY_API_KEY"
           fi
 
           if [[ -n "${{ secrets.GH_TOKEN }}" ]]; then
-            railway variables set GH_TOKEN "${{ secrets.GH_TOKEN }}"
+            railway variable set GH_TOKEN="${{ secrets.GH_TOKEN }}"
             echo "✓ Set GH_TOKEN"
           fi
 
           if [[ -n "${{ secrets.DISCORD_BOT_TOKEN }}" ]]; then
-            railway variables set DISCORD_BOT_TOKEN "${{ secrets.DISCORD_BOT_TOKEN }}"
+            railway variable set DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
             echo "✓ Set DISCORD_BOT_TOKEN"
           fi
 
           if [[ -n "${{ secrets.FAL_KEY }}" ]]; then
-            railway variables set FAL_KEY "${{ secrets.FAL_KEY }}"
+            railway variable set FAL_KEY="${{ secrets.FAL_KEY }}"
             echo "✓ Set FAL_KEY"
           fi
 
           if [[ -n "${{ secrets.ELEVENLABS_API_KEY }}" ]]; then
-            railway variables set ELEVENLABS_API_KEY "${{ secrets.ELEVENLABS_API_KEY }}"
+            railway variable set ELEVENLABS_API_KEY="${{ secrets.ELEVENLABS_API_KEY }}"
             echo "✓ Set ELEVENLABS_API_KEY"
           fi
 
@@ -151,7 +151,7 @@ jobs:
           echo "Deployment message: $DEPLOY_MSG"
 
           # Run deployment
-          railway up --detach
+          railway up -d
 
           echo "Deployment command executed successfully!"
 
