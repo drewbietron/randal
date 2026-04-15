@@ -29,24 +29,30 @@ Never use `opencode/` as a branch prefix. Use semantic prefixes based on the pla
 - Plan: "Fix authentication token refresh" → `fix/auth-token-refresh`
 - Plan: "Refactor runner prompt assembly" → `refactor/runner-prompt-assembly`
 
-## Level 1: Single Build, Same Directory (default)
-- @build creates branch `{prefix}/{plan-slug}` from current HEAD
-- Works in the current working directory
-- Commits after each step
-- User stays on the branch until they merge or switch back
+## Worktree Levels
 
-## Level 2: Single Build, Worktree Isolation
+**Default Workflow**: Use Level 3 worktrees for all builds. This provides full filesystem isolation, enables parallel builds, and keeps your main working directory clean.
+
+## Level 3: Multiple Parallel Builds (default)
+- **Recommended approach** for all builds
+- Each plan dispatched for build gets its own worktree automatically at `/tmp/randal-builds/{plan-slug}`
+- Track all active worktrees in loop-state.json
+- No conflicts possible — full filesystem isolation
+- User reviews/merges each branch independently
+- Clean up stale worktrees with `worktree_cleanup` tool
+
+## Level 2: Single Build, Worktree Isolation (legacy)
 - Triggered by user saying "build in worktree" or "build isolated"
 - Create a worktree via `git worktree add`
 - @build works in the isolated worktree directory
 - User's current directory is untouched
 - On completion, report the branch name for review/merge
 
-## Level 3: Multiple Parallel Builds
-- Each plan dispatched for build gets its own worktree automatically
-- Track all active worktrees in loop-state.json
-- No conflicts possible — full filesystem isolation
-- User reviews/merges each branch independently
+## Level 1: Single Build, Same Directory (legacy)
+- @build creates branch `{prefix}/{plan-slug}` from current HEAD
+- Works in the current working directory
+- Commits after each step
+- User stays on the branch until they merge or switch back
 
 # Autonomous Git Management
 
@@ -101,3 +107,89 @@ When a PR is merged (detected via `gh pr list --state merged`):
 2. Delete the remote branch: `git push origin --delete {branch-name}`
 3. Update loop-state.json: set build status to "merged".
 4. Prune stale remote refs: `git fetch --prune`
+
+# Worktree Cleanup
+
+## Overview
+
+Stale worktrees can accumulate in `/tmp/randal-builds/` when builds are interrupted, crash, or complete without cleanup. The `worktree_cleanup` tool safely removes worktrees that are not associated with active builds.
+
+## Usage
+
+### Dry-Run Mode (Default)
+Shows what would be deleted without actually removing anything:
+```bash
+worktree-cleanup
+```
+
+Output:
+```
+🧹 Worktree Cleanup Tool
+
+🔍 Running in DRY-RUN mode (pass --force to actually delete)
+
+✅ Active build: feat/auth-refactor → /tmp/randal-builds/auth-refactor-20260415
+
+ℹ️  Found 3 worktree directory(ies) in /tmp/randal-builds
+
+🔍 Found 2 stale worktree(s):
+
+🔍 Would remove worktree: /tmp/randal-builds/old-feature-20260410
+🔍 Would remove worktree: /tmp/randal-builds/test-build-20260412
+
+🔍 Summary: 2 worktree(s) would be removed
+
+💡 Run with --force to actually remove these worktrees
+```
+
+### Force Mode
+Actually deletes stale worktrees:
+```bash
+worktree-cleanup --force
+```
+
+Output:
+```
+🧹 Worktree Cleanup Tool
+
+⚠️  Running in FORCE mode - will delete stale worktrees
+
+✅ Active build: feat/auth-refactor → /tmp/randal-builds/auth-refactor-20260415
+
+ℹ️  Found 3 worktree directory(ies) in /tmp/randal-builds
+
+🔍 Found 2 stale worktree(s):
+
+🗑️  Removing worktree: /tmp/randal-builds/old-feature-20260410
+✅ Removed: /tmp/randal-builds/old-feature-20260410
+🗑️  Removing worktree: /tmp/randal-builds/test-build-20260412
+✅ Removed: /tmp/randal-builds/test-build-20260412
+
+✅ Summary: 2 worktree(s) were removed
+```
+
+## How It Works
+
+1. **Reads loop-state.json** to identify active builds and their worktree paths
+2. **Scans `/tmp/randal-builds/`** for all worktree directories
+3. **Identifies stale worktrees** by comparing against active builds
+4. **Safety checks**:
+   - Verifies each directory is a valid git worktree (has `.git` directory)
+   - Never removes worktrees associated with active builds
+   - Uses `git worktree remove --force` for safe cleanup
+5. **Dry-run by default** to prevent accidental deletion
+
+## When to Run Cleanup
+
+- **After build completion**: Optional but recommended to keep `/tmp` clean
+- **Before starting new builds**: If you suspect stale worktrees
+- **Periodic maintenance**: Run weekly or when `/tmp` space is low
+- **After crashes**: If builds were interrupted unexpectedly
+
+## Safety Notes
+
+- Always run without `--force` first to preview what will be deleted
+- Active builds are never removed (cross-checked with loop-state.json)
+- Only directories with valid git worktree structure are removed
+- If loop-state.json is missing, tool safely skips removal
+- Non-git directories in `/tmp/randal-builds/` are ignored for safety
