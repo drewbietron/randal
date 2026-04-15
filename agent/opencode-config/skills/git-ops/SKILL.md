@@ -63,6 +63,34 @@ When a build completes (all steps checked, verification passed):
 1. Push the branch to remote: `git push -u origin {branch-name}`
 2. If push fails (auth, permissions), report the error but don't block. The branch is still local.
 
+## Pre-Push CI Checks
+
+**Always run these before pushing a branch:**
+
+1. **Check what CI runs**: Look for `.github/workflows/*.yml` to see what checks will run
+2. **Run checks locally**:
+   ```bash
+   bun run typecheck  # TypeScript type checking
+   bun run lint       # Biome linting
+   bun run test       # Test suite
+   ```
+3. **Auto-fix lint issues**: `bun run lint --fix` (or check package.json for the fix command)
+4. **If any check fails**: Fix it before pushing - don't let CI tell the user about failures you could have caught
+
+**Why this matters:**
+- Catches issues immediately instead of waiting for CI
+- Faster feedback loop (seconds vs minutes)
+- Shows professionalism - PRs should arrive in good shape
+- User doesn't have to deal with "CI failed" notifications for preventable issues
+
+**Integration with build workflow:**
+After @build completes all steps and before `git push`:
+1. Run `bun run lint --fix` to auto-fix formatting
+2. Run `bun run typecheck` to catch type errors
+3. Run `bun run test` to ensure no regressions
+4. If any fail: fix them and amend the commit (don't create a new commit for lint fixes)
+5. Only push once all checks pass
+
 ## Auto-PR Creation
 After pushing, automatically create a pull request:
 1. Check for an existing open PR for this branch: `gh pr list --state open --head {branch-name} --json number,url -q '.[0]'`
