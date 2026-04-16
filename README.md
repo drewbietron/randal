@@ -7,8 +7,6 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6?logo=typescript&logoColor=white)](https://typescriptlang.org)
 [![v0.1.0](https://img.shields.io/badge/version-0.1.0-blue)]()
 
----
-
 <br clear="right"/>
 
 Randal wraps agent CLIs like OpenCode in a persistent execution environment with memory, scheduling, and multi-agent coordination. Run agents one-shot, as a daemon with HTTP API, or fully autonomous with heartbeats and cron jobs.
@@ -30,8 +28,6 @@ Randal wraps [OpenCode](https://github.com/opencode-ai/opencode) (or any agent C
 - 🧩 **Skills System** — Discoverable, indexable, cross-agent skill sharing with file watching
 - 🔧 **MCP Servers** — Built-in Memory (16 tools), Scheduler (3 tools), and Runner (5 tools) MCP servers
 - 🎨 **Image & Video Generation** — Standalone MCP servers for AI-powered image and video creation
-
-> *One agent is useful. A posse is unstoppable.*
 
 ---
 
@@ -468,8 +464,6 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 <div align="center">
 
 **MIT License** · Built with 🤠 by the Randal posse
-
-*Saddle up.*
 
 <!-- Workflow test: git operations verified on 2026-04-15 -->
 
