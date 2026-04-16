@@ -180,8 +180,9 @@ deploy_agent() {
     AGENT_EXPERTISE="$expertise" \
     AGENT_SPECIALIZATION="$specialization" \
     RANDAL_SKIP_MEILISEARCH="true" \
-    MEILISEARCH_URL='http://${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}:7700' \
+    MEILISEARCH_URL="http://meilisearch.railway.internal:7700" \
     MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
+    PORT="7600" \
     -s "$agent_name"
 
   # Set API key if available in environment
@@ -195,6 +196,10 @@ deploy_agent() {
 
   # Deploy the Randal Docker image to this service
   run_cmd railway up -d -s "$agent_name"
+
+  # Generate public domain for gateway access
+  log_info "Generating public domain for $agent_name..."
+  run_cmd railway domain -s "$agent_name"
 
   log_success "Agent $agent_name deployed"
 }
