@@ -11,6 +11,8 @@
 
 <br clear="right"/>
 
+Randal wraps agent CLIs like OpenCode in a persistent execution environment with memory, scheduling, and multi-agent coordination. Run agents one-shot, as a daemon with HTTP API, or fully autonomous with heartbeats and cron jobs.
+
 Randal wraps [OpenCode](https://github.com/opencode-ai/opencode) (or any agent CLI) in a persistent execution loop and gives it superpowers:
 
 - 🧠 **Memory** — Agents learn, remember, and share context across runs via Meilisearch
