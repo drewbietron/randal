@@ -31,7 +31,7 @@ gateway:
 
 memory:
   store: meilisearch
-  url: http://127.0.0.1:7700
+  url: "${MEILISEARCH_URL:-http://127.0.0.1:7700}"
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-railway
 
