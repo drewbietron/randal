@@ -180,8 +180,9 @@ deploy_agent() {
     AGENT_EXPERTISE="$expertise" \
     AGENT_SPECIALIZATION="$specialization" \
     RANDAL_SKIP_MEILISEARCH="true" \
-    MEILISEARCH_URL="http://meilisearch.railway.internal:7700" \
+    MEILISEARCH_URL="\${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}" \
     MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
+    MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
     PORT="7600" \
     -s "$agent_name"
 
