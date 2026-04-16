@@ -58,21 +58,26 @@ You have unrestricted bash access. Key tools at your disposal:
 
 1. **Read the plan file** from the path in your dispatch prompt.
 2. **Check the Status field** — if "Complete", report that and stop.
-3. **Check for a branch**: If the dispatch prompt specifies a branch, ensure you're on it. If not, create it:
+3. **Check for worktree environment** (default mode):
+   - If the dispatch prompt specifies `worktree: {path}`, you're in a Level 3 worktree (default)
+   - The branch is already created and checked out
+   - Your working directory is the worktree root
+   - Verify with `git branch --show-current`
+4. **Fallback: Check for a branch** (Level 1 mode): If no worktree specified, ensure you're on the correct branch:
    ```bash
    # See "Git Discipline" section for full branch and commit instructions
    git checkout -b {branch-name} 2>/dev/null || git checkout {branch-name}
    ```
-4. **Handle dirty state** (crash recovery):
+5. **Handle dirty state** (crash recovery):
    - Check `git status` for uncommitted changes.
    - If there are uncommitted changes:
      a. Read the first unchecked step in the plan.
      b. Check if the target file already contains the expected changes.
      c. If yes: run the verification command. If it passes, commit the changes and mark the step `[x]`. If it fails, `git checkout -- .` to revert and redo the step.
      d. If no: `git stash` the changes and start fresh.
-5. **Find the first unchecked step** (`- [ ]`) — this is where you start.
-6. **Update Status** to "Building" if it isn't already.
-7. **Note your CONTEXT BUDGET** from the dispatch prompt.
+6. **Find the first unchecked step** (`- [ ]`) — this is where you start.
+7. **Update Status** to "Building" if it isn't already.
+8. **Note your CONTEXT BUDGET** from the dispatch prompt.
 
 ### Plan File Structure Reference
 
@@ -208,14 +213,16 @@ If you see files you didn't intend to change, unstage them:
 git reset HEAD {file}
 ```
 
-### Working in Worktrees
+### Working in Worktrees (Default Mode)
 
-If the dispatch prompt specifies `worktree: {path}`:
-- Your working directory is already the worktree (Randal set it up)
+**Worktrees are the default mode** for all builds. If the dispatch prompt specifies `worktree: {path}`:
+- Your working directory is already the worktree (Randal set it up at `/tmp/randal-builds/{plan-slug}`)
 - The branch is already created and checked out
 - Commits go to the worktree's branch, NOT the main repo's branch
 - The main repo's working directory is untouched
 - All file paths in the plan are relative to the worktree root
+
+**Fallback**: If no worktree path is specified (legacy Level 1 mode), you're working directly in the main repository directory.
 
 ### Commit Grouping
 
