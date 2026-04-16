@@ -2,10 +2,6 @@
 
 # Randal
 
-### The composable harness for autonomous AI agent posses.
-
-**Point it at an agent. Give it a config. Let it ride.**
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Built with Bun](https://img.shields.io/badge/Built_with-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6?logo=typescript&logoColor=white)](https://typescriptlang.org)
