@@ -23,15 +23,7 @@ permission:
     "*": deny
   bash:
     "*": deny
-    "git status *": allow
-    "git log *": allow
-    "git diff *": allow
-    "git show *": allow
-    "git branch *": allow
-    "git remote *": allow
-    "git ls-files *": allow
-    "git rev-parse *": allow
-    "git worktree *": allow
+    "git *": allow
     "ls *": allow
     "tree *": allow
     "pwd": allow
