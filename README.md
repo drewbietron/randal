@@ -123,6 +123,28 @@ hooks:
 
 A **posse** is a named group of Randal instances that coordinate as a team. Each agent has its own identity, persona, and specialization — but they share a brain.
 
+### The Posse Conductor
+
+The [Posse Conductor](docs/conductor.md) is the central orchestration gateway for managing multi-agent posses. It provides:
+
+- **Unified Gateway**: Single HTTP/WebSocket endpoint for all agent communication
+- **Intelligent Routing**: Automatically routes tasks to the best available agent
+- **Real-time Dashboard**: Monitor agent health, active tasks, and system status
+- **OpenAI Compatibility**: Drop-in replacement for OpenAI API endpoints
+
+```bash
+# Quick setup with the interactive wizard
+./scripts/setup-local-posse.sh
+
+# Or start manually after configuration
+export CONDUCTOR_CONFIG_PATH=~/.config/randal-posse/conductor.config.yaml
+bun run packages/conductor/src/index.ts
+```
+
+See the [Conductor documentation](docs/conductor.md) for complete setup instructions.
+
+### Posse Configuration
+
 ```yaml
 # agent-a.config.yaml                    # agent-b.config.yaml
 name: scout                              name: builder
@@ -456,6 +478,7 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | [Architecture](docs/architecture.md) | System design, package map, data flow diagrams |
 | [CLI Reference](docs/cli-reference.md) | Every command, every flag, HTTP API endpoints |
 | [Config Reference](docs/config-reference.md) | All YAML config options with examples |
+| [Conductor Guide](docs/conductor.md) | Posse Conductor: multi-agent orchestration gateway |
 | [Deployment Guide](docs/deployment-guide.md) | Mac Mini, Railway, Docker, Meilisearch setup |
 | [Discord Integration Guide](docs/discord-guide.md) | Full Discord setup, slash commands, buttons, per-server config |
 | [Channel Adapters Guide](docs/channel-adapters-guide.md) | HTTP API, channel overview, custom channel development |

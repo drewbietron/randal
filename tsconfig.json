@@ -23,7 +23,8 @@
 			"@randal/harness": ["./packages/harness/src/index.ts"],
 			"@randal/analytics": ["./packages/analytics/src/index.ts"],
 			"@randal/voice": ["./packages/voice/src/index.ts"],
-			"@randal/mesh": ["./packages/mesh/src/index.ts"]
+			"@randal/mesh": ["./packages/mesh/src/index.ts"],
+			"@randal/conductor": ["./packages/conductor/src/index.ts"]
 		}
 	},
 	"references": [
@@ -37,7 +38,8 @@
 		{ "path": "./packages/cli" },
 		{ "path": "./packages/analytics" },
 		{ "path": "./packages/voice" },
-		{ "path": "./packages/mesh" }
+		{ "path": "./packages/mesh" },
+		{ "path": "./packages/conductor" }
 	],
 	"include": [],
 	"exclude": ["node_modules", "dist"]
