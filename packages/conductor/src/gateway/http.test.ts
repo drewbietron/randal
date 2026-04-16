@@ -402,8 +402,16 @@ describe("HttpGateway", () => {
 			await gateway.stop();
 		});
 
-		it("should reject requests without auth token", async () => {
+		it("should allow /health without auth token (public healthcheck)", async () => {
 			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`);
+			expect(response.status).toBe(200);
+
+			const body = await response.json();
+			expect(body.status).toBe("healthy");
+		});
+
+		it("should reject protected routes without auth token", async () => {
+			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`);
 			expect(response.status).toBe(401);
 
 			const body = await response.json();
@@ -411,7 +419,7 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject requests with invalid token format", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
 				headers: { Authorization: "invalid-format" },
 			});
 			expect(response.status).toBe(401);
@@ -421,7 +429,7 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject requests with wrong token", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
 				headers: { Authorization: "Bearer wrong-token" },
 			});
 			expect(response.status).toBe(401);
@@ -431,10 +439,11 @@ describe("HttpGateway", () => {
 		});
 
 		it("should accept requests with valid token", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
 				headers: { Authorization: "Bearer test-token" },
 			});
-			expect(response.status).toBe(200);
+			// 403 because auth passes but single mode rejects posse endpoints
+			expect(response.status).toBe(403);
 		});
 	});
 

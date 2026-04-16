@@ -499,12 +499,14 @@ export function createHttpServer(
 	app.use(express.json({ limit: "10mb" }));
 	app.use(requestLogger);
 
-	// Authentication middleware (if configured)
+	// Health endpoint BEFORE auth middleware (must be publicly accessible for healthchecks)
+	app.get("/health", createHealthHandler(config, registry));
+
+	// Authentication middleware (if configured) — applies to all routes below
 	const authMiddleware = createAuthMiddleware(gatewayConfig.authToken);
 	app.use(authMiddleware);
 
-	// Routes
-	app.get("/health", createHealthHandler(config, registry));
+	// Routes (auth-protected)
 	if (router && gatewayConfig.timeout) {
 		app.post("/v1/chat", createChatHandler(router, gatewayConfig.timeout));
 	}

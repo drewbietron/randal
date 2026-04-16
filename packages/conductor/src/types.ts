@@ -84,9 +84,10 @@ export interface PosseConfig {
 }
 
 /**
- * Complete Conductor configuration
+ * Complete Conductor configuration (legacy manual interface).
+ * Prefer the Zod-inferred `ConductorConfig` from `config.ts`.
  */
-export interface ConductorConfig {
+export interface ConductorConfigLegacy {
 	/** Operational mode */
 	mode: ConductorMode;
 	/** Gateway settings */
@@ -455,15 +456,16 @@ export interface RegistryEventEmitter {
 }
 
 /**
- * Conductor server interface
+ * Conductor server interface.
+ * Config type is generic to support both Zod-inferred and legacy config shapes.
  */
-export interface ConductorServer {
+export interface ConductorServer<TConfig = unknown> {
 	/** Start the server */
 	start(): Promise<void>;
 	/** Stop the server */
 	stop(): Promise<void>;
 	/** Current configuration */
-	readonly config: ConductorConfig;
+	readonly config: TConfig;
 	/** Agent registry instance */
 	readonly registry: unknown;
 }

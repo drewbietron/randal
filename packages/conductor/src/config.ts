@@ -478,7 +478,7 @@ export function loadConfigFromEnv(): ConductorConfig {
 		mode,
 		model: process.env.CONDUCTOR_MODEL || "moonshotai/kimi-k2.5",
 		server: {
-			port: Number.parseInt(process.env.CONDUCTOR_PORT || "7777", 10),
+			port: Number.parseInt(process.env.CONDUCTOR_PORT || process.env.PORT || "7777", 10),
 			host: process.env.CONDUCTOR_HOST || "0.0.0.0",
 		},
 		gateway: {
