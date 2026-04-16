@@ -10,6 +10,9 @@ import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 async function ensureMeilisearch(config: RandalConfig, configPath?: string): Promise<boolean> {
 	if (config.memory.store !== "meilisearch") return false;
 
+	// Skip if explicitly disabled (e.g., Railway agent connecting to external Meilisearch)
+	if (process.env.RANDAL_SKIP_MEILISEARCH === "true") return false;
+
 	const url = config.memory.url || "http://localhost:7700";
 	let envModified = false;
 

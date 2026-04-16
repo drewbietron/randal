@@ -18,6 +18,7 @@ NC='\033[0m'
 POSSE_CONFIG=""
 POSSE_NAME=""
 RAILWAY_PROJECT_NAME=""
+RAILWAY_WORKSPACE=""
 MEILISEARCH_MASTER_KEY=""
 MEILISEARCH_PRIVATE_URL=""
 DRY_RUN=false
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
       POSSE_NAME="$2"
       shift 2
       ;;
+    --workspace)
+      RAILWAY_WORKSPACE="$2"
+      shift 2
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -41,10 +46,11 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: $0 --name NAME [OPTIONS]"
       echo ""
       echo "Options:"
-      echo "  --name NAME         Posse name (required)"
-      echo "  --config FILE       Path to posse configuration YAML (default: examples/railway-posse/full-company.yaml)"
-      echo "  --dry-run           Print commands without executing"
-      echo "  --help              Show this help message"
+      echo "  --name NAME           Posse name (required)"
+      echo "  --config FILE         Path to posse configuration YAML (default: examples/railway-posse/full-company.yaml)"
+      echo "  --workspace WORKSPACE Railway workspace ID or name (optional, will prompt if not provided)"
+      echo "  --dry-run             Print commands without executing"
+      echo "  --help                Show this help message"
       echo ""
       echo "Examples:"
       echo "  $0 --name my-posse --config examples/railway-posse/full-company.yaml"
@@ -119,7 +125,11 @@ parse_config() {
 # Create Railway project (non-interactive)
 create_railway_project() {
   log_info "Creating Railway project: $RAILWAY_PROJECT_NAME"
-  run_cmd railway init --name "$RAILWAY_PROJECT_NAME"
+  if [ -n "$RAILWAY_WORKSPACE" ]; then
+    run_cmd railway init --name "$RAILWAY_PROJECT_NAME" --workspace "$RAILWAY_WORKSPACE"
+  else
+    run_cmd railway init --name "$RAILWAY_PROJECT_NAME"
+  fi
   log_success "Railway project created"
 }
 
@@ -169,7 +179,8 @@ deploy_agent() {
     AGENT_ROLE="$role" \
     AGENT_EXPERTISE="$expertise" \
     AGENT_SPECIALIZATION="$specialization" \
-    MEILISEARCH_HOST='${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}' \
+    RANDAL_SKIP_MEILISEARCH="true" \
+    MEILISEARCH_URL='http://${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}:7700' \
     MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
     -s "$agent_name"
 
