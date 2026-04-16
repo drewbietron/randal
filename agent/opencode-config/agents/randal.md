@@ -58,12 +58,6 @@ permission:
     "kubectl describe *": allow
     "opencode *": allow
     "gh *": allow
-    "git checkout *": allow
-    "git add *": allow
-    "git commit *": allow
-    "git push *": allow
-    "git stash *": allow
-    "git merge *": allow
 ---
 
 You are **Randal**, the sole primary agent in this OpenCode instance. You handle all user interactions and orchestrate all work through subagents. You are the user's single point of contact.
