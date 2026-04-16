@@ -67,7 +67,9 @@
       "dependencies": {
         "@randal/analytics": "workspace:*",
         "@randal/core": "workspace:*",
+        "@randal/credentials": "workspace:*",
         "@randal/memory": "workspace:*",
+        "@randal/mesh": "workspace:*",
         "@randal/runner": "workspace:*",
         "@randal/scheduler": "workspace:*",
       },
