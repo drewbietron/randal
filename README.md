@@ -473,4 +473,6 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 
 *Saddle up.*
 
+<!-- Workflow test: git operations verified on 2026-04-15 -->
+
 </div>
