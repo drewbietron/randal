@@ -612,8 +612,11 @@ export type RandalConfig = z.infer<typeof configSchema>;
  */
 export function substituteEnvVars(value: unknown): unknown {
 	if (typeof value === "string") {
-		return value.replace(/\$\{([^}]+)\}/g, (_match, varName: string) => {
-			return process.env[varName] ?? "";
+		return value.replace(/\$\{([^}]+)\}/g, (_match, expr: string) => {
+			// Support ${VAR:-default} syntax (bash-style default values)
+			const [varName, defaultValue] = expr.split(":-");
+			const envValue = process.env[varName.trim()];
+			return envValue !== undefined && envValue !== "" ? envValue : (defaultValue?.trim() ?? "");
 		});
 	}
 	if (Array.isArray(value)) {

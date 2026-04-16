@@ -50,6 +50,7 @@ async function waitForMeilisearch(
 	maxAttempts = 15,
 	intervalMs = 2000,
 ): Promise<void> {
+	logger.info("Initializing MeiliSearch client", { url, urlType: typeof url, urlValue: JSON.stringify(url) });
 	const client = new MeiliSearch({ host: url, apiKey });
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {

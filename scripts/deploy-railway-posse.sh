@@ -174,17 +174,17 @@ deploy_agent() {
   run_cmd railway add --service "$agent_name"
 
   # Set environment variables targeting this service
-  run_cmd railway variable set \
-    AGENT_NAME="$agent_name" \
-    AGENT_ROLE="$role" \
-    AGENT_EXPERTISE="$expertise" \
-    AGENT_SPECIALIZATION="$specialization" \
-    RANDAL_SKIP_MEILISEARCH="true" \
-    MEILISEARCH_URL="\${{meilisearch.RAILWAY_PRIVATE_DOMAIN}}" \
-    MEILISEARCH_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
-    MEILI_MASTER_KEY="$MEILISEARCH_MASTER_KEY" \
-    PORT="7600" \
-    -s "$agent_name"
+  # Note: Railway references like ${{...}} work at runtime, but we use direct domain for simplicity
+  run_cmd railway variables --service "$agent_name" --set \
+    "AGENT_NAME=$agent_name" \
+    "AGENT_ROLE=$role" \
+    "AGENT_EXPERTISE=$expertise" \
+    "AGENT_SPECIALIZATION=$specialization" \
+    "RANDAL_SKIP_MEILISEARCH=true" \
+    "MEILISEARCH_URL=http://meilisearch.railway.internal:7700" \
+    "MEILISEARCH_MASTER_KEY=$MEILISEARCH_MASTER_KEY" \
+    "MEILI_MASTER_KEY=$MEILISEARCH_MASTER_KEY" \
+    "PORT=7600"
 
   # Set API key if available in environment
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
