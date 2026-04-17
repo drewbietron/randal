@@ -9,32 +9,30 @@
 import { describe, expect, it } from "bun:test";
 import type { AgentRegistry } from "../agents/registry.ts";
 import type { ConductorConfig } from "../config.ts";
-import type { ChatRequest, TaskRouter } from "../types.ts";
+import type { TaskRouter } from "../router/index.ts";
 import { createHttpServer } from "./http.ts";
 
 // ============================================================================
 // Mock Router
 // ============================================================================
 
-const mockRouter: TaskRouter = {
-	async route(_request: ChatRequest) {
+const mockRouter = {
+	async routeTask(_task: {
+		id: string;
+		content: string;
+		channel: string;
+		userId: string;
+		timestamp: string;
+	}) {
 		return {
-			agent: {
-				id: "test-agent",
-				name: "test-agent",
-				endpoint: "http://localhost:7600",
-				models: ["moonshotai/kimi-k2.5"],
-				capabilities: ["chat"],
-				status: "online",
-				lastSeen: new Date().toISOString(),
-				version: "0.1.0",
-				metadata: {},
-			},
-			endpoint: "http://localhost:7600",
-			strategy: "explicit",
+			taskId: _task.id,
+			content: "Hello! I'm a test agent.",
+			agent: "test-agent",
+			success: true,
+			duration: 42,
 		};
 	},
-};
+} as unknown as TaskRouter;
 
 // ============================================================================
 // Mock Registry

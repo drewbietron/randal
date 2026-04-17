@@ -20,7 +20,7 @@ import { AgentRegistry } from "./agents/registry.js";
 import type { ConductorConfig } from "./config.js";
 import { loadConfig, loadConfigFromEnv } from "./config.js";
 import { type HttpGateway, createHttpServer } from "./gateway/http.js";
-import { type DashboardSSE, createDashboardSSE } from "./gateway/websocket.js";
+import { type DashboardSSE, createDashboardSSE, createSSERouter } from "./gateway/websocket.js";
 import { TaskRouter } from "./router/index.js";
 import type { ConductorServer } from "./types.js";
 
@@ -128,19 +128,18 @@ export class Conductor implements ConductorServer<ConductorConfig> {
 		// 2. Create TaskRouter
 		this._router = new TaskRouter(this.config, this._registry);
 
-		// 3. Create the HTTP server
-		this._httpGateway = createHttpServer(
-			this.config,
-			this._registry,
-			this._router as unknown as import("./types.js").TaskRouter,
-		);
-
-		// 4. Mount SSE router if we have a registry (posse mode)
+		// 3. Build SSE sub-router (available in both single and posse modes)
+		let sseApp: ReturnType<typeof createSSERouter> | undefined;
 		if (this._registry) {
 			this._sseGateway = createDashboardSSE(this._registry);
-			// Mount the SSE app as a sub-route on the main Hono app
-			this._httpGateway.app.route("/", this._sseGateway.app);
+			sseApp = this._sseGateway.app;
+		} else {
+			// Single mode: basic SSE router (returns 503 — no registry available)
+			sseApp = createSSERouter();
 		}
+
+		// 4. Create the HTTP server (SSE routes mounted before the 404 catch-all)
+		this._httpGateway = createHttpServer(this.config, this._registry, this._router, sseApp);
 
 		// 5. Start the HTTP server
 		await this._httpGateway.start();

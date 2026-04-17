@@ -11,13 +11,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { AgentRegistry } from "../agents/registry.ts";
 import type { ConductorConfig } from "../config.ts";
-import type {
-	ChatRequest,
-	HealthResponse,
-	PosseCommand,
-	PosseCommandResult,
-	TaskRouter,
-} from "../types.ts";
+import type { TaskRouter } from "../router/index.ts";
+import type { ChatRequest, HealthResponse, PosseCommand, PosseCommandResult } from "../types.ts";
 
 // ============================================================================
 // Types
@@ -87,6 +82,7 @@ export function createHttpServer(
 	config: ConductorConfig,
 	registry?: AgentRegistry,
 	router?: TaskRouter,
+	sseApp?: Hono,
 ): HttpGateway {
 	const gatewayConfig: HttpGatewayConfig = {
 		port: config.server.port,
@@ -223,11 +219,25 @@ export function createHttpServer(
 			// Route to the TaskRouter if available
 			if (router) {
 				try {
-					const result = await router.route(chatRequest);
+					const result = await router.routeTask({
+						id: crypto.randomUUID(),
+						content: chatRequest.messages[chatRequest.messages.length - 1]?.content ?? "",
+						channel: "http",
+						userId: "anonymous",
+						timestamp: new Date().toISOString(),
+						explicitAgent: chatRequest.agent,
+						metadata: {
+							model: chatRequest.model,
+							stream: chatRequest.stream,
+							temperature: chatRequest.temperature,
+							max_tokens: chatRequest.max_tokens,
+							originalMessages: chatRequest.messages,
+						},
+					});
 					// Wrap in TaskResult format for backward compat
 					return c.json({
-						id: crypto.randomUUID(),
-						status: "completed",
+						id: result.taskId,
+						status: result.success ? "completed" : "failed",
 						response: result,
 						timestamp: new Date().toISOString(),
 					});
@@ -437,6 +447,14 @@ export function createHttpServer(
 			},
 		});
 	});
+
+	// ========================================================================
+	// SSE events sub-router (mounted before catch-all so /events is reachable)
+	// ========================================================================
+
+	if (sseApp) {
+		app.route("/", sseApp);
+	}
 
 	// ========================================================================
 	// Catch-all for 404
