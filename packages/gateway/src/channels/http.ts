@@ -282,8 +282,8 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		});
 	});
 
-	// Submit job
-	app.post("/job", async (c) => {
+	// Submit job handler (shared by /job and /jobs)
+	const submitJobHandler = async (c: import("hono").Context) => {
 		const body = await c.req.json<{
 			prompt?: string;
 			specFile?: string;
@@ -328,10 +328,10 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		done.then((job) => saveJob(job)).catch(() => {});
 
 		return c.json({ id: jobId, status: "queued" }, 201);
-	});
+	};
 
-	// Get job
-	app.get("/job/:id", (c) => {
+	// Get job handler (shared by /job/:id and /jobs/:id)
+	const getJobHandler = (c: import("hono").Context) => {
 		const id = c.req.param("id");
 
 		// Check active jobs first
@@ -343,7 +343,14 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		if (diskJob) return c.json(diskJob);
 
 		return c.json({ error: "Job not found" }, 404);
-	});
+	};
+
+	app.post("/job", submitJobHandler);
+	app.get("/job/:id", getJobHandler);
+
+	// Backward-compat aliases (plural form)
+	app.post("/jobs", submitJobHandler);
+	app.get("/jobs/:id", getJobHandler);
 
 	// Get job plan (lightweight endpoint for polling/widgets)
 	app.get("/job/:id/plan", (c) => {
