@@ -2,7 +2,7 @@
  * Posse Conductor
  *
  * Central orchestration gateway for the Randal distributed agent system.
- * Provides unified HTTP/WebSocket access to a fleet of agents (the "posse")
+ * Provides unified HTTP/SSE access to a fleet of agents (the "posse")
  * with intelligent routing, health monitoring, and real-time dashboard.
  *
  * @example
@@ -19,9 +19,10 @@ import { MeiliSearch } from "meilisearch";
 import { AgentRegistry } from "./agents/registry.js";
 import type { ConductorConfig } from "./config.js";
 import { loadConfig, loadConfigFromEnv } from "./config.js";
-import { createHttpServer, type HttpGateway } from "./gateway/http.js";
-import type { DashboardWebSocket } from "./gateway/websocket.js";
+import { type HttpGateway, createHttpServer } from "./gateway/http.js";
+import { type DashboardSSE, createDashboardSSE } from "./gateway/websocket.js";
 import { TaskRouter } from "./router/index.js";
+import type { ConductorServer } from "./types.js";
 
 // Export all types
 export type {
@@ -87,8 +88,6 @@ export {
 } from "./config.js";
 export type { ConductorConfig, ConfigValidation } from "./config.js";
 
-import type { ConductorServer } from "./types.js";
-
 /**
  * Main Conductor class
  * Orchestrates the gateway, registry, and router
@@ -98,7 +97,7 @@ export class Conductor implements ConductorServer<ConductorConfig> {
 	private _registry: AgentRegistry | undefined;
 	private _router: TaskRouter | undefined;
 	private _httpGateway: HttpGateway | undefined;
-	private _wsGateway: DashboardWebSocket | undefined;
+	private _sseGateway: DashboardSSE | undefined;
 
 	constructor(config: ConductorConfig) {
 		this.config = config;
@@ -136,17 +135,15 @@ export class Conductor implements ConductorServer<ConductorConfig> {
 			this._router as unknown as import("./types.js").TaskRouter,
 		);
 
-		// 4. Start the HTTP server
-		await this._httpGateway.start();
-
-		// 5. Create WebSocket gateway if we have a registry (posse mode)
+		// 4. Mount SSE router if we have a registry (posse mode)
 		if (this._registry) {
-			// WebSocket gateway requires the underlying http.Server instance.
-			// The HttpGateway manages it internally; future refactor can expose it.
-			console.log(
-				"[Conductor] WebSocket gateway requires underlying HTTP server access - skipping for now",
-			);
+			this._sseGateway = createDashboardSSE(this._registry);
+			// Mount the SSE app as a sub-route on the main Hono app
+			this._httpGateway.app.route("/", this._sseGateway.app);
 		}
+
+		// 5. Start the HTTP server
+		await this._httpGateway.start();
 
 		// 6. Log startup
 		const port = this._httpGateway.getPort();
@@ -159,9 +156,9 @@ export class Conductor implements ConductorServer<ConductorConfig> {
 			this._registry.stopPolling();
 		}
 
-		// Stop WebSocket gateway
-		if (this._wsGateway) {
-			await this._wsGateway.close();
+		// Stop SSE gateway
+		if (this._sseGateway) {
+			await this._sseGateway.close();
 		}
 
 		// Stop HTTP server
@@ -244,10 +241,7 @@ async function main(): Promise<void> {
 	try {
 		await conductor.start();
 	} catch (err) {
-		console.error(
-			"[Conductor] Failed to start:",
-			err instanceof Error ? err.message : String(err),
-		);
+		console.error("[Conductor] Failed to start:", err instanceof Error ? err.message : String(err));
 		process.exit(1);
 	}
 }

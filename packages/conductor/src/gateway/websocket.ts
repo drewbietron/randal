@@ -1,15 +1,16 @@
 /**
- * WebSocket Gateway for Posse Conductor
+ * SSE Gateway for Posse Conductor
  *
- * Socket.io-based WebSocket server providing real-time dashboard updates:
+ * Hono SSE-based event stream providing real-time dashboard updates:
  * - Agent status changes
  * - Task progress events
  * - System status broadcasts
- * - Client subscription management
+ *
+ * Replaces the previous Socket.io WebSocket implementation.
  */
 
-import type { Server as HttpServer } from "node:http";
-import { type Socket, Server as SocketIOServer } from "socket.io";
+import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import type { AgentRegistry } from "../agents/registry.ts";
 import type { AgentRecord, RegistryEvent, RegistryEventType, TaskEvent } from "../types.ts";
 
@@ -84,108 +85,119 @@ export interface SystemStatus {
 }
 
 /**
- * WebSocket gateway options
+ * SSE gateway options
  */
-export interface WebSocketGatewayOptions {
-	/** CORS origins */
-	corsOrigins?: string[];
+export interface SSEGatewayOptions {
 	/** Enable debug logging */
 	debug?: boolean;
+	/** Keepalive interval in ms (default: 15000) */
+	keepaliveInterval?: number;
+}
+
+/**
+ * SSE event payload shape
+ */
+interface SSEEventPayload {
+	event: string;
+	data: unknown;
 }
 
 // ============================================================================
-// Dashboard WebSocket Class
+// Dashboard SSE Class
 // ============================================================================
 
-export class DashboardWebSocket {
-	private io: SocketIOServer;
+export class DashboardSSE {
 	private registry: AgentRegistry;
-	private options: WebSocketGatewayOptions;
+	private options: SSEGatewayOptions;
 	private activeTasks: Map<string, { startTime: number; agent: string }> = new Map();
 	private totalTasks = 0;
 	private debug: boolean;
+	private connectedClients = 0;
+	private eventListeners: Set<(payload: SSEEventPayload) => void> = new Set();
+	readonly app: Hono;
 
 	/**
-	 * Create a new DashboardWebSocket gateway
+	 * Create a new DashboardSSE gateway
 	 */
-	constructor(
-		httpServer: HttpServer,
-		registry: AgentRegistry,
-		options: WebSocketGatewayOptions = {},
-	) {
+	constructor(registry: AgentRegistry, options: SSEGatewayOptions = {}) {
 		this.registry = registry;
 		this.options = options;
 		this.debug = options.debug ?? false;
 
-		this.io = new SocketIOServer(httpServer, {
-			cors: {
-				origin: options.corsOrigins ?? "*",
-				methods: ["GET", "POST"],
-				credentials: true,
-			},
-			transports: ["websocket", "polling"],
-		});
-
-		this.setupConnectionHandlers();
+		this.app = this.createApp();
 		this.setupRegistryListeners();
 
 		if (this.debug) {
-			console.log("[WebSocket] DashboardWebSocket initialized");
+			console.log("[SSE] DashboardSSE initialized");
 		}
 	}
 
 	// ============================================================================
-	// Connection Handling
+	// Hono App Setup
 	// ============================================================================
 
-	private setupConnectionHandlers(): void {
-		this.io.on("connection", (socket: Socket) => {
-			if (this.debug) {
-				console.log(`[WebSocket] Client connected: ${socket.id}`);
-			}
+	private createApp(): Hono {
+		const app = new Hono();
 
-			// Send initial agent list
-			socket.emit("agents:list", this.registry.getAllAgents());
+		app.get("/events", (c) => {
+			return streamSSE(c, async (stream) => {
+				this.connectedClients++;
 
-			// Handle client events
-			this.handleClientEvents(socket);
-
-			// Handle disconnection
-			socket.on("disconnect", () => {
 				if (this.debug) {
-					console.log(`[WebSocket] Client disconnected: ${socket.id}`);
+					console.log(`[SSE] Client connected (total: ${this.connectedClients})`);
 				}
+
+				// Send initial agent list
+				await stream.writeSSE({
+					event: "agents:list",
+					data: JSON.stringify(this.registry.getAllAgents()),
+				});
+
+				// Subscribe to events
+				const listener = async (payload: SSEEventPayload) => {
+					try {
+						await stream.writeSSE({
+							event: payload.event,
+							data: JSON.stringify(payload.data),
+						});
+					} catch {
+						// Stream may be closed, ignore write errors
+					}
+				};
+
+				this.eventListeners.add(listener);
+
+				// Keepalive ping
+				const keepaliveMs = this.options.keepaliveInterval ?? 15000;
+				const keepalive = setInterval(async () => {
+					try {
+						await stream.writeSSE({
+							event: "ping",
+							data: JSON.stringify({ timestamp: new Date().toISOString() }),
+						});
+					} catch {
+						// Stream closed
+						clearInterval(keepalive);
+					}
+				}, keepaliveMs);
+
+				// Cleanup on disconnect
+				stream.onAbort(() => {
+					this.connectedClients--;
+					this.eventListeners.delete(listener);
+					clearInterval(keepalive);
+
+					if (this.debug) {
+						console.log(`[SSE] Client disconnected (total: ${this.connectedClients})`);
+					}
+				});
+
+				// Block to keep the stream open
+				await new Promise(() => {});
 			});
 		});
-	}
 
-	private handleClientEvents(socket: Socket): void {
-		// Subscribe to agent updates
-		socket.on("subscribe:agents", () => {
-			if (this.debug) {
-				console.log(`[WebSocket] Client ${socket.id} subscribed to agents`);
-			}
-			socket.emit("agents:list", this.registry.getAllAgents());
-		});
-
-		// Subscribe to task updates
-		socket.on("subscribe:tasks", () => {
-			if (this.debug) {
-				console.log(`[WebSocket] Client ${socket.id} subscribed to tasks`);
-			}
-			// Client is now subscribed to task events
-			socket.emit("tasks:subscribed", { success: true });
-		});
-
-		// Ping/pong for connection health
-		socket.on("ping", () => {
-			socket.emit("pong", { timestamp: new Date().toISOString() });
-		});
-
-		// Request system status
-		socket.on("request:status", () => {
-			socket.emit("system:status", this.getSystemStatus());
-		});
+		return app;
 	}
 
 	// ============================================================================
@@ -214,16 +226,25 @@ export class DashboardWebSocket {
 	// ============================================================================
 
 	/**
+	 * Push an event to all connected SSE clients
+	 */
+	private pushEvent(event: string, data: unknown): void {
+		for (const listener of this.eventListeners) {
+			listener({ event, data });
+		}
+	}
+
+	/**
 	 * Broadcast agent update to all connected clients
 	 */
 	broadcastAgentUpdate(agent: AgentRecord): void {
-		this.io.emit("agent:update", {
+		this.pushEvent("agent:update", {
 			agent,
 			timestamp: new Date().toISOString(),
 		});
 
 		if (this.debug) {
-			console.log(`[WebSocket] Broadcast agent:update for ${agent.name}`);
+			console.log(`[SSE] Broadcast agent:update for ${agent.name}`);
 		}
 	}
 
@@ -242,10 +263,10 @@ export class DashboardWebSocket {
 			timestamp: new Date().toISOString(),
 		};
 
-		this.io.emit("task:start", event);
+		this.pushEvent("task:start", event);
 
 		if (this.debug) {
-			console.log(`[WebSocket] Broadcast task:start for task ${task.id} -> ${agent}`);
+			console.log(`[SSE] Broadcast task:start for task ${task.id} -> ${agent}`);
 		}
 	}
 
@@ -263,10 +284,10 @@ export class DashboardWebSocket {
 			duration: result.duration,
 		};
 
-		this.io.emit("task:complete", { event, result });
+		this.pushEvent("task:complete", { event, result });
 
 		if (this.debug) {
-			console.log(`[WebSocket] Broadcast task:complete for task ${result.taskId}`);
+			console.log(`[SSE] Broadcast task:complete for task ${result.taskId}`);
 		}
 	}
 
@@ -286,10 +307,10 @@ export class DashboardWebSocket {
 			error,
 		};
 
-		this.io.emit("task:error", event);
+		this.pushEvent("task:error", event);
 
 		if (this.debug) {
-			console.log(`[WebSocket] Broadcast task:error for task ${taskId}: ${error}`);
+			console.log(`[SSE] Broadcast task:error for task ${taskId}: ${error}`);
 		}
 	}
 
@@ -300,10 +321,10 @@ export class DashboardWebSocket {
 		const fullStatus = this.getSystemStatus();
 		const mergedStatus = { ...fullStatus, ...status };
 
-		this.io.emit("system:status", mergedStatus);
+		this.pushEvent("system:status", mergedStatus);
 
 		if (this.debug) {
-			console.log("[WebSocket] Broadcast system:status");
+			console.log("[SSE] Broadcast system:status");
 		}
 	}
 
@@ -322,7 +343,7 @@ export class DashboardWebSocket {
 
 		return {
 			status,
-			connectedClients: this.io.engine.clientsCount,
+			connectedClients: this.connectedClients,
 			activeTasks: this.activeTasks.size,
 			totalTasks: this.totalTasks,
 			timestamp: new Date().toISOString(),
@@ -334,17 +355,10 @@ export class DashboardWebSocket {
 	// ============================================================================
 
 	/**
-	 * Get the Socket.io server instance
-	 */
-	getIO(): SocketIOServer {
-		return this.io;
-	}
-
-	/**
 	 * Get count of connected clients
 	 */
 	getConnectedClientCount(): number {
-		return this.io.engine.clientsCount;
+		return this.connectedClients;
 	}
 
 	/**
@@ -362,17 +376,15 @@ export class DashboardWebSocket {
 	}
 
 	/**
-	 * Close the WebSocket server
+	 * Close the SSE gateway (cleanup)
 	 */
 	async close(): Promise<void> {
-		return new Promise((resolve) => {
-			this.io.close(() => {
-				if (this.debug) {
-					console.log("[WebSocket] Server closed");
-				}
-				resolve();
-			});
-		});
+		this.eventListeners.clear();
+		this.connectedClients = 0;
+
+		if (this.debug) {
+			console.log("[SSE] Gateway closed");
+		}
 	}
 }
 
@@ -381,12 +393,27 @@ export class DashboardWebSocket {
 // ============================================================================
 
 /**
- * Create a new DashboardWebSocket instance
+ * Create an SSE Hono router for dashboard events
  */
-export function createWebSocketGateway(
-	httpServer: HttpServer,
+export function createSSERouter(registry?: AgentRegistry): Hono {
+	if (!registry) {
+		const app = new Hono();
+		app.get("/events", (c) => {
+			return c.json({ error: "Registry not available" }, 503);
+		});
+		return app;
+	}
+
+	const dashboard = new DashboardSSE(registry);
+	return dashboard.app;
+}
+
+/**
+ * Create a DashboardSSE instance (gives full access to broadcast methods)
+ */
+export function createDashboardSSE(
 	registry: AgentRegistry,
-	options?: WebSocketGatewayOptions,
-): DashboardWebSocket {
-	return new DashboardWebSocket(httpServer, registry, options);
+	options?: SSEGatewayOptions,
+): DashboardSSE {
+	return new DashboardSSE(registry, options);
 }

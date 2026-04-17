@@ -321,29 +321,27 @@ export function validatePartialConfig(yamlContent: string): ConfigValidation {
 	const result = conductorConfigSchema.safeParse(substituted);
 
 	if (result.success) {
-		if (result.success) {
-			const warnings: string[] = [];
-			const errors: string[] = [];
+		const warnings: string[] = [];
+		const errors: string[] = [];
 
-			// Check mode-specific requirements (treat as errors)
-			if (result.data.mode === "single" && !result.data.agent) {
-				errors.push('Mode is "single" but no agent configuration provided');
-			}
-			if (result.data.mode === "posse" && !result.data.posse) {
-				errors.push('Mode is "posse" but no posse configuration provided');
-			}
-			if (result.data.gateway.discord.enabled && !result.data.gateway.discord.token) {
-				warnings.push("Discord gateway enabled but token not configured");
-			}
-
-			return {
-				valid: errors.length === 0,
-				validFields: Object.keys(parsed),
-				missingFields: [],
-				warnings,
-				errors,
-			};
+		// Check mode-specific requirements (treat as errors)
+		if (result.data.mode === "single" && !result.data.agent) {
+			errors.push('Mode is "single" but no agent configuration provided');
 		}
+		if (result.data.mode === "posse" && !result.data.posse) {
+			errors.push('Mode is "posse" but no posse configuration provided');
+		}
+		if (result.data.gateway.discord.enabled && !result.data.gateway.discord.token) {
+			warnings.push("Discord gateway enabled but token not configured");
+		}
+
+		return {
+			valid: errors.length === 0,
+			validFields: Object.keys(parsed),
+			missingFields: [],
+			warnings,
+			errors,
+		};
 	}
 
 	return {

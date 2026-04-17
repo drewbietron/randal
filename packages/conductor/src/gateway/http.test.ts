@@ -1,10 +1,12 @@
 /**
  * Tests for HTTP Gateway
  *
+ * Uses Hono's built-in app.request() for testing without a real server.
+ *
  * @module gateway/http.test
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import type { AgentRegistry } from "../agents/registry.ts";
 import type { ConductorConfig } from "../config.ts";
 import type { ChatRequest, TaskRouter } from "../types.ts";
@@ -148,7 +150,7 @@ function createTestConfig(mode: "single" | "posse" = "posse"): ConductorConfig {
 		mode,
 		model: "moonshotai/kimi-k2.5",
 		server: {
-			port: 0, // Let the OS assign a port
+			port: 0,
 			host: "127.0.0.1",
 		},
 		gateway: {
@@ -193,21 +195,12 @@ function createTestConfig(mode: "single" | "posse" = "posse"): ConductorConfig {
 
 describe("HttpGateway", () => {
 	describe("single mode", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-
-		beforeEach(async () => {
-			config = createTestConfig("single");
-			gateway = createHttpServer(config);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should respond to health check", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`);
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/health");
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -219,41 +212,42 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject posse endpoints with 403", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`);
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents");
 			expect(response.status).toBe(403);
 
 			const body = await response.json();
 			expect(body.code).toBe("FORBIDDEN");
 		});
 
-		it("should return isRunning true when started", () => {
+		it("should return isRunning true when started", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			await gateway.start();
 			expect(gateway.isRunning()).toBe(true);
+			await gateway.stop();
 		});
 
 		it("should return isRunning false when stopped", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			await gateway.start();
 			await gateway.stop();
 			expect(gateway.isRunning()).toBe(false);
 		});
 	});
 
 	describe("posse mode", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-		let mockRegistry: AgentRegistry;
-
-		beforeEach(async () => {
-			config = createTestConfig("posse");
-			mockRegistry = createMockRegistry();
-			gateway = createHttpServer(config, mockRegistry, mockRouter);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should respond to health check", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`);
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/health");
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -262,7 +256,12 @@ describe("HttpGateway", () => {
 		});
 
 		it("should list all agents", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`);
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents");
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -272,7 +271,12 @@ describe("HttpGateway", () => {
 		});
 
 		it("should return detailed posse health", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/health`);
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/health");
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -283,7 +287,12 @@ describe("HttpGateway", () => {
 		});
 
 		it("should accept posse command", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/command`, {
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/command", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -301,17 +310,19 @@ describe("HttpGateway", () => {
 		});
 
 		it("should accept posse command with specific agent", async () => {
-			const response = await fetch(
-				`http://127.0.0.1:${gateway.getPort()}/posse/command?agent=agent-1`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						command: "restart",
-						target: "all",
-					}),
-				},
-			);
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/command?agent=agent-1", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					command: "restart",
+					target: "all",
+				}),
+			});
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -319,7 +330,12 @@ describe("HttpGateway", () => {
 		});
 
 		it("should handle missing command field", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/command`, {
+			const config = createTestConfig("posse");
+			const mockRegistry = createMockRegistry();
+			const gateway = createHttpServer(config, mockRegistry, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/command", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ target: "all" }),
@@ -332,21 +348,12 @@ describe("HttpGateway", () => {
 	});
 
 	describe("chat endpoint", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-
-		beforeEach(async () => {
-			config = createTestConfig("single");
-			gateway = createHttpServer(config, undefined, mockRouter);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should accept valid chat request", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/v1/chat`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config, undefined, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/v1/chat", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -363,7 +370,11 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject invalid chat request without messages", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/v1/chat`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config, undefined, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/v1/chat", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ model: "test" }),
@@ -375,7 +386,11 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject invalid chat request with non-array messages", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/v1/chat`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config, undefined, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/v1/chat", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
@@ -385,25 +400,35 @@ describe("HttpGateway", () => {
 			});
 			expect(response.status).toBe(400);
 		});
+
+		it("should return 503 when no router configured", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/v1/chat", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					model: "test",
+					messages: [{ role: "user", content: "Hello" }],
+				}),
+			});
+			expect(response.status).toBe(503);
+		});
 	});
 
 	describe("authentication", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-
-		beforeEach(async () => {
-			config = createTestConfig("single");
-			config.gateway.http.auth = "test-token";
-			gateway = createHttpServer(config);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should allow /health without auth token (public healthcheck)", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`);
+			const config = createTestConfig("single");
+			(config as Record<string, unknown>).gateway = {
+				...config.gateway,
+				http: { ...config.gateway.http, auth: "test-token" },
+			};
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/health");
 			expect(response.status).toBe(200);
 
 			const body = await response.json();
@@ -411,7 +436,15 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject protected routes without auth token", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`);
+			const config = createTestConfig("single");
+			(config as Record<string, unknown>).gateway = {
+				...config.gateway,
+				http: { ...config.gateway.http, auth: "test-token" },
+			};
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents");
 			expect(response.status).toBe(401);
 
 			const body = await response.json();
@@ -419,7 +452,15 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject requests with invalid token format", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
+			const config = createTestConfig("single");
+			(config as Record<string, unknown>).gateway = {
+				...config.gateway,
+				http: { ...config.gateway.http, auth: "test-token" },
+			};
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents", {
 				headers: { Authorization: "invalid-format" },
 			});
 			expect(response.status).toBe(401);
@@ -429,7 +470,15 @@ describe("HttpGateway", () => {
 		});
 
 		it("should reject requests with wrong token", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
+			const config = createTestConfig("single");
+			(config as Record<string, unknown>).gateway = {
+				...config.gateway,
+				http: { ...config.gateway.http, auth: "test-token" },
+			};
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents", {
 				headers: { Authorization: "Bearer wrong-token" },
 			});
 			expect(response.status).toBe(401);
@@ -439,7 +488,15 @@ describe("HttpGateway", () => {
 		});
 
 		it("should accept requests with valid token", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/posse/agents`, {
+			const config = createTestConfig("single");
+			(config as Record<string, unknown>).gateway = {
+				...config.gateway,
+				http: { ...config.gateway.http, auth: "test-token" },
+			};
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/posse/agents", {
 				headers: { Authorization: "Bearer test-token" },
 			});
 			// 403 because auth passes but single mode rejects posse endpoints
@@ -448,21 +505,12 @@ describe("HttpGateway", () => {
 	});
 
 	describe("CORS", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-
-		beforeEach(async () => {
-			config = createTestConfig("single");
-			gateway = createHttpServer(config);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should allow CORS preflight requests", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/health", {
 				method: "OPTIONS",
 				headers: {
 					Origin: "http://localhost:3000",
@@ -473,48 +521,73 @@ describe("HttpGateway", () => {
 		});
 
 		it("should include CORS headers in responses", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/health", {
 				headers: { Origin: "http://localhost:3000" },
 			});
-			// Response should succeed, CORS headers are present but may not be exposed in fetch response
 			expect(response.status).toBe(200);
 		});
 	});
 
 	describe("error handling", () => {
-		let gateway: ReturnType<typeof createHttpServer>;
-		let config: ConductorConfig;
-
-		beforeEach(async () => {
-			config = createTestConfig("single");
-			gateway = createHttpServer(config);
-			await gateway.start();
-		});
-
-		afterEach(async () => {
-			await gateway.stop();
-		});
-
 		it("should return 404 for unknown routes", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/unknown-route`);
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/unknown-route");
 			expect(response.status).toBe(404);
 		});
 
-		it("should return 405 for wrong method", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/health`, {
+		it("should return 404 for wrong method", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			const app = gateway.app;
+
+			const response = await app.request("/health", {
 				method: "POST",
 			});
 			expect(response.status).toBe(404);
 		});
 
 		it("should handle malformed JSON", async () => {
-			const response = await fetch(`http://127.0.0.1:${gateway.getPort()}/v1/chat`, {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config, undefined, mockRouter);
+			const app = gateway.app;
+
+			const response = await app.request("/v1/chat", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 				body: "not valid json",
 			});
-			// Express returns 400 for malformed JSON by default
 			expect(response.status).toBeGreaterThanOrEqual(400);
+		});
+	});
+
+	describe("server lifecycle", () => {
+		it("should expose getServer() returning null before start", () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			expect(gateway.getServer()).toBeNull();
+		});
+
+		it("should expose getServer() returning server after start", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			await gateway.start();
+			expect(gateway.getServer()).not.toBeNull();
+			await gateway.stop();
+		});
+
+		it("should return getServer() as null after stop", async () => {
+			const config = createTestConfig("single");
+			const gateway = createHttpServer(config);
+			await gateway.start();
+			await gateway.stop();
+			expect(gateway.getServer()).toBeNull();
 		});
 	});
 });

@@ -1,3 +1,4 @@
-export { createHttpServer } from "./http.ts";
-export type { HttpGateway, HttpGatewayConfig } from "./http.ts";
-export { DashboardWebSocket } from "./websocket.ts";
+export { createHttpServer } from "./http.js";
+export type { HttpGateway, HttpGatewayConfig } from "./http.js";
+export { createSSERouter, createDashboardSSE, DashboardSSE } from "./websocket.js";
+export type { SSEGatewayOptions, SystemStatus } from "./websocket.js";

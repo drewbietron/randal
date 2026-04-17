@@ -1,14 +1,14 @@
 /**
  * HTTP Gateway for Posse Conductor
  *
- * Express-based HTTP server providing REST API endpoints for:
+ * Hono-based HTTP server providing REST API endpoints for:
  * - Chat completions (OpenAI-compatible)
  * - Posse agent management
  * - Health monitoring
  */
 
-import cors from "cors";
-import express, { type NextFunction, type Request, type Response, type Application } from "express";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { AgentRegistry } from "../agents/registry.ts";
 import type { ConductorConfig } from "../config.ts";
 import type {
@@ -62,8 +62,8 @@ export interface TaskResult {
  * HTTP Gateway instance
  */
 export interface HttpGateway {
-	/** Express app instance */
-	app: Application;
+	/** Hono app instance */
+	app: Hono;
 	/** Start the server */
 	start(): Promise<void>;
 	/** Stop the server */
@@ -72,136 +72,52 @@ export interface HttpGateway {
 	getPort(): number;
 	/** Check if server is running */
 	isRunning(): boolean;
+	/** Get the Bun server instance (for SSE access) */
+	getServer(): ReturnType<typeof Bun.serve> | null;
 }
 
 // ============================================================================
-// Request Logging Middleware
-// ============================================================================
-
-interface RequestWithTiming extends Request {
-	startTime?: number;
-	method: string;
-	path: string;
-}
-
-function requestLogger(req: RequestWithTiming, res: Response, next: NextFunction): void {
-	req.startTime = Date.now();
-
-	res.on("finish", () => {
-		const duration = Date.now() - (req.startTime || Date.now());
-		const timestamp = new Date().toISOString();
-		console.log(`[${timestamp}] ${req.method} ${req.path} ${res.statusCode} - ${duration}ms`);
-	});
-
-	next();
-}
-
-// ============================================================================
-// Error Handling Middleware
-// ============================================================================
-
-interface ErrorResponse {
-	error: string;
-	code: string;
-	message: string;
-}
-
-function errorHandler(
-	err: Error,
-	_req: Request,
-	res: Response<ErrorResponse>,
-	_next: NextFunction,
-): void {
-	const timestamp = new Date().toISOString();
-	console.error(`[${timestamp}] Error:`, err.message);
-
-	// Determine status code based on error type
-	let statusCode = 500;
-	let errorCode = "INTERNAL_ERROR";
-
-	if (err.message.includes("not found")) {
-		statusCode = 404;
-		errorCode = "NOT_FOUND";
-	} else if (err.message.includes("unauthorized") || err.message.includes("unauthenticated")) {
-		statusCode = 401;
-		errorCode = "UNAUTHORIZED";
-	} else if (err.message.includes("forbidden")) {
-		statusCode = 403;
-		errorCode = "FORBIDDEN";
-	} else if (err.message.includes("validation") || err.message.includes("invalid")) {
-		statusCode = 400;
-		errorCode = "VALIDATION_ERROR";
-	} else if (err.message.includes("timeout")) {
-		statusCode = 504;
-		errorCode = "GATEWAY_TIMEOUT";
-	} else if (err.message.includes("no agents available")) {
-		statusCode = 503;
-		errorCode = "SERVICE_UNAVAILABLE";
-	}
-
-	res.status(statusCode).json({
-		error: err.message,
-		code: errorCode,
-		message: err.message,
-	});
-}
-
-// ============================================================================
-// Authentication Middleware
-// ============================================================================
-
-function createAuthMiddleware(authToken?: string) {
-	return (req: Request, res: Response, next: NextFunction): void => {
-		if (!authToken) {
-			next();
-			return;
-		}
-
-		const header = req.headers.authorization;
-		if (!header) {
-			res.status(401).json({
-				error: "Authorization required",
-				code: "UNAUTHORIZED",
-				message: "Missing Authorization header",
-			});
-			return;
-		}
-
-		const parts = header.split(" ");
-		if (parts.length !== 2 || parts[0] !== "Bearer") {
-			res.status(401).json({
-				error: "Invalid authorization format",
-				code: "UNAUTHORIZED",
-				message: 'Expected "Bearer <token>" format',
-			});
-			return;
-		}
-
-		if (parts[1] !== authToken) {
-			res.status(401).json({
-				error: "Invalid token",
-				code: "UNAUTHORIZED",
-				message: "The provided token is invalid",
-			});
-			return;
-		}
-
-		next();
-	};
-}
-
-// ============================================================================
-// Route Handlers
+// Server Factory
 // ============================================================================
 
 /**
- * Create health check handler
+ * Create HTTP server with all routes and middleware
  */
-function createHealthHandler(
+export function createHttpServer(
 	config: ConductorConfig,
 	registry?: AgentRegistry,
-): (req: Request, res: Response) => Promise<void> {
-	return async (_req: Request, res: Response) => {
+	router?: TaskRouter,
+): HttpGateway {
+	const gatewayConfig: HttpGatewayConfig = {
+		port: config.server.port,
+		host: config.server.host,
+		authToken: config.gateway.http.auth || undefined,
+		timeout: 120000,
+		cors: {
+			origins: ["*"],
+			credentials: true,
+		},
+	};
+
+	const app = new Hono();
+
+	// CORS middleware
+	app.use("*", cors({ origin: "*" }));
+
+	// Request logging middleware
+	app.use("*", async (c, next) => {
+		const startTime = Date.now();
+		await next();
+		const duration = Date.now() - startTime;
+		const timestamp = new Date().toISOString();
+		console.log(`[${timestamp}] ${c.req.method} ${c.req.path} ${c.res.status} - ${duration}ms`);
+	});
+
+	// ========================================================================
+	// Public routes (before auth middleware)
+	// ========================================================================
+
+	app.get("/health", async (c) => {
 		const stats = registry?.getStats() ?? {
 			total: 0,
 			online: 0,
@@ -228,134 +144,197 @@ function createHealthHandler(
 			timestamp: new Date().toISOString(),
 		};
 
-		res.status(status === "healthy" ? 200 : status === "degraded" ? 200 : 503).json(response);
-	};
-}
+		return c.json(response, status === "unhealthy" ? 503 : 200);
+	});
 
-/**
- * Create chat handler
- */
-function createChatHandler(
-	_router: TaskRouter,
-	_timeout: number,
-): (req: Request, res: Response, next: NextFunction) => Promise<void> {
-	return async (req: Request, res: Response, next: NextFunction) => {
+	// ========================================================================
+	// Authentication middleware (for all routes below)
+	// ========================================================================
+
+	app.use("*", async (c, next) => {
+		// Skip public routes that were already matched
+		if (c.req.path === "/health") {
+			return next();
+		}
+
+		const authToken = gatewayConfig.authToken;
+		if (!authToken) {
+			return next();
+		}
+
+		const header = c.req.header("Authorization");
+		if (!header) {
+			return c.json(
+				{
+					error: "Authorization required",
+					code: "UNAUTHORIZED",
+					message: "Missing Authorization header",
+				},
+				401,
+			);
+		}
+
+		const parts = header.split(" ");
+		if (parts.length !== 2 || parts[0] !== "Bearer") {
+			return c.json(
+				{
+					error: "Invalid authorization format",
+					code: "UNAUTHORIZED",
+					message: 'Expected "Bearer <token>" format',
+				},
+				401,
+			);
+		}
+
+		if (parts[1] !== authToken) {
+			return c.json(
+				{
+					error: "Invalid token",
+					code: "UNAUTHORIZED",
+					message: "The provided token is invalid",
+				},
+				401,
+			);
+		}
+
+		return next();
+	});
+
+	// ========================================================================
+	// Protected routes
+	// ========================================================================
+
+	app.post("/v1/chat", async (c) => {
 		try {
-			const chatRequest: ChatRequest = req.body;
+			const chatRequest = await c.req.json<ChatRequest>();
 
 			// Validate request
 			if (!chatRequest.messages || !Array.isArray(chatRequest.messages)) {
-				res.status(400).json({
-					error: "Invalid request",
-					code: "VALIDATION_ERROR",
-					message: "messages array is required",
-				});
-				return;
+				return c.json(
+					{
+						error: "Invalid request",
+						code: "VALIDATION_ERROR",
+						message: "messages array is required",
+					},
+					400,
+				);
 			}
 
-			// TODO: Implement actual routing and task submission
-			// For now, return a placeholder response
-			const result: TaskResult = {
-				id: crypto.randomUUID(),
-				status: "completed",
-				response: {
-					id: crypto.randomUUID(),
-					object: "chat.completion",
-					created: Math.floor(Date.now() / 1000),
-					model: chatRequest.model || "default",
-					choices: [
+			// Route to the TaskRouter if available
+			if (router) {
+				try {
+					const result = await router.route(chatRequest);
+					// Wrap in TaskResult format for backward compat
+					return c.json({
+						id: crypto.randomUUID(),
+						status: "completed",
+						response: result,
+						timestamp: new Date().toISOString(),
+					});
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					return c.json(
 						{
-							index: 0,
-							message: {
-								role: "assistant",
-								content: "Task routing not yet implemented",
-							},
-							finish_reason: "stop",
+							error: message,
+							code: "ROUTING_ERROR",
+							message,
 						},
-					],
+						502,
+					);
+				}
+			}
+
+			// Fallback if no router
+			return c.json(
+				{
+					error: "No router configured",
+					code: "SERVICE_UNAVAILABLE",
+					message: "No router configured",
 				},
-				timestamp: new Date().toISOString(),
-			};
-
-			res.json(result);
+				503,
+			);
 		} catch (err) {
-			next(err);
+			// JSON parse errors etc.
+			const message = err instanceof Error ? err.message : String(err);
+			return c.json(
+				{
+					error: message,
+					code: "BAD_REQUEST",
+					message,
+				},
+				400,
+			);
 		}
-	};
-}
+	});
 
-/**
- * Create agents list handler (posse mode only)
- */
-function createAgentsHandler(
-	config: ConductorConfig,
-	registry?: AgentRegistry,
-): (req: Request, res: Response) => void {
-	return (_req: Request, res: Response) => {
+	// Posse-only routes
+	app.get("/posse/agents", (c) => {
 		if (config.mode !== "posse") {
-			res.status(403).json({
-				error: "Not available in single mode",
-				code: "FORBIDDEN",
-				message: "Posse endpoints only available in posse mode",
-			});
-			return;
+			return c.json(
+				{
+					error: "Not available in single mode",
+					code: "FORBIDDEN",
+					message: "Posse endpoints only available in posse mode",
+				},
+				403,
+			);
 		}
 
 		if (!registry) {
-			res.status(503).json({
-				error: "Registry not available",
-				code: "SERVICE_UNAVAILABLE",
-				message: "Agent registry is not initialized",
-			});
-			return;
+			return c.json(
+				{
+					error: "Registry not available",
+					code: "SERVICE_UNAVAILABLE",
+					message: "Agent registry is not initialized",
+				},
+				503,
+			);
 		}
 
 		const agents = registry.getAllAgents();
-		res.json({
+		return c.json({
 			agents,
 			total: agents.length,
 			timestamp: new Date().toISOString(),
 		});
-	};
-}
+	});
 
-/**
- * Create posse command handler
- */
-function createCommandHandler(
-	config: ConductorConfig,
-	registry?: AgentRegistry,
-): (req: Request, res: Response) => Promise<void> {
-	return async (req: Request, res: Response) => {
+	app.post("/posse/command", async (c) => {
 		if (config.mode !== "posse") {
-			res.status(403).json({
-				error: "Not available in single mode",
-				code: "FORBIDDEN",
-				message: "Posse endpoints only available in posse mode",
-			});
-			return;
+			return c.json(
+				{
+					error: "Not available in single mode",
+					code: "FORBIDDEN",
+					message: "Posse endpoints only available in posse mode",
+				},
+				403,
+			);
 		}
 
 		if (!registry) {
-			res.status(503).json({
-				error: "Registry not available",
-				code: "SERVICE_UNAVAILABLE",
-				message: "Agent registry is not initialized",
-			});
-			return;
+			return c.json(
+				{
+					error: "Registry not available",
+					code: "SERVICE_UNAVAILABLE",
+					message: "Agent registry is not initialized",
+				},
+				503,
+			);
 		}
 
-		const command: PosseCommand = req.body;
-		const targetAgent = req.query.agent as string | undefined;
+		const command = await c.req.json<PosseCommand>();
+		const targetAgent = c.req.query("agent");
 
 		// Validate command
 		if (!command.command) {
-			res.status(400).json({
-				error: "Invalid command",
-				code: "VALIDATION_ERROR",
-				message: "command field is required",
-			});
-			return;
+			return c.json(
+				{
+					error: "Invalid command",
+					code: "VALIDATION_ERROR",
+					message: "command field is required",
+				},
+				400,
+			);
 		}
 
 		// Determine target agents
@@ -406,40 +385,36 @@ function createCommandHandler(
 			success: results.every((r) => r.success),
 		};
 
-		res.json(result);
-	};
-}
+		return c.json(result);
+	});
 
-/**
- * Create detailed health handler
- */
-function createPosseHealthHandler(
-	config: ConductorConfig,
-	registry?: AgentRegistry,
-): (req: Request, res: Response) => void {
-	return (_req: Request, res: Response) => {
+	app.get("/posse/health", (c) => {
 		if (config.mode !== "posse") {
-			res.status(403).json({
-				error: "Not available in single mode",
-				code: "FORBIDDEN",
-				message: "Posse endpoints only available in posse mode",
-			});
-			return;
+			return c.json(
+				{
+					error: "Not available in single mode",
+					code: "FORBIDDEN",
+					message: "Posse endpoints only available in posse mode",
+				},
+				403,
+			);
 		}
 
 		if (!registry) {
-			res.status(503).json({
-				error: "Registry not available",
-				code: "SERVICE_UNAVAILABLE",
-				message: "Agent registry is not initialized",
-			});
-			return;
+			return c.json(
+				{
+					error: "Registry not available",
+					code: "SERVICE_UNAVAILABLE",
+					message: "Agent registry is not initialized",
+				},
+				503,
+			);
 		}
 
 		const agents = registry.getAllAgents();
 		const stats = registry.getStats();
 
-		res.json({
+		return c.json({
 			posse: {
 				name: registry.getPosseName(),
 				mode: config.mode,
@@ -461,116 +436,60 @@ function createPosseHealthHandler(
 				})),
 			},
 		});
-	};
-}
+	});
 
-// ============================================================================
-// Server Factory
-// ============================================================================
+	// ========================================================================
+	// Catch-all for 404
+	// ========================================================================
 
-/**
- * Create HTTP server with all routes and middleware
- */
-export function createHttpServer(
-	config: ConductorConfig,
-	registry?: AgentRegistry,
-	router?: TaskRouter,
-): HttpGateway {
-	const gatewayConfig: HttpGatewayConfig = {
-		port: config.server.port,
-		host: config.server.host,
-		authToken: config.gateway.http.auth || undefined,
-		timeout: 120000,
-		cors: {
-			origins: ["*"],
-			credentials: true,
-		},
-	};
+	app.all("*", (c) => {
+		return c.json(
+			{
+				error: "Not found",
+				code: "NOT_FOUND",
+				message: `Cannot ${c.req.method} ${c.req.path}`,
+			},
+			404,
+		);
+	});
 
-	const app = express();
+	// ========================================================================
+	// Server lifecycle
+	// ========================================================================
 
-	// Middleware
-	app.use(
-		cors({
-			origin: gatewayConfig.cors?.origins ?? "*",
-			credentials: gatewayConfig.cors?.credentials ?? true,
-		}),
-	);
-	app.use(express.json({ limit: "10mb" }));
-	app.use(requestLogger);
-
-	// Health endpoint BEFORE auth middleware (must be publicly accessible for healthchecks)
-	app.get("/health", createHealthHandler(config, registry));
-
-	// Authentication middleware (if configured) — applies to all routes below
-	const authMiddleware = createAuthMiddleware(gatewayConfig.authToken);
-	app.use(authMiddleware);
-
-	// Routes (auth-protected)
-	if (router && gatewayConfig.timeout) {
-		app.post("/v1/chat", createChatHandler(router, gatewayConfig.timeout));
-	}
-
-	// Posse-only routes
-	app.get("/posse/agents", createAgentsHandler(config, registry));
-	app.post("/posse/command", createCommandHandler(config, registry));
-	app.get("/posse/health", createPosseHealthHandler(config, registry));
-
-	// Error handling
-	app.use(errorHandler);
-
-	// Server instance
-	let server: ReturnType<typeof app.listen> | null = null;
-	let isRunning = false;
+	let server: ReturnType<typeof Bun.serve> | null = null;
+	let running = false;
 	let actualPort: number = gatewayConfig.port;
 
 	return {
 		app,
 
 		async start(): Promise<void> {
-			if (isRunning) {
+			if (running) {
 				console.warn("HTTP server already running");
 				return;
 			}
 
-			return new Promise((resolve, reject) => {
-				server = app.listen(gatewayConfig.port, gatewayConfig.host, () => {
-					isRunning = true;
-					// Get the actual port (in case port 0 was used)
-					const addr = server?.address();
-					if (addr && typeof addr === "object") {
-						actualPort = addr.port;
-					}
-					console.log(`HTTP Gateway listening on http://${gatewayConfig.host}:${actualPort}`);
-					resolve();
-				});
-
-				server.on("error", (err: Error) => {
-					reject(err);
-				});
+			server = Bun.serve({
+				port: gatewayConfig.port,
+				hostname: gatewayConfig.host,
+				fetch: app.fetch,
 			});
+
+			running = true;
+			actualPort = server.port ?? gatewayConfig.port;
+			console.log(`HTTP Gateway listening on http://${gatewayConfig.host}:${actualPort}`);
 		},
 
 		async stop(): Promise<void> {
-			if (!isRunning || !server) {
+			if (!running || !server) {
 				return;
 			}
 
-			return new Promise((resolve, reject) => {
-				if (server) {
-					server.close((err: Error | undefined) => {
-						if (err) {
-							reject(err);
-						} else {
-							isRunning = false;
-							console.log("HTTP Gateway stopped");
-							resolve();
-						}
-					});
-				} else {
-					resolve();
-				}
-			});
+			server.stop();
+			running = false;
+			server = null;
+			console.log("HTTP Gateway stopped");
 		},
 
 		getPort(): number {
@@ -578,7 +497,11 @@ export function createHttpServer(
 		},
 
 		isRunning(): boolean {
-			return isRunning;
+			return running;
+		},
+
+		getServer(): ReturnType<typeof Bun.serve> | null {
+			return server;
 		},
 	};
 }
