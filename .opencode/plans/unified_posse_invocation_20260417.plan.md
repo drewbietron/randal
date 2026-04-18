@@ -363,7 +363,7 @@ Gateway restart:
 - **Depends on**: Step 3
 - **Verify**: `bun test packages/gateway/src/__tests__/delegation.test.ts`
 - **Done Criteria**: All tests pass
-- `[ ] pending`
+- `[x] done — fac3fe8`
 
 ### Step 5: Add POST /posse/job endpoint [backend]
 - **Action**: modify
@@ -383,7 +383,7 @@ Gateway restart:
 - **Depends on**: Steps 3, 6
 - **Verify**: `curl -X POST /posse/job -d '{"prompt":"test"}' | jq .` returns routing decision
 - **Done Criteria**: Endpoint creates local tracking job, submits to remote, returns routing info
-- `[ ] pending`
+- `[x] done — f1f5b84`
 
 ### Step 6: Expose mesh routeTask in gateway coordinator [backend]
 - **Action**: modify
@@ -396,7 +396,7 @@ Gateway restart:
 - **Depends on**: None
 - **Verify**: Type check passes with the new method
 - **Done Criteria**: meshCoordinator exposes `routeTask()` alongside `routeDryRun()`
-- `[ ] pending`
+- `[x] done — 64b23cf`
 
 ### Step 7: Wire delegation recovery into gateway startup [backend]
 - **Action**: modify
