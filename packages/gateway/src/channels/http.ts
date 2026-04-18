@@ -912,10 +912,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			};
 			remoteJobId = remoteData.id ?? remoteData.jobId ?? "";
 			if (!remoteJobId) {
-				return c.json(
-					{ error: "Remote agent did not return a job ID" },
-					502,
-				);
+				return c.json({ error: "Remote agent did not return a job ID" }, 502);
 			}
 		} catch (err) {
 			return c.json(
@@ -948,13 +945,9 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		saveJob(localJob);
 
 		// Start async delegation tracker
-		const tracker = new DelegatedJobTracker(
-			localJob.id,
-			remoteEndpoint,
-			remoteJobId,
-			eventBus,
-			{ authToken: peerAuthToken },
-		);
+		const tracker = new DelegatedJobTracker(localJob.id, remoteEndpoint, remoteJobId, eventBus, {
+			authToken: peerAuthToken,
+		});
 		tracker.start();
 		activeDelegationTrackers.set(localJob.id, tracker);
 

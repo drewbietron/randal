@@ -73,11 +73,7 @@ function mockFetchSequence(
 /**
  * Wait for a condition with timeout.
  */
-async function waitFor(
-	predicate: () => boolean,
-	timeoutMs = 5000,
-	intervalMs = 50,
-): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 5000, intervalMs = 50): Promise<void> {
 	const start = Date.now();
 	while (!predicate()) {
 		if (Date.now() - start > timeoutMs) {
@@ -204,9 +200,9 @@ describe("DelegatedJobTracker", () => {
 
 		const completeEvent = events.find((e) => e.type === "job.complete");
 		expect(completeEvent).toBeDefined();
-		expect(completeEvent!.jobId).toBe("local-1");
-		expect(completeEvent!.data.summary).toBe("All done");
-		expect(completeEvent!.data.filesChanged).toEqual(["src/index.ts"]);
+		expect(completeEvent?.jobId).toBe("local-1");
+		expect(completeEvent?.data.summary).toBe("All done");
+		expect(completeEvent?.data.filesChanged).toEqual(["src/index.ts"]);
 
 		// Should have auto-stopped
 		const state = tracker.getState();
@@ -233,7 +229,7 @@ describe("DelegatedJobTracker", () => {
 
 		const failEvent = events.find((e) => e.type === "job.failed");
 		expect(failEvent).toBeDefined();
-		expect(failEvent!.data.error).toBe("Compilation error");
+		expect(failEvent?.data.error).toBe("Compilation error");
 
 		const state = tracker.getState();
 		expect(state.status).toBe("failed");
@@ -298,7 +294,7 @@ describe("DelegatedJobTracker", () => {
 
 		const failEvent = events.find((e) => e.type === "job.failed");
 		expect(failEvent).toBeDefined();
-		expect(failEvent!.data.error).toContain("3 consecutive attempts");
+		expect(failEvent?.data.error).toContain("3 consecutive attempts");
 
 		const state = tracker.getState();
 		expect(state.status).toBe("failed");
@@ -371,9 +367,7 @@ describe("DelegatedJobTracker", () => {
 		let capturedHeaders: Record<string, string> = {};
 
 		globalThis.fetch = mock(async (_url: string | URL | Request, init?: RequestInit) => {
-			capturedHeaders = Object.fromEntries(
-				Object.entries(init?.headers ?? {}),
-			);
+			capturedHeaders = Object.fromEntries(Object.entries(init?.headers ?? {}));
 			return new Response(JSON.stringify({ status: "complete", summary: "done" }), {
 				status: 200,
 			});
@@ -402,13 +396,9 @@ describe("DelegatedJobTracker", () => {
 			});
 		}) as unknown as typeof globalThis.fetch;
 
-		const tracker = new DelegatedJobTracker(
-			"local-1",
-			"http://remote:7600",
-			"remote-job-42",
-			bus,
-			{ pollIntervalMs: 50 },
-		);
+		const tracker = new DelegatedJobTracker("local-1", "http://remote:7600", "remote-job-42", bus, {
+			pollIntervalMs: 50,
+		});
 		tracker.start();
 
 		await waitFor(() => capturedUrl.length > 0, 3000);
@@ -479,7 +469,7 @@ describe("DelegatedJobTracker.recover()", () => {
 		const tracker = DelegatedJobTracker.recover(job, bus);
 		expect(tracker).not.toBeNull();
 
-		const state = tracker!.getState();
+		const state = tracker?.getState();
 		expect(state.remoteJobId).toBe("remote-42");
 		expect(state.remoteEndpoint).toBe("http://alpha:7600");
 		expect(state.status).toBe("running");
@@ -585,12 +575,12 @@ describe("createDelegatedJob()", () => {
 
 		// Delegation metadata
 		expect(job.metadata).toBeDefined();
-		expect(job.metadata!["delegation.remoteAgent"]).toBe("agent-alpha");
-		expect(job.metadata!["delegation.remoteEndpoint"]).toBe("http://alpha:7600");
-		expect(job.metadata!["delegation.remoteJobId"]).toBe("remote-job-99");
-		expect(job.metadata!["delegation.status"]).toBe("running");
-		expect(job.metadata!["delegation.routingScore"]).toBe("0.850");
-		expect(job.metadata!["delegation.routingReason"]).toBe("Best match for coding task");
+		expect(job.metadata?.["delegation.remoteAgent"]).toBe("agent-alpha");
+		expect(job.metadata?.["delegation.remoteEndpoint"]).toBe("http://alpha:7600");
+		expect(job.metadata?.["delegation.remoteJobId"]).toBe("remote-job-99");
+		expect(job.metadata?.["delegation.status"]).toBe("running");
+		expect(job.metadata?.["delegation.routingScore"]).toBe("0.850");
+		expect(job.metadata?.["delegation.routingReason"]).toBe("Best match for coding task");
 
 		// Delegations array
 		expect(job.delegations).toHaveLength(1);
@@ -628,7 +618,7 @@ describe("createDelegatedJob()", () => {
 			"remote-1",
 		);
 
-		expect(job.metadata!["custom.key"]).toBe("custom-value");
-		expect(job.metadata!["delegation.remoteAgent"]).toBe("agent-alpha");
+		expect(job.metadata?.["custom.key"]).toBe("custom-value");
+		expect(job.metadata?.["delegation.remoteAgent"]).toBe("agent-alpha");
 	});
 });

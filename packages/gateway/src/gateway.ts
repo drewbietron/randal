@@ -17,6 +17,7 @@ import {
 	MeilisearchMeshRegistry,
 	createInstanceFromConfig,
 	dryRunRoute,
+	routeTask,
 } from "@randal/mesh";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
@@ -50,7 +51,11 @@ async function waitForMeilisearch(
 	maxAttempts = 15,
 	intervalMs = 2000,
 ): Promise<void> {
-	logger.info("Initializing MeiliSearch client", { url, urlType: typeof url, urlValue: JSON.stringify(url) });
+	logger.info("Initializing MeiliSearch client", {
+		url,
+		urlType: typeof url,
+		urlValue: JSON.stringify(url),
+	});
 	const client = new MeiliSearch({ host: url, apiKey });
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
@@ -307,6 +312,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 				},
 			);
 
+			// Track discovered instances so both routeDryRun and routeTask share them
+			let cachedInstances: MeshInstance[] = [];
+
 			// Build meshCoordinator adapter expected by HTTP app
 			meshCoordinator = {
 				getInstances: () => {
@@ -322,12 +330,18 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 						scores: [],
 					};
 				},
+				routeTask: async (_prompt: string) => {
+					// Not available until discovery completes
+					return null;
+				},
 			};
 
 			// Warm the mesh coordinator with a discover call
 			meshRegistry
 				.discover()
 				.then((instances) => {
+					cachedInstances = instances;
+
 					meshCoordinator.getInstances = () =>
 						instances.map((inst: MeshInstance) => ({
 							id: inst.instanceId,
@@ -338,6 +352,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 							role: inst.role ?? "",
 							expertise: inst.expertise ?? "",
 							lastSeen: inst.lastHeartbeat,
+							endpoint: inst.endpoint,
 						}));
 
 					meshCoordinator.routeDryRun = async (prompt: string) => {
@@ -361,6 +376,24 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 								breakdown: d.breakdown,
 							})),
 						};
+					};
+
+					meshCoordinator.routeTask = async (prompt: string) => {
+						// Re-discover instances to get fresh state
+						const freshInstances = await registry.discover().catch(() => cachedInstances);
+						cachedInstances = freshInstances;
+
+						// Embed the task prompt for semantic scoring (non-fatal)
+						const taskVector = meshEmbedding
+							? await meshEmbedding.embed(prompt).catch(() => null)
+							: null;
+
+						const decision = routeTask(freshInstances, {
+							prompt,
+							taskVector: taskVector ?? undefined,
+						});
+
+						return decision;
 					};
 				})
 				.catch((err) => {
