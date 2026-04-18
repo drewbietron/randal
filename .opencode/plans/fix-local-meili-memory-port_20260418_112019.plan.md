@@ -207,6 +207,9 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 - Step 2 completed in iteration 2. Branch: fix/local-meili-memory-port
 - Adapted scope beyond the original file list because the checked-in OpenCode config still launches `tools/mcp-memory/index.ts`; updated `tools/mcp-memory/types.ts` and `tools/mcp-memory/init.ts` so both active memory entrypoints now share the same `MEILI_URL`/auth fallback contract.
 - Verification: targeted smoke checks confirmed `agent/opencode-config/opencode.json` now passes through env-driven `MEILI_URL`/auth values instead of hardcoding `:7700`, `agent/opencode-config/plugins/chat-history.ts` defaults to `http://localhost:7701` and honors explicit `MEILI_URL=http://localhost:7700`, and the shared `tools/mcp-memory` env resolution now defaults to `http://localhost:7701` while accepting legacy `MEILI_API_KEY`.
+- Step 3 completed in iteration 3. Branch: fix/local-meili-memory-port
+- `packages/cli/src/commands/serve.ts` now derives local Meilisearch startup settings from explicit localhost-style URLs only: canonical local `http://localhost:7701` publishes `7701:7700`, explicit legacy `http://127.0.0.1:7700` still publishes `127.0.0.1:7700:7700`, and non-local URLs skip local auto-start instead of being misclassified.
+- Verification: `bun test tools/mcp-memory-server.integration.test.ts` (8 pass after adding local-resolution coverage) and targeted `resolveLocalMeilisearchTarget()` smoke checks for canonical local, explicit legacy local, and remote-hosted endpoints.
 
 ## Planning Progress
 - [x] Requirements gathered (Turn 1)

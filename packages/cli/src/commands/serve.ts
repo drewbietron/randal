@@ -2,6 +2,42 @@ import { type RandalConfig, loadConfig } from "@randal/core";
 import { type CliContext, requireConfig } from "../cli.js";
 import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
+export interface LocalMeilisearchTarget {
+	hostname: "localhost" | "127.0.0.1";
+	port: number;
+	httpAddr: string;
+	dockerPublish: string;
+}
+
+export function resolveLocalMeilisearchTarget(url: string): LocalMeilisearchTarget | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(url);
+	} catch {
+		return null;
+	}
+
+	if (parsed.protocol !== "http:") {
+		return null;
+	}
+
+	if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") {
+		return null;
+	}
+
+	const port = parsed.port ? Number.parseInt(parsed.port, 10) : 80;
+	if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+		return null;
+	}
+
+	return {
+		hostname: parsed.hostname,
+		port,
+		httpAddr: `${parsed.hostname}:${port}`,
+		dockerPublish: parsed.hostname === "127.0.0.1" ? `127.0.0.1:${port}:7700` : `${port}:7700`,
+	};
+}
+
 /**
  * Auto-start Meilisearch if the config uses it and it's not already running.
  * Generates MEILI_MASTER_KEY in .env if missing.
@@ -13,7 +49,8 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	// Skip if explicitly disabled (e.g., Railway agent connecting to external Meilisearch)
 	if (process.env.RANDAL_SKIP_MEILISEARCH === "true") return false;
 
-	const url = config.memory.url || "http://localhost:7700";
+	const url = config.memory.url || "http://localhost:7701";
+	const localTarget = resolveLocalMeilisearchTarget(url);
 	let envModified = false;
 
 	// Resolve master key: check env, generate if missing
@@ -56,6 +93,13 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 		// Not running — start it
 	}
 
+	if (!localTarget) {
+		console.log(
+			`\x1b[33m  ! Meilisearch at ${url} is not a local localhost endpoint; skipping local auto-start\x1b[0m`,
+		);
+		return envModified;
+	}
+
 	const { mkdirSync } = await import("node:fs");
 	const { resolve } = await import("node:path");
 	const dbPath = resolve(process.env.HOME ?? ".", ".randal/meili-data");
@@ -82,11 +126,14 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	if (which.exitCode === 0) {
 		const binary = which.stdout.toString().trim();
 		console.log("  Starting Meilisearch...");
-		const proc = Bun.spawn([binary, "--db-path", dbPath, "--master-key", masterKey], {
-			stdout: "ignore",
-			stderr: "ignore",
-			stdin: "ignore",
-		});
+		const proc = Bun.spawn(
+			[binary, "--db-path", dbPath, "--master-key", masterKey, "--http-addr", localTarget.httpAddr],
+			{
+				stdout: "ignore",
+				stderr: "ignore",
+				stdin: "ignore",
+			},
+		);
 		proc.unref();
 
 		// Wait for it to be ready (up to 5s)
@@ -123,7 +170,7 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 			"--restart",
 			"unless-stopped",
 			"-p",
-			"7700:7700",
+			localTarget.dockerPublish,
 			"-v",
 			`${dbPath}:/meili_data`,
 			"-e",
