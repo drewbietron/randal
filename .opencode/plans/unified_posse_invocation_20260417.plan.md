@@ -411,7 +411,7 @@ Gateway restart:
 - **Depends on**: Steps 3, 5
 - **Verify**: Gateway restart with a persisted delegated job file should resume polling
 - **Done Criteria**: Delegated jobs survive gateway restart
-- `[ ] pending`
+- `[x] done — 9c5dfe0`
 
 ### Step 8: Make POST /job posse-aware (optional auto-routing) [backend]
 - **Action**: modify
@@ -426,7 +426,7 @@ Gateway restart:
 - **Depends on**: Steps 5, 6
 - **Verify**: POST /job with posse config auto-routes; POST /job?local=true always runs locally
 - **Done Criteria**: Single endpoint handles both local and posse execution transparently
-- `[ ] pending`
+- `[x] done — ed9509e`
 
 ### Step 9: Add posse job listing endpoint [backend]
 - **Action**: modify
@@ -439,7 +439,7 @@ Gateway restart:
 - **Depends on**: Steps 3, 5
 - **Verify**: `curl /posse/jobs | jq .` shows delegated job list
 - **Done Criteria**: Users can see all posse-routed jobs and their status
-- `[ ] pending`
+- `[x] done — 77db550`
 
 ### Step 10: Close PR #74 with rationale [docs]
 - **Action**: run
