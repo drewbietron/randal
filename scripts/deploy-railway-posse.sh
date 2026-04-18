@@ -190,8 +190,10 @@ deploy_agent() {
     run_cmd railway variable set OPENROUTER_API_KEY="$OPENROUTER_API_KEY" -s "$agent_name"
   elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
     run_cmd railway variable set ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" -s "$agent_name"
+  elif [ -n "${OPENAI_API_KEY:-}" ]; then
+    run_cmd railway variable set OPENAI_API_KEY="$OPENAI_API_KEY" -s "$agent_name"
   else
-    log_warning "  No API key in environment. Set OPENROUTER_API_KEY or ANTHROPIC_API_KEY manually."
+    log_warning "  No API key in environment. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY manually."
   fi
 
   # Deploy the Randal Docker image to this service

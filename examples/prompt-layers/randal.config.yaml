@@ -40,7 +40,7 @@ runner:
 
 credentials:
   envFile: ./.env
-  allow: [ANTHROPIC_API_KEY]
+  allow: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
   inherit: [PATH, HOME, SHELL, TERM]
 
 gateway:

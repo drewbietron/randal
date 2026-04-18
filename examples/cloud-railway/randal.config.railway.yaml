@@ -14,6 +14,7 @@ credentials:
   # 'allow' filters keys from the .env file (for local dev)
   allow:
     - ANTHROPIC_API_KEY      # Optional - for direct Anthropic access
+    - OPENAI_API_KEY         # Optional - for direct OpenAI access
     - OPENROUTER_API_KEY     # Alternative - access multiple models via OpenRouter
     - RANDAL_API_TOKEN
     - RANDAL_HOOK_TOKEN
@@ -33,6 +34,7 @@ credentials:
     - SHELL
     - TERM
     - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
     - OPENROUTER_API_KEY
     - TAVILY_API_KEY
     - GH_TOKEN

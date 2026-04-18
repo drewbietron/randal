@@ -33,7 +33,7 @@ runner:
 # Credentials: API keys and database access
 credentials:
   envFile: ./.env
-  allow: [ANTHROPIC_API_KEY, DATABASE_URL]
+  allow: [ANTHROPIC_API_KEY, OPENAI_API_KEY, DATABASE_URL]
 
 # Gateway: HTTP API for ticket system integration
 gateway:
