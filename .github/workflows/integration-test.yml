@@ -17,11 +17,7 @@ on:
   workflow_dispatch: # manual trigger
 
 env:
-  # RAILWAY_API_TOKEN: account- or workspace-scoped token for management API
-  # calls AND CLI deployments. Created from Account Settings > Tokens (not
-  # from a project's settings — those are project-scoped and can't target
-  # newly created projects).
-  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
   RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
   RAILWAY_API: https://backboard.railway.com/graphql/v2
@@ -34,47 +30,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Generate auth tokens for this run
+      # Generate random auth tokens for this CI run
       - name: Generate auth tokens
         run: |
           echo "RANDAL_API_TOKEN=$(uuidgen)" >> "$GITHUB_ENV"
           echo "MEILI_MASTER_KEY=$(uuidgen)" >> "$GITHUB_ENV"
 
-      # Verify the API token is valid and determine its type.
-      # Account/workspace tokens can run `whoami` and manage all projects.
-      # Project tokens return "Unauthorized" for whoami but can still call
-      # some management mutations — however they can't deploy to OTHER projects.
-      - name: Verify Railway token
-        run: |
-          echo "Checking Railway API token type..."
-          RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"query":"{ me { name email } }"}')
-          echo "Token check: $RESULT"
-
-          if echo "$RESULT" | jq -e '.data.me.name' > /dev/null 2>&1; then
-            echo "Token type: account/workspace token (can manage all projects)"
-          elif echo "$RESULT" | jq -e '.errors' > /dev/null 2>&1; then
-            echo "WARNING: Token may be a project-scoped token."
-            echo "Account tokens are required for deploying to ephemeral CI projects."
-            echo "Create one at: https://railway.com/account/tokens"
-            echo "Then set it as the RAILWAY_API_TOKEN secret in GitHub."
-          fi
-
       # Create an ephemeral Railway project for this CI run
-      # NOTE: `railway project create` does not exist. `railway init --name` requires
-      # interactive workspace selection when the token has access to multiple workspaces.
-      # The Railway GraphQL API is the only reliable non-interactive approach.
       - name: Create Railway project
         id: create-project
         run: |
           echo "Creating Railway project: $PROJECT_NAME"
 
-          # Build the GraphQL payload safely with jq + GraphQL variables.
-          # We only need project ID + environment ID from the create response.
-          # Services are always created explicitly below (projectCreate may not
-          # include auto-created services in its response).
           if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" --arg ws "$RAILWAY_WORKSPACE_ID" \
               '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
@@ -84,12 +51,11 @@ jobs:
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
           echo "API Response: $RESULT"
 
-          # Validate the response
           PROJECT_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.id')
           ENV_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.environments.edges[0].node.id')
 
@@ -101,14 +67,20 @@ jobs:
 
           echo "Project created: $PROJECT_ID"
           echo "Environment: $ENV_ID"
+          echo "RAILWAY_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
+          echo "RAILWAY_ENVIRONMENT_ID=$ENV_ID" >> "$GITHUB_ENV"
 
-          # Always create a service explicitly — don't rely on auto-created
-          # services from projectCreate (they may not appear in the response).
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "project_created=true" >> "$GITHUB_OUTPUT"
+
+      # Create a service inside the project
+      - name: Create Railway service
+        run: |
           echo "Creating service..."
-          SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
+          SVC_PAYLOAD=$(jq -n --arg pid "$RAILWAY_PROJECT_ID" \
             '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
           SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$SVC_PAYLOAD")
           echo "Service API Response: $SVC_RESULT"
@@ -119,19 +91,11 @@ jobs:
             echo "$SVC_RESULT" | jq .
             exit 1
           fi
+
           echo "Service created: $SERVICE_ID"
-
-          # Export IDs as environment variables for subsequent steps.
-          echo "RAILWAY_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
           echo "RAILWAY_SERVICE_ID=$SERVICE_ID" >> "$GITHUB_ENV"
-          echo "RAILWAY_ENVIRONMENT_ID=$ENV_ID" >> "$GITHUB_ENV"
 
-          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
-          echo "project_created=true" >> "$GITHUB_OUTPUT"
-
-      # Set environment variables on the Railway service via GraphQL API.
-      # `railway variable set` has no --project flag and unreliable env var
-      # support for ephemeral projects, so we use the API directly.
+      # Set environment variables on the service
       - name: Set environment variables
         run: |
           upsert_var() {
@@ -144,10 +108,10 @@ jobs:
               --arg v "$val" \
               '{query: "mutation ($input: VariableUpsertInput!) { variableUpsert(input: $input) }",
                 variables: {input: {projectId: $pid, serviceId: $sid, environmentId: $eid, name: $k, value: $v}}}')
-            RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            curl -sf -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "$PAYLOAD")
+              -d "$PAYLOAD" > /dev/null
             echo "  Set $key"
           }
 
@@ -157,50 +121,48 @@ jobs:
           upsert_var "RANDAL_CONFIG" "randal.config.ci.yaml"
           upsert_var "PORT" "7600"
 
-          # Only set OpenRouter key if available (needed for job submission test)
           if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
             upsert_var "OPENROUTER_API_KEY" "${{ secrets.OPENROUTER_API_KEY }}"
           fi
           echo "Environment variables set."
 
-      # Deploy via Railway CLI — push local source to the new project.
-      # serviceConnect requires GitHub OAuth at the account level, which isn't
-      # available with API tokens. `railway up` uploads the checked-out source
-      # directly, sidestepping that requirement.
-      #
-      # We use RAILWAY_API_TOKEN (account/workspace scope) with explicit
-      # --project, --environment, --service flags. Account tokens require
-      # --project to be specified (project tokens infer it).
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy to Railway
+      # Connect the service to the GitHub repo — triggers auto-deploy
+      - name: Deploy via serviceConnect
         run: |
-          echo "Deploying via Railway CLI (railway up)..."
-          echo "  Project:     $RAILWAY_PROJECT_ID"
-          echo "  Service:     $RAILWAY_SERVICE_ID"
-          echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          echo "Connecting service to repo branch: $BRANCH"
 
-          # RAILWAY_API_TOKEN is set at workflow level from secrets.
-          # Use --project since account tokens aren't scoped to a project.
-          railway up \
-            --project "$RAILWAY_PROJECT_ID" \
-            --service "$RAILWAY_SERVICE_ID" \
-            --environment "$RAILWAY_ENVIRONMENT_ID" \
-            --ci
+          CONNECT_RESULT=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg sid "$RAILWAY_SERVICE_ID" \
+              --arg repo "drewbietron/randal" \
+              --arg branch "$BRANCH" \
+              '{query: "mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }", variables: {id: $sid, input: {repo: $repo, branch: $branch}}}')")
 
-      # Wait for the deployment to become healthy
-      - name: Wait for health
+          echo "Connect result: $CONNECT_RESULT"
+
+          if echo "$CONNECT_RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+            echo "ERROR: Failed to connect service to repo"
+            echo "$CONNECT_RESULT" | jq .
+            exit 1
+          fi
+
+          echo "Service connected — Railway will build and deploy automatically"
+
+      # Generate a domain and wait for the deployment to become healthy
+      - name: Generate domain & wait for health
         id: health-check
         run: |
-          # Generate a Railway-provided domain via GraphQL API
+          # Generate a Railway-provided domain
           DOMAIN_PAYLOAD=$(jq -n \
             --arg sid "$RAILWAY_SERVICE_ID" \
             --arg eid "$RAILWAY_ENVIRONMENT_ID" \
             '{query: "mutation ($sid: String!, $eid: String!) { serviceDomainCreate(input: {serviceId: $sid, environmentId: $eid}) { domain } }",
               variables: {sid: $sid, eid: $eid}}')
           DOMAIN_RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$DOMAIN_PAYLOAD")
           echo "Domain API Response: $DOMAIN_RESULT"
@@ -241,16 +203,13 @@ jobs:
           chmod +x tests/integration/smoke.sh
           ./tests/integration/smoke.sh
 
-      # Always tear down the Railway project, even on failure
-      # NOTE: `railway delete` / `railway project delete` may fail in non-interactive
-      # CI when multiple workspaces are accessible. Use the GraphQL API for reliable cleanup.
+      # Always tear down the ephemeral project
       - name: Teardown Railway project
         if: always() && steps.create-project.outputs.project_created == 'true'
         run: |
           PROJECT_ID="${{ steps.create-project.outputs.project_id }}"
           echo "Tearing down Railway project: $PROJECT_NAME (ID: $PROJECT_ID)"
 
-          # Fall back to GITHUB_ENV if step output is empty
           if [ -z "$PROJECT_ID" ]; then
             PROJECT_ID="$RAILWAY_PROJECT_ID"
           fi
@@ -259,7 +218,7 @@ jobs:
             DEL_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
               '{query: "mutation ($pid: String!) { projectDelete(id: $pid) }", variables: {pid: $pid}}')
             RESULT=$(curl -s -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$DEL_PAYLOAD") || true
             echo "Teardown API Response: $RESULT"
