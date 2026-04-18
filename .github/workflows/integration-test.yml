@@ -178,9 +178,11 @@ jobs:
           echo "Deployment URL: $DEPLOY_URL"
           echo "BASE_URL=$DEPLOY_URL" >> "$GITHUB_ENV"
 
-          # Poll /health every 10s for up to 5 minutes
+          # Poll /health every 10s for up to 10 minutes
+          # Railway Docker builds with cold cache can take 5-8 min
+          # for the full image (Chromium + Meilisearch + OpenCode)
           echo "Waiting for deployment to become healthy..."
-          ATTEMPTS=30
+          ATTEMPTS=60
           for i in $(seq 1 $ATTEMPTS); do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOY_URL/health" 2>/dev/null || true)
             if [ "$HTTP_CODE" = "200" ]; then
