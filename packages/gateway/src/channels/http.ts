@@ -806,7 +806,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 
 	// ---- Posse endpoints ----
 
-	// Posse info (R5.1)
+	// Posse info (R5.1) — enhanced with delegation stats
 	app.get("/posse", async (c) => {
 		if (!config.posse) {
 			return c.json({ error: "Not a posse member" }, 404);
@@ -821,10 +821,17 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			);
 		}
 
+		// Count delegation stats from active trackers and persisted jobs
+		const activeDelegations = activeDelegationTrackers.size;
+		const allJobs = listJobs();
+		const totalDelegations = allJobs.filter((j) => j.metadata?.["delegation.remoteJobId"]).length;
+
 		return c.json({
 			posse: config.posse,
 			agents,
 			self: config.name,
+			activeDelegations,
+			totalDelegations,
 		});
 	});
 
@@ -1079,6 +1086,49 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			},
 			201,
 		);
+	});
+
+	// List posse-delegated jobs
+	app.get("/posse/jobs", (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		// Collect all jobs with delegation metadata (from disk + active trackers)
+		const allJobs = listJobs();
+		const delegatedJobs = allJobs
+			.filter((j) => j.metadata?.["delegation.remoteJobId"])
+			.map((j) => {
+				const tracker = activeDelegationTrackers.get(j.id);
+				const trackerState = tracker?.getState();
+
+				return {
+					localJobId: j.id,
+					remoteAgent: j.metadata?.["delegation.remoteAgent"] ?? "unknown",
+					remoteEndpoint: j.metadata?.["delegation.remoteEndpoint"] ?? "",
+					remoteJobId: j.metadata?.["delegation.remoteJobId"] ?? "",
+					status: trackerState?.status ?? j.metadata?.["delegation.status"] ?? j.status,
+					routingScore: j.metadata?.["delegation.routingScore"]
+						? Number.parseFloat(j.metadata["delegation.routingScore"])
+						: null,
+					routingReason: j.metadata?.["delegation.routingReason"] ?? null,
+					startedAt: j.metadata?.["delegation.startedAt"] ?? j.startedAt,
+					createdAt: j.createdAt,
+					lastPolled: trackerState?.lastPolled ?? j.metadata?.["delegation.lastPolled"] ?? null,
+					lastRemoteStatus:
+						trackerState?.lastRemoteStatus ?? j.metadata?.["delegation.lastRemoteStatus"] ?? null,
+					prompt: j.prompt,
+					isTrackerActive: !!tracker,
+				};
+			})
+			// Sort by createdAt desc
+			.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+		return c.json({
+			jobs: delegatedJobs,
+			total: delegatedJobs.length,
+			activeTrackers: activeDelegationTrackers.size,
+		});
 	});
 
 	// ---- Skills endpoints ----
