@@ -6,7 +6,7 @@ name: randal-railway
 runner:
   defaultAgent: opencode
   # Use OpenRouter for multi-model access, or set to anthropic/claude-sonnet-4 for direct Anthropic
-  defaultModel: "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+  defaultModel: "openrouter/qwen/qwen3.6-plus"
   workdir: /app/workspace
 
 credentials:
@@ -36,6 +36,7 @@ credentials:
     - GH_TOKEN
     - FAL_KEY
     - ELEVENLABS_API_KEY
+    - MEILI_MASTER_KEY
 
 gateway:
   channels:

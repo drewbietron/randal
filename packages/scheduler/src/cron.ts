@@ -16,6 +16,8 @@ export interface CronJobConfig {
 	execution: "main" | "isolated";
 	model?: string;
 	announce: boolean;
+	/** Route job output to a specific channel (e.g. Discord thread). */
+	target?: { channel: string; id: string };
 }
 
 export interface CronJobState {
@@ -335,6 +337,14 @@ export class CronScheduler {
 			if (state) {
 				state.nextRun = "cron-expression";
 			}
+			// Ensure the shared cron check timer is running (it may not have been
+			// started during start() if no cron-expression jobs existed at boot)
+			if (!this.cronCheckTimer) {
+				this.cronCheckTimer = setInterval(() => {
+					this.checkCronExpressions();
+				}, 60_000);
+				logger.info("Cron check timer started (first cron expression job added at runtime)");
+			}
 		} else if ("every" in schedule) {
 			// Interval
 			const ms = parseDuration(schedule.every);
@@ -452,27 +462,53 @@ export class CronScheduler {
 			resolvedPrompt = config.prompt;
 		}
 
+		// Tell the brain its output will be auto-delivered to the target channel
+		let finalPrompt = resolvedPrompt;
+		if (config.target?.channel) {
+			finalPrompt = `[System: Your response will be automatically delivered to the user's ${config.target.channel} channel. Just produce your response directly — do NOT try to use channel_send, emit_event, or any channel tools. Simply write your response as plain text.]\n\n${resolvedPrompt}`;
+		}
+
 		if (config.execution === "main" && this.heartbeat) {
 			// Queue for next heartbeat
 			const wakeItem: WakeItem = {
-				text: `[Cron: ${name}] ${resolvedPrompt}`,
+				text: `[Cron: ${name}] ${finalPrompt}`,
 				source: "cron",
 				timestamp: new Date().toISOString(),
 			};
 			this.heartbeat.queueWakeItem(wakeItem);
+
+			// Trigger an immediate heartbeat tick so the wake item is processed
+			// without waiting for the next scheduled interval.
+			this.heartbeat.triggerNow().catch((err) => {
+				logger.warn("Immediate heartbeat tick after cron wake failed", {
+					name,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
 		} else {
-			// Execute directly as isolated job
-			try {
-				await this.runner.execute({
-					prompt: resolvedPrompt,
-					model: config.model,
-					maxIterations: 5,
-					origin: {
+			// Execute directly as isolated job.
+			// If the cron job has a target, route origin to that channel so
+			// adapters (Discord, Slack, etc.) pick up the events naturally.
+			const origin = config.target
+				? {
+						channel: config.target.channel,
+						replyTo: config.target.id,
+						from: "system",
+						triggerType: "cron" as const,
+					}
+				: {
 						channel: "scheduler",
 						replyTo: `cron:${name}`,
 						from: "system",
-						triggerType: "cron",
-					},
+						triggerType: "cron" as const,
+					};
+
+			try {
+				await this.runner.execute({
+					prompt: finalPrompt,
+					model: config.model,
+					maxIterations: 5,
+					origin,
 				});
 			} catch (err) {
 				logger.warn("Cron isolated job failed", {

@@ -75,6 +75,22 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 					type: "string",
 					description: "Override the default model for this job",
 				},
+				target: {
+					type: "object",
+					description:
+						'Route job output to a specific channel. e.g. { channel: "discord", id: "1234567890" }. The brain can use RANDAL_REPLY_TO as the id.',
+					properties: {
+						channel: {
+							type: "string",
+							description: 'Channel name (e.g. "discord", "slack", "imessage")',
+						},
+						id: {
+							type: "string",
+							description: "Channel/thread ID to send results to",
+						},
+					},
+					required: ["channel", "id"],
+				},
 			},
 			required: ["action"],
 		},
@@ -154,13 +170,52 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 		if (!name || !prompt) {
 			throw new ToolError("name and prompt are required for action 'add'");
 		}
+
+		// Normalize schedule — LLMs often pass stringified objects instead of actual objects
+		let schedule: unknown = params.schedule ?? { every: "1h" };
+		if (typeof schedule === "string") {
+			// Try JSON parse first (handles '{"every":"1m"}')
+			try {
+				const parsed = JSON.parse(schedule);
+				if (typeof parsed === "object" && parsed !== null) {
+					schedule = parsed;
+				}
+			} catch {
+				// Try parsing JS-style object literals: { every: "1m" } or { at: "2026..." }
+				const raw = schedule as string;
+				const everyMatch = raw.match(/every\s*:\s*["']([^"']+)["']/);
+				const atMatch = raw.match(/at\s*:\s*["']([^"']+)["']/);
+
+				if (everyMatch) {
+					schedule = { every: everyMatch[1] };
+				} else if (atMatch) {
+					schedule = { at: atMatch[1] };
+				}
+				// else leave as string — it's a real cron expression like "0 9 * * 1-5"
+			}
+		}
+
+		// Auto-capture channel context if no explicit target provided.
+		// When the brain is running inside a Discord session, RANDAL_CHANNEL
+		// and RANDAL_REPLY_TO are set by the runner.  Saving them here means
+		// cron-job output will automatically route back to that thread.
+		let target = params.target as { channel: string; id: string } | undefined;
+		if (!target) {
+			const channel = process.env.RANDAL_CHANNEL;
+			const replyTo = process.env.RANDAL_REPLY_TO;
+			if (channel && replyTo) {
+				target = { channel, id: replyTo };
+			}
+		}
+
 		const body: Record<string, unknown> = {
 			name,
 			prompt,
-			schedule: params.schedule ?? { every: "1h" },
+			schedule,
 			execution: params.execution ?? "isolated",
 		};
 		if (params.model) body.model = params.model;
+		if (target) body.target = target;
 
 		const { ok, data } = await gatewayFetch("/cron", { method: "POST", body });
 		if (!ok) {

@@ -168,12 +168,15 @@ describe("Scheduler", () => {
 		const scheduler = new Scheduler({ config, runner });
 		await scheduler.start();
 
-		// Wait for cron to fire
+		// Wait for cron to fire and triggerNow() to process the wake item
 		await new Promise((r) => setTimeout(r, 250));
 
-		// Check heartbeat has the queued item
+		// The wake item was queued then immediately processed via triggerNow(),
+		// so the queue is drained. Verify the heartbeat tick ran (tickCount > 0)
+		// and the runner was invoked with the cron prompt content.
 		const heartbeatState = scheduler.getHeartbeat().getState();
-		expect(heartbeatState.pendingWakeItems.length).toBeGreaterThanOrEqual(1);
+		expect(heartbeatState.tickCount).toBeGreaterThanOrEqual(1);
+		expect(runner.execute).toHaveBeenCalled();
 
 		scheduler.stop();
 	});

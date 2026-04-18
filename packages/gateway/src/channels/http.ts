@@ -633,6 +633,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			execution?: "main" | "isolated";
 			model?: string;
 			announce?: boolean;
+			target?: { channel: string; id: string };
 		}>();
 
 		if (!body.name || !body.prompt) {
@@ -646,6 +647,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			execution: body.execution ?? "isolated",
 			model: body.model,
 			announce: body.announce ?? false,
+			target: body.target,
 		});
 
 		return c.json({ ok: true, name: body.name }, 201);

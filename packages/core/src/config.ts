@@ -397,6 +397,12 @@ export const configSchema = z.object({
 						execution: z.enum(["main", "isolated"]).default("isolated"),
 						model: z.string().optional(),
 						announce: z.boolean().default(false),
+						target: z
+							.object({
+								channel: z.string(),
+								id: z.string(),
+							})
+							.optional(),
 					}),
 				)
 				.default({}),

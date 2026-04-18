@@ -7,6 +7,7 @@ import {
 	Events,
 	GatewayIntentBits,
 	type Interaction,
+	MessageFlags,
 	Partials,
 	REST,
 	Routes,
@@ -594,6 +595,12 @@ export class DiscordChannel implements ChannelAdapter {
 		const job = this.deps.runner.getJob(event.jobId);
 		if (!job?.origin || job.origin.channel !== "discord") return;
 
+		// Auto-register cron/scheduled jobs that target Discord but weren't
+		// initiated from a Discord message (no jobToChannel entry yet).
+		if (job.origin.replyTo && !this.jobToChannel.has(event.jobId)) {
+			this.jobToChannel.set(event.jobId, job.origin.replyTo);
+		}
+
 		// Find the conversation channel for this job
 		const channelId = this.jobToChannel.get(event.jobId);
 		const convo = channelId ? this.conversations.get(channelId) : undefined;
@@ -1003,7 +1010,7 @@ export class DiscordChannel implements ChannelAdapter {
 			case "run": {
 				const prompt = interaction.options.getString("prompt");
 				if (!prompt) {
-					await interaction.reply({ content: "Prompt is required", ephemeral: true });
+					await interaction.reply({ content: "Prompt is required", flags: MessageFlags.Ephemeral });
 					return;
 				}
 				const response = await handleCommand(`run: ${prompt}`, this.deps, origin);
@@ -1032,11 +1039,11 @@ export class DiscordChannel implements ChannelAdapter {
 					const job = this.deps.runner.getJob(jobArg) ?? loadJob(jobArg);
 					if (job) {
 						const embed = buildJobEmbed(job);
-						await interaction.reply({ embeds: [embed], ephemeral: true });
+						await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 						return;
 					}
 				}
-				await interaction.reply({ content: response, ephemeral: true });
+				await interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
 				break;
 			}
 			case "stop": {
@@ -1046,13 +1053,13 @@ export class DiscordChannel implements ChannelAdapter {
 					this.deps,
 					origin,
 				);
-				await interaction.reply({ content: response, ephemeral: true });
+				await interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
 				break;
 			}
 			case "resume": {
 				const jobArg = interaction.options.getString("job");
 				if (!jobArg) {
-					await interaction.reply({ content: "Job ID is required", ephemeral: true });
+					await interaction.reply({ content: "Job ID is required", flags: MessageFlags.Ephemeral });
 					return;
 				}
 				const response = await handleCommand(`resume: ${jobArg}`, this.deps, origin);
@@ -1068,7 +1075,7 @@ export class DiscordChannel implements ChannelAdapter {
 				if (subcommand === "search") {
 					const query = interaction.options.getString("query");
 					const response = await handleCommand(`memory: ${query}`, this.deps, origin);
-					await interaction.reply({ content: response, ephemeral: true });
+					await interaction.reply({ content: response, flags: MessageFlags.Ephemeral });
 				} else if (subcommand === "add") {
 					await interaction.showModal(buildMemoryModal());
 				}
@@ -1085,7 +1092,7 @@ export class DiscordChannel implements ChannelAdapter {
 				} else {
 					await interaction.reply({
 						content: `Unknown command: ${interaction.commandName}`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 				break;
@@ -1106,7 +1113,7 @@ export class DiscordChannel implements ChannelAdapter {
 		if (!serverConfig) {
 			await interaction.reply({
 				content: `Command \`/${interaction.commandName}\` is not configured for this server`,
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
@@ -1115,7 +1122,7 @@ export class DiscordChannel implements ChannelAdapter {
 		if (!cmdConfig) {
 			await interaction.reply({
 				content: `Command \`/${interaction.commandName}\` not found in server config`,
-				ephemeral: true,
+				flags: MessageFlags.Ephemeral,
 			});
 			return;
 		}
@@ -1176,7 +1183,7 @@ export class DiscordChannel implements ChannelAdapter {
 					content: stopped
 						? `Job \`${jobId}\` stopped`
 						: `Job \`${jobId}\` not found or not running`,
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 				break;
 			}
@@ -1189,18 +1196,24 @@ export class DiscordChannel implements ChannelAdapter {
 				if (!jobId) break;
 				const job = this.deps.runner.getJob(jobId) ?? loadJob(jobId);
 				if (!job) {
-					await interaction.reply({ content: `Job \`${jobId}\` not found`, ephemeral: true });
+					await interaction.reply({
+						content: `Job \`${jobId}\` not found`,
+						flags: MessageFlags.Ephemeral,
+					});
 					break;
 				}
 				const embed = buildJobEmbed(job);
-				await interaction.reply({ embeds: [embed], ephemeral: true });
+				await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 				break;
 			}
 			case "retry": {
 				if (!jobId) break;
 				const oldJob = this.deps.runner.getJob(jobId) ?? loadJob(jobId);
 				if (!oldJob) {
-					await interaction.reply({ content: `Job \`${jobId}\` not found`, ephemeral: true });
+					await interaction.reply({
+						content: `Job \`${jobId}\` not found`,
+						flags: MessageFlags.Ephemeral,
+					});
 					break;
 				}
 				const origin = {
@@ -1261,13 +1274,16 @@ export class DiscordChannel implements ChannelAdapter {
 				const text = interaction.fields.getTextInputValue("context_text");
 				const job = this.deps.runner.getJob(jobId);
 				if (!job || (job.status !== "running" && job.status !== "queued")) {
-					await interaction.reply({ content: `Job \`${jobId}\` is not running`, ephemeral: true });
+					await interaction.reply({
+						content: `Job \`${jobId}\` is not running`,
+						flags: MessageFlags.Ephemeral,
+					});
 					break;
 				}
 				writeContext(job.workdir, text);
 				await interaction.reply({
 					content: `Context injected into job \`${jobId}\``,
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 				break;
 			}
@@ -1275,7 +1291,10 @@ export class DiscordChannel implements ChannelAdapter {
 				const text = interaction.fields.getTextInputValue("memory_text");
 				const category = interaction.fields.getTextInputValue("memory_category");
 				if (!this.deps.memoryManager) {
-					await interaction.reply({ content: "Memory not available", ephemeral: true });
+					await interaction.reply({
+						content: "Memory not available",
+						flags: MessageFlags.Ephemeral,
+					});
 					break;
 				}
 				try {
@@ -1284,9 +1303,15 @@ export class DiscordChannel implements ChannelAdapter {
 						category: category as "fact",
 						source: "human",
 					});
-					await interaction.reply({ content: `Saved to memory (${category})`, ephemeral: true });
+					await interaction.reply({
+						content: `Saved to memory (${category})`,
+						flags: MessageFlags.Ephemeral,
+					});
 				} catch {
-					await interaction.reply({ content: "Failed to save to memory", ephemeral: true });
+					await interaction.reply({
+						content: "Failed to save to memory",
+						flags: MessageFlags.Ephemeral,
+					});
 				}
 				break;
 			}
@@ -1308,11 +1333,11 @@ export class DiscordChannel implements ChannelAdapter {
 			case "select_details": {
 				const job = this.deps.runner.getJob(selectedJobId) ?? loadJob(selectedJobId);
 				if (job) {
-					await interaction.reply({ embeds: [buildJobEmbed(job)], ephemeral: true });
+					await interaction.reply({ embeds: [buildJobEmbed(job)], flags: MessageFlags.Ephemeral });
 				} else {
 					await interaction.reply({
 						content: `Job \`${selectedJobId}\` not found`,
-						ephemeral: true,
+						flags: MessageFlags.Ephemeral,
 					});
 				}
 				break;
@@ -1321,7 +1346,7 @@ export class DiscordChannel implements ChannelAdapter {
 				const stopped = this.deps.runner.stop(selectedJobId);
 				await interaction.reply({
 					content: stopped ? `Job \`${selectedJobId}\` stopped` : "Not running",
-					ephemeral: true,
+					flags: MessageFlags.Ephemeral,
 				});
 				break;
 			}
@@ -1349,7 +1374,7 @@ export class DiscordChannel implements ChannelAdapter {
 		const merged = [...active, ...disk.filter((j) => !activeIds.has(j.id))].slice(0, 10);
 
 		if (merged.length === 0) {
-			await interaction.reply({ content: "No jobs found", ephemeral: true });
+			await interaction.reply({ content: "No jobs found", flags: MessageFlags.Ephemeral });
 			return;
 		}
 
@@ -1368,7 +1393,7 @@ export class DiscordChannel implements ChannelAdapter {
 			return `${emoji} \`${j.id}\` ${j.status}${dur} — ${j.prompt.slice(0, 60)}`;
 		});
 
-		await interaction.reply({ content: lines.join("\n"), ephemeral: true });
+		await interaction.reply({ content: lines.join("\n"), flags: MessageFlags.Ephemeral });
 	}
 
 	/**
