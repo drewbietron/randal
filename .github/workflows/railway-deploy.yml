@@ -29,6 +29,7 @@ on:
 
 env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   RAILWAY_API: https://backboard.railway.com/graphql/v2
 
 jobs:
@@ -69,6 +70,7 @@ jobs:
           CONFIGURED_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
           CONFIGURED_SERVICE_NAME: ${{ vars.RAILWAY_SERVICE_NAME }}
           CONFIGURED_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          CONFIGURED_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
         run: |
           set -euo pipefail
 
@@ -120,6 +122,7 @@ jobs:
           target_service_id="$CONFIGURED_SERVICE_ID"
           target_service_name="$CONFIGURED_SERVICE_NAME"
           target_environment_id="$CONFIGURED_ENVIRONMENT_ID"
+          target_workspace_id="$CONFIGURED_WORKSPACE_ID"
 
           if [[ -z "$target_project_id" && -n "$token_project_id" ]]; then
             target_project_id="$token_project_id"
@@ -134,7 +137,11 @@ jobs:
           fi
 
           if [[ -z "$target_project_id" ]]; then
-            projects_response=$(graphql '{"query":"query { projects { edges { node { id name } } } }"}')
+            if [[ -n "$target_workspace_id" ]]; then
+              projects_response=$(graphql "$(jq -cn --arg workspaceId "$target_workspace_id" '{query: "query workspaceProjects($workspaceId: String!) { projects(workspaceId: $workspaceId) { edges { node { id name } } } }", variables: {workspaceId: $workspaceId}}')")
+            else
+              projects_response=$(graphql '{"query":"query { projects { edges { node { id name } } } }"}')
+            fi
             matched_projects=$(echo "$projects_response" | jq -c --arg name "$target_project_name" '[.data.projects.edges[].node | select(.name == $name)]')
             matched_project_count=$(echo "$matched_projects" | jq 'length')
 
