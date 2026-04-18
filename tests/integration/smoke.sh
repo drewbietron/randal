@@ -104,6 +104,10 @@ sleep 1
 # 9. Cron — list — accepts bare array or object wrapping one
 CRON_TMP=$(mktemp)
 CRON_HTTP=$(rcurl -s -o "$CRON_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/cron" 2>/dev/null || true)
+if [ "$CRON_HTTP" != "200" ] && grep -qiE "Application not found|request_id" "$CRON_TMP" 2>/dev/null; then
+  sleep 2
+  CRON_HTTP=$(rcurl -s -o "$CRON_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/cron" 2>/dev/null || true)
+fi
 LAST_BODY="HTTP $CRON_HTTP: $(cat "$CRON_TMP" | head -c 200)"
 if [ "$CRON_HTTP" = "200" ]; then
   cat "$CRON_TMP" | jq -e 'if type == "array" then true elif type == "object" then (.jobs // .crons // empty) | type == "array" else false end' > /dev/null 2>&1
