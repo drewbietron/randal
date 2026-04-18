@@ -462,10 +462,16 @@ export class CronScheduler {
 			resolvedPrompt = config.prompt;
 		}
 
+		// Tell the brain its output will be auto-delivered to the target channel
+		let finalPrompt = resolvedPrompt;
+		if (config.target?.channel) {
+			finalPrompt = `[System: Your response will be automatically delivered to the user's ${config.target.channel} channel. Just produce your response directly — do NOT try to use channel_send, emit_event, or any channel tools. Simply write your response as plain text.]\n\n${resolvedPrompt}`;
+		}
+
 		if (config.execution === "main" && this.heartbeat) {
 			// Queue for next heartbeat
 			const wakeItem: WakeItem = {
-				text: `[Cron: ${name}] ${resolvedPrompt}`,
+				text: `[Cron: ${name}] ${finalPrompt}`,
 				source: "cron",
 				timestamp: new Date().toISOString(),
 			};
@@ -499,7 +505,7 @@ export class CronScheduler {
 
 			try {
 				await this.runner.execute({
-					prompt: resolvedPrompt,
+					prompt: finalPrompt,
 					model: config.model,
 					maxIterations: 5,
 					origin,
