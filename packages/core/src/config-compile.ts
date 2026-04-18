@@ -222,9 +222,14 @@ function deriveGatewayUrl(config: RandalConfig): string {
  * Uses a lightweight model for summarization — defaults to claude-haiku-3.
  */
 function deriveSummaryModel(config: RandalConfig): string {
+	const model = config.runner.defaultModel;
 	// If the default model is already a haiku variant, use it
-	if (config.runner.defaultModel.includes("haiku")) {
-		return config.runner.defaultModel;
+	if (model.includes("haiku")) {
+		return model;
+	}
+	// If using OpenAI models, use a lightweight OpenAI model for summaries
+	if (model.startsWith("openai/")) {
+		return "openai/gpt-5.4-mini-fast";
 	}
 	return "anthropic/claude-haiku-3";
 }

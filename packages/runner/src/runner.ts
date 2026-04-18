@@ -23,6 +23,33 @@ import { findCompletionPromise, generateToken, parseOutput, wrapCommand } from "
 import { type StreamingResult, readStreamLines } from "./streaming.js";
 import { detectFatalError } from "./struggle.js";
 
+/**
+ * Resolve the effective model based on available API keys.
+ * Priority: OpenRouter (keeps configured default) > Anthropic > OpenAI.
+ * Only overrides when the config still uses the schema default and the
+ * required provider key isn't available.
+ */
+function resolveModelFromEnv(configDefault: string, env: Record<string, string>): string {
+	// OpenRouter can proxy to any model — if the key is present, keep the default
+	if (env.OPENROUTER_API_KEY) {
+		return configDefault;
+	}
+	// Direct Anthropic key — keep default if it's already an Anthropic model
+	if (env.ANTHROPIC_API_KEY && configDefault.startsWith("anthropic/")) {
+		return configDefault;
+	}
+	// Direct OpenAI key — switch to OpenAI model if current default needs a different provider
+	if (env.OPENAI_API_KEY) {
+		if (configDefault.startsWith("openai/")) return configDefault;
+		return "openai/gpt-5.4";
+	}
+	// Direct Anthropic key with non-Anthropic default — fall back to Anthropic
+	if (env.ANTHROPIC_API_KEY) {
+		return "anthropic/claude-sonnet-4";
+	}
+	return configDefault;
+}
+
 export type EventHandler = (event: RunnerEvent) => void;
 
 interface StreamEvent {
@@ -417,9 +444,21 @@ export class Runner {
 			apiKeysPresent: apiKeyVars.map((k) => `${k}=${env[k] ? "set" : "missing"}`),
 			hasOpenRouterKey: !!env.OPENROUTER_API_KEY,
 			hasAnthropicKey: !!env.ANTHROPIC_API_KEY,
+			hasOpenAiKey: !!env.OPENAI_API_KEY,
 			tempHome: tempHome ?? "(none)",
 			inheritConfig: this.config.credentials.inherit,
 		});
+
+		// Resolve model based on available API keys (auto-detect provider)
+		const effectiveModel = resolveModelFromEnv(job.model, env);
+		if (effectiveModel !== job.model) {
+			this.logger.info("Auto-resolved model based on available API keys", {
+				jobId: job.id,
+				originalModel: job.model,
+				resolvedModel: effectiveModel,
+			});
+			job.model = effectiveModel;
+		}
 
 		// Inject origin metadata so the brain knows its channel context
 		if (job.origin?.channel) env.RANDAL_CHANNEL = job.origin.channel;

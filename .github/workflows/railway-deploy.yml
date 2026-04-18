@@ -79,8 +79,11 @@ jobs:
           elif [[ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
             railway variable set ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
             echo "✓ Set ANTHROPIC_API_KEY"
+          elif [[ -n "${{ secrets.OPENAI_API_KEY }}" ]]; then
+            railway variable set OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+            echo "✓ Set OPENAI_API_KEY"
           else
-            echo "Warning: Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY is set"
+            echo "Warning: No API key set (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)"
           fi
 
           if [[ -n "${{ secrets.RANDAL_API_TOKEN }}" ]]; then

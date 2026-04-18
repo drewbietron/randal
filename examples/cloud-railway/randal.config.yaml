@@ -30,7 +30,7 @@ runner:
 # Credentials: minimal env exposure
 credentials:
   envFile: ./.env
-  allow: [ANTHROPIC_API_KEY]
+  allow: [ANTHROPIC_API_KEY, OPENAI_API_KEY]
 
 # Gateway: single HTTP channel
 gateway:

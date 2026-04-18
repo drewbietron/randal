@@ -91,6 +91,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 				},
 				categories: {
 					type: "array",
+					items: { type: "string" },
 					description: "Optional category tags for the annotation",
 				},
 				agent: {
@@ -123,6 +124,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 				},
 				filesChanged: {
 					type: "array",
+					items: { type: "string" },
 					description: "List of files changed during the task",
 				},
 			},
