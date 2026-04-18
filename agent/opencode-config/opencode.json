@@ -41,6 +41,11 @@
 				"RANDAL_GATEWAY_TOKEN": "{env:RANDAL_GATEWAY_TOKEN}"
 			},
 			"enabled": true
+		},
+		"railway": {
+			"type": "local",
+			"command": ["bunx", "@railway/mcp-server"],
+			"enabled": true
 		}
 	},
 	"tools": {
