@@ -223,14 +223,14 @@ describe.skipIf(SKIP)("posse integration", () => {
 					return Response.json({ status: "available" });
 				}
 
-				if (req.method === "POST" && url.pathname === "/jobs") {
+				if (req.method === "POST" && (url.pathname === "/job" || url.pathname === "/jobs")) {
 					const body = (await req.json()) as { prompt: string };
 					const jobId = `job-${Date.now()}`;
 					jobStore[jobId] = { status: "completed", summary: `Done: ${body.prompt}` };
 					return Response.json({ id: jobId });
 				}
 
-				const jobMatch = url.pathname.match(/^\/jobs\/(.+)$/);
+				const jobMatch = url.pathname.match(/^\/jobs?\/(.+)$/);
 				if (req.method === "GET" && jobMatch) {
 					const jobId = jobMatch[1];
 					const job = jobStore[jobId];

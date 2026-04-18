@@ -17,6 +17,7 @@ import {
 	MeilisearchMeshRegistry,
 	createInstanceFromConfig,
 	dryRunRoute,
+	routeTask,
 } from "@randal/mesh";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
@@ -24,7 +25,8 @@ import { MeiliSearch } from "meilisearch";
 import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
 import { DependencyError, createChannel } from "./channels/factory.js";
-import { createHttpApp } from "./channels/http.js";
+import { activeDelegationTrackers, createHttpApp } from "./channels/http.js";
+import { DelegatedJobTracker } from "./delegation.js";
 import { EventBus } from "./events.js";
 import { listJobs, saveJob, updateJob } from "./jobs.js";
 
@@ -311,6 +313,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 				},
 			);
 
+			// Track discovered instances so both routeDryRun and routeTask share them
+			let cachedInstances: MeshInstance[] = [];
+
 			// Build meshCoordinator adapter expected by HTTP app
 			meshCoordinator = {
 				getInstances: () => {
@@ -326,12 +331,18 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 						scores: [],
 					};
 				},
+				routeTask: async (_prompt: string) => {
+					// Not available until discovery completes
+					return null;
+				},
 			};
 
 			// Warm the mesh coordinator with a discover call
 			meshRegistry
 				.discover()
 				.then((instances) => {
+					cachedInstances = instances;
+
 					meshCoordinator.getInstances = () =>
 						instances.map((inst: MeshInstance) => ({
 							id: inst.instanceId,
@@ -342,6 +353,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 							role: inst.role ?? "",
 							expertise: inst.expertise ?? "",
 							lastSeen: inst.lastHeartbeat,
+							endpoint: inst.endpoint,
 						}));
 
 					meshCoordinator.routeDryRun = async (prompt: string) => {
@@ -365,6 +377,24 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 								breakdown: d.breakdown,
 							})),
 						};
+					};
+
+					meshCoordinator.routeTask = async (prompt: string) => {
+						// Re-discover instances to get fresh state
+						const freshInstances = await registry.discover().catch(() => cachedInstances);
+						cachedInstances = freshInstances;
+
+						// Embed the task prompt for semantic scoring (non-fatal)
+						const taskVector = meshEmbedding
+							? await meshEmbedding.embed(prompt).catch(() => null)
+							: null;
+
+						const decision = routeTask(freshInstances, {
+							prompt,
+							taskVector: taskVector ?? undefined,
+						});
+
+						return decision;
 					};
 				})
 				.catch((err) => {
@@ -538,8 +568,61 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	];
 	if (interruptedJobs.length > 0) {
 		logger.info("Found interrupted jobs to resume", { count: interruptedJobs.length });
+
+		// Resolve auth token for delegation recovery (same logic as POST /posse/job)
+		const httpChannelConfig = config.gateway.channels.find((ch) => ch.type === "http");
+		const peerAuthToken =
+			process.env.RANDAL_PEER_AUTH_TOKEN ??
+			(httpChannelConfig?.type === "http" ? httpChannelConfig.auth : undefined);
+
 		for (const job of interruptedJobs) {
 			try {
+				// Check if this is a delegated job that needs delegation recovery
+				// (uses metadata keys set by createDelegatedJob in delegation.ts)
+				const isDelegated =
+					job.metadata?.["delegation.remoteEndpoint"] &&
+					job.metadata?.["delegation.remoteJobId"] &&
+					job.metadata?.["delegation.status"] !== "complete" &&
+					job.metadata?.["delegation.status"] !== "failed";
+
+				if (isDelegated) {
+					// Recover the delegation tracker instead of running locally
+					const tracker = DelegatedJobTracker.recover(job, eventBus, {
+						authToken: peerAuthToken,
+					});
+					if (tracker) {
+						activeDelegationTrackers.set(job.id, tracker);
+						tracker.start();
+
+						logger.info("Recovered delegated job", {
+							jobId: job.id,
+							remoteAgent: job.metadata?.["delegation.remoteAgent"],
+							remoteJobId: job.metadata?.["delegation.remoteJobId"],
+						});
+
+						// Still recover channel adapter state for Discord thread routing
+						if (job.origin?.replyTo) {
+							for (const ch of channelAdapters) {
+								if (ch.name === job.origin.channel && ch.recoverJob) {
+									ch.recoverJob(job.id, job.origin.replyTo).catch((err) => {
+										logger.warn("Channel recovery failed for delegated job", {
+											jobId: job.id,
+											channel: ch.name,
+											error: err instanceof Error ? err.message : String(err),
+										});
+									});
+								}
+							}
+						}
+
+						continue; // Don't call runner.resume()
+					}
+					// If recover returned null (missing metadata), fall through to local resume
+					logger.warn("Delegated job has incomplete metadata, falling back to local resume", {
+						jobId: job.id,
+					});
+				}
+
 				job.updates.push(`Gateway restarted — resuming from iteration ${job.iterations.current}`);
 				const { done } = runner.resume(job);
 				done

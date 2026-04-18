@@ -17,6 +17,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { DelegatedJobTracker, createDelegatedJob } from "../delegation.js";
 import type { EventBus } from "../events.js";
 import { listJobs, loadJob, saveJob } from "../jobs.js";
 import type { ChannelAdapter } from "./channel.js";
@@ -95,11 +96,29 @@ export interface HttpChannelOptions {
 			role: string;
 			expertise: string;
 			lastSeen: string;
+			endpoint?: string;
 		}>;
 		routeDryRun(prompt: string): Promise<{
 			selectedInstance: { id: string; name: string; score: number };
 			scores: unknown[];
 		}>;
+		/** Route a task to the best available mesh instance. Returns null if no suitable agent. */
+		routeTask?(prompt: string): Promise<{
+			instance: {
+				instanceId: string;
+				name: string;
+				endpoint: string;
+				models: string[];
+			};
+			score: number;
+			breakdown: {
+				expertiseScore: number;
+				reliabilityScore: number;
+				loadScore: number;
+				modelMatchScore: number;
+			};
+			reason: string;
+		} | null>;
 	};
 	/** Voice channel manager instance (optional). */
 	voiceManager?: {
@@ -116,6 +135,11 @@ export interface HttpChannelOptions {
 	/** Channel adapter registry for internal API dispatch. */
 	channelAdapters?: ChannelAdapter[];
 }
+
+/** Active delegation trackers for posse-routed jobs. Exported for gateway recovery. */
+export const activeDelegationTrackers = new Map<string, DelegatedJobTracker>();
+
+const httpLogger = createLogger({ context: { component: "http" } });
 
 export function createHttpApp(options: HttpChannelOptions): Hono {
 	const {
@@ -288,8 +312,8 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		});
 	});
 
-	// Submit job
-	app.post("/job", async (c) => {
+	// Submit job handler (shared by /job and /jobs)
+	const submitJobHandler = async (c: import("hono").Context) => {
 		const body = await c.req.json<{
 			prompt?: string;
 			specFile?: string;
@@ -314,7 +338,114 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			}
 		}
 
-		// Submit job — returns immediately with job ID
+		// Posse auto-routing: if mesh coordinator is available and ?local=true is NOT set,
+		// attempt to route to the best remote agent. If the best agent scores well enough,
+		// delegate transparently — the caller gets the same response shape.
+		const localOnly = c.req.query("local") === "true";
+		if (!localOnly && meshCoordinator?.routeTask) {
+			try {
+				const prompt = body.prompt ?? body.specFile ?? "";
+				const routingDecision = await meshCoordinator.routeTask(prompt);
+
+				// Only auto-delegate if score exceeds threshold (0.3)
+				if (routingDecision && routingDecision.score > 0.3) {
+					// Resolve auth token for peer communication
+					const peerHttpChannel = config.gateway.channels.find((ch) => ch.type === "http");
+					const peerAuthToken =
+						process.env.RANDAL_PEER_AUTH_TOKEN ??
+						(peerHttpChannel?.type === "http" ? peerHttpChannel.auth : undefined);
+
+					const remoteEndpoint = routingDecision.instance.endpoint;
+					const remoteHeaders: Record<string, string> = {
+						"Content-Type": "application/json",
+					};
+					if (peerAuthToken) {
+						remoteHeaders.Authorization = `Bearer ${peerAuthToken}`;
+					}
+
+					const remoteResp = await fetch(`${remoteEndpoint}/job`, {
+						method: "POST",
+						headers: remoteHeaders,
+						body: JSON.stringify({
+							prompt: body.prompt,
+							specFile: body.specFile,
+							agent: body.agent,
+							model: body.model,
+							maxIterations: body.maxIterations,
+							workdir: body.workdir,
+						}),
+						signal: AbortSignal.timeout(15_000),
+					});
+
+					if (remoteResp.ok) {
+						const remoteData = (await remoteResp.json()) as {
+							id?: string;
+							jobId?: string;
+						};
+						const remoteJobId = remoteData.id ?? remoteData.jobId ?? "";
+						if (remoteJobId) {
+							// Create local tracking job
+							const localJob = createDelegatedJob(
+								{
+									prompt: body.prompt ?? "",
+									origin: { channel: "http", replyTo: "http", from: "api" },
+									model: body.model,
+									agent: body.agent,
+								},
+								routingDecision as Parameters<typeof createDelegatedJob>[1],
+								remoteJobId,
+							);
+							saveJob(localJob);
+
+							// Start async delegation tracker
+							const tracker = new DelegatedJobTracker(
+								localJob.id,
+								remoteEndpoint,
+								remoteJobId,
+								eventBus,
+								{ authToken: peerAuthToken },
+							);
+							tracker.start();
+							activeDelegationTrackers.set(localJob.id, tracker);
+
+							httpLogger.info("Auto-routed job to posse agent", {
+								localJobId: localJob.id,
+								remoteJobId,
+								remoteAgent: routingDecision.instance.name,
+								score: routingDecision.score,
+							});
+
+							return c.json(
+								{
+									id: localJob.id,
+									status: "delegated",
+									remoteJobId,
+									routedTo: {
+										name: routingDecision.instance.name,
+										endpoint: remoteEndpoint,
+										score: routingDecision.score,
+										breakdown: routingDecision.breakdown,
+									},
+								},
+								201,
+							);
+						}
+					}
+					// If remote submission failed, fall through to local execution
+					httpLogger.warn("Posse auto-routing failed, falling back to local execution", {
+						remoteAgent: routingDecision.instance.name,
+						remoteStatus: remoteResp.status,
+					});
+				}
+			} catch (err) {
+				// Non-fatal: routing failure should not block local execution
+				httpLogger.warn("Posse auto-routing error, falling back to local execution", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		// Local execution path (original behavior)
 		const { jobId, done } = runner.submit({
 			prompt: body.prompt,
 			specFile: body.specFile,
@@ -334,10 +465,10 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		done.then((job) => saveJob(job)).catch(() => {});
 
 		return c.json({ id: jobId, status: "queued" }, 201);
-	});
+	};
 
-	// Get job
-	app.get("/job/:id", (c) => {
+	// Get job handler (shared by /job/:id and /jobs/:id)
+	const getJobHandler = (c: import("hono").Context) => {
 		const id = c.req.param("id");
 
 		// Check active jobs first
@@ -349,7 +480,14 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		if (diskJob) return c.json(diskJob);
 
 		return c.json({ error: "Job not found" }, 404);
-	});
+	};
+
+	app.post("/job", submitJobHandler);
+	app.get("/job/:id", getJobHandler);
+
+	// Backward-compat aliases (plural form)
+	app.post("/jobs", submitJobHandler);
+	app.get("/jobs/:id", getJobHandler);
 
 	// Get job plan (lightweight endpoint for polling/widgets)
 	app.get("/job/:id/plan", (c) => {
@@ -674,7 +812,7 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 
 	// ---- Posse endpoints ----
 
-	// Posse info (R5.1)
+	// Posse info (R5.1) — enhanced with delegation stats
 	app.get("/posse", async (c) => {
 		if (!config.posse) {
 			return c.json({ error: "Not a posse member" }, 404);
@@ -689,10 +827,17 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			);
 		}
 
+		// Count delegation stats from active trackers and persisted jobs
+		const activeDelegations = activeDelegationTrackers.size;
+		const allJobs = listJobs();
+		const totalDelegations = allJobs.filter((j) => j.metadata?.["delegation.remoteJobId"]).length;
+
 		return c.json({
 			posse: config.posse,
 			agents,
 			self: config.name,
+			activeDelegations,
+			totalDelegations,
 		});
 	});
 
@@ -793,6 +938,203 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		}
 
 		return c.json([]);
+	});
+
+	// Submit posse job — route to best mesh agent
+	app.post("/posse/job", async (c) => {
+		if (!meshCoordinator || !meshCoordinator.routeTask) {
+			return c.json({ error: "Posse routing not available" }, 503);
+		}
+
+		const body = await c.req.json<{
+			prompt?: string;
+			specFile?: string;
+			agent?: string;
+			model?: string;
+			maxIterations?: number;
+			workdir?: string;
+		}>();
+
+		if (!body.prompt && !body.specFile) {
+			return c.json({ error: "prompt or specFile required" }, 400);
+		}
+		if (body.prompt && typeof body.prompt !== "string") {
+			return c.json({ error: "prompt must be a string" }, 400);
+		}
+
+		const prompt = body.prompt ?? body.specFile ?? "";
+
+		// Route to best agent
+		const routingDecision = await meshCoordinator.routeTask(prompt);
+
+		if (!routingDecision) {
+			// Dry-run to provide diagnostic scores
+			const dryRun = await meshCoordinator.routeDryRun(prompt);
+			return c.json(
+				{
+					error: "No suitable agent available",
+					scores: dryRun.scores,
+				},
+				404,
+			);
+		}
+
+		// Resolve auth token for peer communication
+		const httpChannel = config.gateway.channels.find((ch) => ch.type === "http");
+		const peerAuthToken =
+			process.env.RANDAL_PEER_AUTH_TOKEN ??
+			(httpChannel?.type === "http" ? httpChannel.auth : undefined);
+
+		// POST to the remote agent's /job endpoint
+		const remoteEndpoint = routingDecision.instance.endpoint;
+		const remoteHeaders: Record<string, string> = {
+			"Content-Type": "application/json",
+		};
+		if (peerAuthToken) {
+			remoteHeaders.Authorization = `Bearer ${peerAuthToken}`;
+		}
+
+		let remoteJobId: string;
+		try {
+			const remoteResp = await fetch(`${remoteEndpoint}/job`, {
+				method: "POST",
+				headers: remoteHeaders,
+				body: JSON.stringify({
+					prompt: body.prompt,
+					specFile: body.specFile,
+					agent: body.agent,
+					model: body.model,
+					maxIterations: body.maxIterations,
+					workdir: body.workdir,
+				}),
+				signal: AbortSignal.timeout(15_000),
+			});
+
+			if (!remoteResp.ok) {
+				const errText = await remoteResp.text().catch(() => "unknown error");
+				return c.json(
+					{
+						error: `Remote agent returned ${remoteResp.status}`,
+						detail: errText,
+						routedTo: {
+							name: routingDecision.instance.name,
+							endpoint: remoteEndpoint,
+							score: routingDecision.score,
+						},
+					},
+					502,
+				);
+			}
+
+			const remoteData = (await remoteResp.json()) as {
+				id?: string;
+				jobId?: string;
+			};
+			remoteJobId = remoteData.id ?? remoteData.jobId ?? "";
+			if (!remoteJobId) {
+				return c.json({ error: "Remote agent did not return a job ID" }, 502);
+			}
+		} catch (err) {
+			return c.json(
+				{
+					error: `Failed to submit job to remote agent: ${err instanceof Error ? err.message : String(err)}`,
+					routedTo: {
+						name: routingDecision.instance.name,
+						endpoint: remoteEndpoint,
+						score: routingDecision.score,
+					},
+				},
+				502,
+			);
+		}
+
+		// Create local tracking job
+		const localJob = createDelegatedJob(
+			{
+				prompt: body.prompt ?? "",
+				origin: { channel: "http", replyTo: "http", from: "api" },
+				model: body.model,
+				agent: body.agent,
+			},
+			// Adapt coordinator's RoutingDecision shape to the mesh RoutingDecision shape
+			routingDecision as Parameters<typeof createDelegatedJob>[1],
+			remoteJobId,
+		);
+
+		// Persist to disk
+		saveJob(localJob);
+
+		// Start async delegation tracker
+		const tracker = new DelegatedJobTracker(localJob.id, remoteEndpoint, remoteJobId, eventBus, {
+			authToken: peerAuthToken,
+		});
+		tracker.start();
+		activeDelegationTrackers.set(localJob.id, tracker);
+
+		httpLogger.info("Posse job delegated", {
+			localJobId: localJob.id,
+			remoteJobId,
+			remoteAgent: routingDecision.instance.name,
+			score: routingDecision.score,
+		});
+
+		return c.json(
+			{
+				id: localJob.id,
+				status: "delegated",
+				remoteJobId,
+				routedTo: {
+					name: routingDecision.instance.name,
+					endpoint: remoteEndpoint,
+					score: routingDecision.score,
+					breakdown: routingDecision.breakdown,
+				},
+			},
+			201,
+		);
+	});
+
+	// List posse-delegated jobs
+	app.get("/posse/jobs", (c) => {
+		if (!config.posse) {
+			return c.json({ error: "Not a posse member" }, 404);
+		}
+
+		// Collect all jobs with delegation metadata (from disk + active trackers)
+		const allJobs = listJobs();
+		const delegatedJobs = allJobs
+			.filter((j) => j.metadata?.["delegation.remoteJobId"])
+			.map((j) => {
+				const tracker = activeDelegationTrackers.get(j.id);
+				const trackerState = tracker?.getState();
+
+				return {
+					localJobId: j.id,
+					remoteAgent: j.metadata?.["delegation.remoteAgent"] ?? "unknown",
+					remoteEndpoint: j.metadata?.["delegation.remoteEndpoint"] ?? "",
+					remoteJobId: j.metadata?.["delegation.remoteJobId"] ?? "",
+					status: trackerState?.status ?? j.metadata?.["delegation.status"] ?? j.status,
+					routingScore: j.metadata?.["delegation.routingScore"]
+						? Number.parseFloat(j.metadata["delegation.routingScore"])
+						: null,
+					routingReason: j.metadata?.["delegation.routingReason"] ?? null,
+					startedAt: j.metadata?.["delegation.startedAt"] ?? j.startedAt,
+					createdAt: j.createdAt,
+					lastPolled: trackerState?.lastPolled ?? j.metadata?.["delegation.lastPolled"] ?? null,
+					lastRemoteStatus:
+						trackerState?.lastRemoteStatus ?? j.metadata?.["delegation.lastRemoteStatus"] ?? null,
+					prompt: j.prompt,
+					isTrackerActive: !!tracker,
+				};
+			})
+			// Sort by createdAt desc
+			.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+		return c.json({
+			jobs: delegatedJobs,
+			total: delegatedJobs.length,
+			activeTrackers: activeDelegationTrackers.size,
+		});
 	});
 
 	// ---- Skills endpoints ----

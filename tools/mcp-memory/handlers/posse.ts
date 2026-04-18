@@ -273,13 +273,13 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 			};
 		}
 
-		// POST to peer's /jobs endpoint
+		// POST to peer's /job endpoint
 		const headers: Record<string, string> = { "Content-Type": "application/json" };
 		if (RANDAL_PEER_AUTH_TOKEN) {
 			headers.Authorization = `Bearer ${RANDAL_PEER_AUTH_TOKEN}`;
 		}
 
-		const jobResp = await fetch(`${targetEndpoint}/jobs`, {
+		const jobResp = await fetch(`${targetEndpoint}/job`, {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
@@ -318,7 +318,7 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 				jobId,
 				target: targetName,
 				status: "submitted",
-				message: `Task submitted to ${targetName}. Check status at ${targetEndpoint}/jobs/${jobId}`,
+				message: `Task submitted to ${targetName}. Check status at ${targetEndpoint}/job/${jobId}`,
 			};
 		}
 
@@ -328,7 +328,7 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 			await new Promise((r) => setTimeout(r, DELEGATE_POLL_INTERVAL_MS));
 
 			try {
-				const statusResp = await fetch(`${targetEndpoint}/jobs/${jobId}`, {
+				const statusResp = await fetch(`${targetEndpoint}/job/${jobId}`, {
 					headers,
 					signal: AbortSignal.timeout(DELEGATE_HTTP_TIMEOUT_MS),
 				});
