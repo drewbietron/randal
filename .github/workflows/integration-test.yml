@@ -24,9 +24,6 @@ jobs:
   integration-test:
     name: Deploy & Smoke Test
     runs-on: ubuntu-latest
-    # Don't run if Railway token isn't configured
-    if: ${{ secrets.RAILWAY_TOKEN != '' }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
