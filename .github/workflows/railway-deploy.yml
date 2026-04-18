@@ -55,6 +55,12 @@ jobs:
             echo "Railway token found"
           fi
 
+      - name: Generate deploy auth tokens
+        if: env.SKIP_DEPLOY != 'true'
+        run: |
+          echo "RANDAL_API_TOKEN=$(uuidgen)" >> "$GITHUB_ENV"
+          echo "MEILI_MASTER_KEY=$(uuidgen)" >> "$GITHUB_ENV"
+
       - name: Resolve Railway target metadata
         if: env.SKIP_DEPLOY != 'true'
         env:
@@ -224,19 +230,9 @@ jobs:
           set -euo pipefail
 
           VARIABLES=$(jq -cn \
-            --arg randal "${{ secrets.RANDAL_API_TOKEN }}" \
-            --arg meili "${{ secrets.MEILI_MASTER_KEY }}" \
+            --arg randal "$RANDAL_API_TOKEN" \
+            --arg meili "$MEILI_MASTER_KEY" \
             '{RANDAL_API_TOKEN: $randal, MEILI_MASTER_KEY: $meili}')
-
-          if [[ -z "${{ secrets.RANDAL_API_TOKEN }}" ]]; then
-            echo "RANDAL_API_TOKEN secret is required." >&2
-            exit 1
-          fi
-
-          if [[ -z "${{ secrets.MEILI_MASTER_KEY }}" ]]; then
-            echo "MEILI_MASTER_KEY secret is required." >&2
-            exit 1
-          fi
 
           if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
             VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.OPENROUTER_API_KEY }}" '. + {OPENROUTER_API_KEY: $value}')
