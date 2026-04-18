@@ -407,6 +407,20 @@ export class Runner {
 		const adapter = getAdapter(job.agent);
 		const { env, tempHome, auditLog } = await buildProcessEnv(this.config, this.configBasePath);
 
+		// Log credential resolution diagnostics
+		const apiKeyVars = Object.keys(env).filter(
+			(k) => k.includes("API_KEY") || k.includes("TOKEN") || k.includes("SECRET"),
+		);
+		this.logger.info("Credentials resolved for brain session", {
+			jobId: job.id,
+			envVarCount: Object.keys(env).length,
+			apiKeysPresent: apiKeyVars.map((k) => `${k}=${env[k] ? "set" : "missing"}`),
+			hasOpenRouterKey: !!env.OPENROUTER_API_KEY,
+			hasAnthropicKey: !!env.ANTHROPIC_API_KEY,
+			tempHome: tempHome ?? "(none)",
+			inheritConfig: this.config.credentials.inherit,
+		});
+
 		// Inject origin metadata so the brain knows its channel context
 		if (job.origin?.channel) env.RANDAL_CHANNEL = job.origin.channel;
 		if (job.origin?.from) env.RANDAL_FROM = job.origin.from;
@@ -532,6 +546,16 @@ export class Runner {
 			const token = generateToken();
 			const { shell } = wrapCommand(token, adapter.binary, args);
 
+			this.logger.info("Spawning brain process", {
+				jobId: job.id,
+				agent: job.agent,
+				model: job.model,
+				binary: adapter.binary,
+				shell: shell.slice(0, 200),
+				cwd: job.workdir,
+				envKeys: Object.keys(finalEnv).sort().join(", "),
+			});
+
 			const proc = Bun.spawn(["bash", "-c", shell], {
 				cwd: job.workdir,
 				env: finalEnv,
@@ -619,6 +643,20 @@ export class Runner {
 			const agentOutput = parsed?.output ?? stdout;
 			const sentinelExitCode = parsed?.exitCode ?? exitCode;
 
+			this.logger.info("Brain process exited", {
+				jobId: job.id,
+				exitCode,
+				sentinelExitCode,
+				duration,
+				stdoutLength: stdout.length,
+				stderrLength: stderr.length,
+				agentOutputLength: agentOutput.length,
+				agentOutputPreview: agentOutput.slice(0, 500) || "(empty)",
+				stderrPreview: stderr.slice(0, 1000) || "(empty)",
+				sentinelParsed: !!parsed,
+				timedOut,
+			});
+
 			// Parse token usage
 			const tokens = adapter.parseUsage?.(agentOutput) ?? { input: 0, output: 0 };
 			job.cost.totalTokens.input += tokens.input;
@@ -669,6 +707,18 @@ export class Runner {
 
 			// Edge case: empty output with exit code 0 = failure (likely TUI mode or binary not found)
 			if (!agentOutput.trim() && sentinelExitCode === 0) {
+				this.logger.error("Brain produced no output — diagnosing", {
+					jobId: job.id,
+					rawExitCode: exitCode,
+					sentinelExitCode,
+					rawStdoutLength: stdout.length,
+					rawStdout: stdout.slice(0, 1000) || "(completely empty)",
+					rawStderrFull: stderr || "(completely empty)",
+					sentinelParsed: !!parsed,
+					parsedOutput: parsed?.output?.slice(0, 500) ?? "(null)",
+					parsedExitCode: parsed?.exitCode ?? "(null)",
+					duration,
+				});
 				job.status = "failed";
 				job.error = "Brain session produced no output (possible misconfiguration)";
 				job.exitCode = sentinelExitCode;

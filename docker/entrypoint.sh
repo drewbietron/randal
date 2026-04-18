@@ -86,6 +86,17 @@ else
   echo "[randal] WARNING: Setup failed — some features may not work"
 fi
 
+# Install plugin dependencies in the source config dir.
+# randal setup symlinks tools -> /app/agent/opencode-config/tools, and Bun
+# resolves imports from the real (symlink target) path. So node_modules must
+# exist alongside the source tools directory, not just in ~/.config/opencode/.
+if [ -f /app/agent/opencode-config/package.json ]; then
+  echo "[randal] Installing agent config dependencies..."
+  (cd /app/agent/opencode-config && bun install 2>/dev/null) && \
+    echo "[randal] Agent config dependencies installed" || \
+    echo "[randal] WARNING: Agent config dependency install failed"
+fi
+
 # ──────────────────────────────────────────────────────
 # 5. Start Randal
 # ──────────────────────────────────────────────────────

@@ -301,6 +301,36 @@ export async function executeSetup(options: SetupOptions): Promise<SetupResult> 
 		}
 	}
 
+	// 7b. Also install deps in source config dir when outputDir differs.
+	// Tools are symlinked from sourceConfigDir, and Bun resolves imports
+	// relative to the real (symlink target) path. So node_modules must
+	// exist alongside the source tools directory too.
+	const sourcePackageJson = join(sourceConfigDir, "package.json");
+	if (
+		existsSync(sourcePackageJson) &&
+		outputDir !== sourceConfigDir &&
+		!existsSync(join(sourceConfigDir, "node_modules"))
+	) {
+		try {
+			const proc = Bun.spawn(["bun", "install"], {
+				cwd: sourceConfigDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				console.warn(
+					`  Warning: Source config dependency install failed: ${stderr.trim()}`,
+				);
+			}
+		} catch (err) {
+			console.warn(
+				`  Warning: Could not install source config deps: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+
 	return {
 		compileResult,
 		outputPath,
