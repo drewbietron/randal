@@ -58,10 +58,11 @@ jobs:
             MUTATION="mutation { projectCreate(input: {name: \"$PROJECT_NAME\"}) { id name environments { edges { node { id name } } } } }"
           fi
 
-          RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+          RESULT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"query\":\"$MUTATION\"}")
+          echo "API Response: $RESULT"
 
           # Validate the response
           PROJECT_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.id')
@@ -77,12 +78,18 @@ jobs:
           echo "Environment: $ENV_ID"
 
           # Create a service for the deployment
-          SVC_RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+          SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "{\"query\":\"mutation { serviceCreate(input: {name: \\\"randal\\\", projectId: \\\"$PROJECT_ID\\\"}) { id name } }\"}")
+          echo "Service API Response: $SVC_RESULT"
 
           SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
+          if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
+            echo "ERROR: Failed to create Railway service"
+            echo "$SVC_RESULT" | jq .
+            exit 1
+          fi
           echo "Service created: $SERVICE_ID"
 
           # Link the Railway CLI to this project
@@ -179,10 +186,11 @@ jobs:
           echo "Tearing down Railway project: $PROJECT_NAME (ID: $PROJECT_ID)"
 
           if [ -n "$PROJECT_ID" ]; then
-            RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+            RESULT=$(curl -s -X POST "$RAILWAY_API" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "{\"query\":\"mutation { projectDelete(id: \\\"$PROJECT_ID\\\") }\"}" 2>&1) || true
+              -d "{\"query\":\"mutation { projectDelete(id: \\\"$PROJECT_ID\\\") }\"}") || true
+            echo "Teardown API Response: $RESULT"
             echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
           else
             echo "WARNING: No project ID — attempting CLI fallback"
