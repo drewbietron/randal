@@ -15,7 +15,9 @@
 			"type": "local",
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory/index.ts"],
 			"environment": {
-				"MEILI_URL": "http://localhost:7700",
+				"MEILI_URL": "{env:MEILI_URL}",
+				"MEILI_MASTER_KEY": "{env:MEILI_MASTER_KEY}",
+				"MEILI_API_KEY": "{env:MEILI_API_KEY}",
 				"SUMMARY_MODEL": "anthropic/claude-haiku-3"
 			},
 			"enabled": true
