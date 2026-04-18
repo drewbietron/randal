@@ -43,7 +43,10 @@ export function resolveLocalMeilisearchTarget(url: string): LocalMeilisearchTarg
  * Generates MEILI_MASTER_KEY in .env if missing.
  * Returns true if .env was modified (config needs reload).
  */
-async function ensureMeilisearch(config: RandalConfig, configPath?: string): Promise<boolean> {
+export async function ensureMeilisearch(
+	config: RandalConfig,
+	configPath?: string,
+): Promise<boolean> {
 	if (config.memory.store !== "meilisearch") return false;
 
 	// Skip if explicitly disabled (e.g., Railway agent connecting to external Meilisearch)
@@ -52,6 +55,13 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	const url = config.memory.url || "http://localhost:7701";
 	const localTarget = resolveLocalMeilisearchTarget(url);
 	let envModified = false;
+
+	if (!localTarget) {
+		console.log(
+			`\x1b[33m  ! Meilisearch at ${url} is not a local localhost endpoint; skipping local auto-start\x1b[0m`,
+		);
+		return envModified;
+	}
 
 	// Resolve master key: check env, generate if missing
 	let masterKey = process.env.MEILI_MASTER_KEY;
@@ -91,13 +101,6 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 		if (res.ok) return envModified;
 	} catch {
 		// Not running — start it
-	}
-
-	if (!localTarget) {
-		console.log(
-			`\x1b[33m  ! Meilisearch at ${url} is not a local localhost endpoint; skipping local auto-start\x1b[0m`,
-		);
-		return envModified;
 	}
 
 	const { mkdirSync } = await import("node:fs");

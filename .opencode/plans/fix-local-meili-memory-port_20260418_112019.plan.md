@@ -139,6 +139,19 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
    - No remaining user-facing local setup surface contradicts the new compatibility story.
    - `init.ts` no longer disagrees internally between health detection, Docker bootstrap, and emitted config defaults.
 
+5. Guard remote Meilisearch serve paths from local key mutation side effects.
+   Files: `packages/cli/src/commands/serve.ts`
+   Depends on: Step 3
+   Actions:
+   - Move the `localTarget` / localhost-only gate ahead of any `MEILI_MASTER_KEY` generation or `.env` persistence so explicit remote Meilisearch URLs do not get mutated as if they were local bootstrap targets.
+   - Preserve the local bootstrap behavior added in Step 3 for canonical `http://localhost:7701` and explicit legacy localhost overrides, but leave remote / Railway-style endpoints completely untouched.
+   Verification:
+   - targeted `randal serve` smoke check with a non-local `memory.url` confirming no new `MEILI_MASTER_KEY` is generated or persisted
+   - rerun the Step 3 negative-path smoke check for a Railway-style host
+   Done criteria:
+   - `randal serve` does not generate or persist a new local `MEILI_MASTER_KEY` when `memory.url` points at a non-local Meilisearch endpoint.
+   - Remote / Railway-style configurations remain behaviorally unchanged while localhost flows still work as designed.
+
 ## Sprint Contract
 
 | Step | Done Criteria | Verified |
@@ -147,6 +160,7 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 | 2 | Symlinked local OpenCode memory and chat-history paths stop hardcoding broken `7700` and share the same URL precedence. | Local `opencode` smoke check with default local config; verify actual OpenCode memory entrypoint behavior; optional `MEILI_URL=http://localhost:7700 opencode` compatibility smoke check |
 | 3 | CLI bootstrap honors configured local host port and does not disturb explicit Railway/CI URLs. | `bun test tools/mcp-memory-server.integration.test.ts`; targeted `randal serve` smoke checks against default and explicit configs; non-local URL negative-path smoke check |
 | 4 | Init-generated config, core config default tests, and CLI docs all reflect the canonical local URL and compatibility story. | `bun test packages/core/src/config.test.ts`; targeted `randal init` smoke check; CLI reference spot-check |
+| 5 | Explicit non-local Meilisearch URLs are left completely untouched by `randal serve`, including `.env` key persistence. | targeted `randal serve` smoke check with non-local `memory.url`; Railway-style negative-path smoke check |
 
 ## Files to Modify
 | File | Action | Step | Summary |
@@ -162,6 +176,7 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 | `packages/cli/src/commands/init.ts` | Update | 4 | Prevent freshly initialized local projects from regenerating the stale `7700` default in detection, bootstrap, and generated config output. |
 | `packages/core/src/config.test.ts` | Update | 4 | Align shared schema default assertions with the chosen canonical local URL. |
 | `docs/cli-reference.md` | Update | 4 | Update the documented doctor output so user-facing CLI docs match the verified local Meilisearch URL. |
+| `packages/cli/src/commands/serve.ts` | Update | 5 | Prevent remote/hosted Meilisearch configs from generating or persisting a local `MEILI_MASTER_KEY`. |
 
 ## Dependencies / Prerequisites
 - Local Meilisearch availability and chosen canonical resolution strategy.
@@ -198,6 +213,7 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 - [x] Relevant targeted tests pass.
 - [x] Broader validation passes for touched areas.
 - [x] No remaining local setup/test/doc surface still advertises the superseded default `http://localhost:7700` unless it is an intentional explicit-override example.
+- [x] `randal serve` leaves explicit non-local Meilisearch configs untouched, including `.env` key persistence.
 
 ## Build Notes
 - Reserved for @build.
@@ -214,6 +230,10 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 - Adapted scope beyond the original file list to clear the remaining stale local-default surfaces found during the final sweep: updated `packages/memory` and runner tests, local example configs, and docs/config reference pages that still advertised `http://localhost:7700` as the default.
 - Verification: `bun test packages/core/src/config.test.ts` (48 pass), `bun test packages/memory/src/memory.test.ts packages/memory/src/stores/meilisearch.test.ts packages/memory/src/cross-agent.test.ts tests/integration/cross-agent-sharing.test.ts packages/runner/src/prompt-assembly.test.ts` (113 pass), and an isolated `randal init --yes` smoke run showing generated config now uses `memory.url: http://localhost:7701` with `apiKey: "${MEILI_MASTER_KEY}"`.
 - Final sweep: the only remaining `http://localhost:7700` references are intentional legacy-override examples/tests (`tools/mcp-memory-server.integration.test.ts` and `agent/README.md`).
+- Final review finding: `packages/cli/src/commands/serve.ts` still generated/persisted a new local `MEILI_MASTER_KEY` before checking whether `memory.url` was actually local, which risks mutating remote / Railway-style setups. Reopened the build with Step 5 to guard the non-local path.
+- Step 5 completed in iteration 5. Branch: fix/local-meili-memory-port
+- Moved the localhost-only gate in `packages/cli/src/commands/serve.ts` ahead of any local `MEILI_MASTER_KEY` generation or `.env` persistence so explicit remote / Railway-style Meilisearch URLs now return untouched.
+- Verification: targeted `ensureMeilisearch()` smoke check with `memory.url: https://meili.internal:7700` confirmed no `.env` mutation and no generated local key when `MEILI_MASTER_KEY`/`MEILI_API_KEY` start empty; reran `resolveLocalMeilisearchTarget()` negative-path smoke to confirm Railway-style hosts still bypass local inference while canonical `http://localhost:7701` remains local.
 
 ## Planning Progress
 - [x] Requirements gathered (Turn 1)
