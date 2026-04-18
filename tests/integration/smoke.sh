@@ -72,6 +72,10 @@ fi
 # 5. List jobs — use -w to capture HTTP status alongside body
 JOBS_TMP=$(mktemp)
 JOBS_HTTP=$(rcurl -s -o "$JOBS_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/jobs" 2>/dev/null || true)
+if [ "$JOBS_HTTP" != "200" ] && grep -qiE "Application not found|request_id" "$JOBS_TMP" 2>/dev/null; then
+  sleep 2
+  JOBS_HTTP=$(rcurl -s -o "$JOBS_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/jobs" 2>/dev/null || true)
+fi
 LAST_BODY="HTTP $JOBS_HTTP: $(cat "$JOBS_TMP" | head -c 200)"
 if [ "$JOBS_HTTP" = "200" ]; then
   cat "$JOBS_TMP" | jq -e 'type == "array"' > /dev/null 2>&1
