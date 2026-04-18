@@ -68,7 +68,7 @@ gateway:
       auth: "${RANDAL_API_TOKEN}"
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
 ```
 
@@ -81,7 +81,7 @@ To manage manually:
 ```bash
 # Start via Docker (recommended — data persists at ~/.randal/meili-data/)
 docker run -d --name randal-meilisearch --restart unless-stopped \
-  -p 7700:7700 \
+  -p 7701:7700 \
   -v ~/.randal/meili-data:/meili_data \
   -e MEILI_MASTER_KEY="${MEILI_MASTER_KEY}" \
   getmeili/meilisearch:v1.12
@@ -359,7 +359,7 @@ No manual index setup is needed. Just provide the URL and API key in your Randal
 ```yaml
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
 ```
 
@@ -371,7 +371,7 @@ For multiple agents in a posse to share learnings:
 # Agent A config
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-agent-a
   sharing:
@@ -381,7 +381,7 @@ memory:
 # Agent B config
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-agent-b
   sharing:

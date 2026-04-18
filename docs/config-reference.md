@@ -393,7 +393,7 @@ Memory system configuration. Defaults to `{}` if omitted.
 | Field | Type | Default | Required | Description |
 |-------|------|---------|----------|-------------|
 | `memory.store` | `"meilisearch"` | `"meilisearch"` | No | Storage backend. Meilisearch is the only supported backend. |
-| `memory.url` | string | `"http://localhost:7700"` | No | Meilisearch server URL. |
+| `memory.url` | string | `"http://localhost:7701"` | No | Meilisearch server URL. |
 | `memory.apiKey` | string | — | No | Meilisearch API key. |
 | `memory.index` | string | `"memory-{name}"` | No | Meilisearch index name. Falls back to `memory-` + config `name`. |
 | `memory.autoInject.enabled` | boolean | `true` | No | Auto-inject relevant memory into agent system prompt. |
@@ -699,7 +699,7 @@ gateway:
       allowFrom: ["123456789012345678"]
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-assistant
   autoInject:

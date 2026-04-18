@@ -331,7 +331,7 @@ Example output:
   [PASS] Config freshness: opencode.json is consistent with current config
   [PASS] Identity files: All identity files resolve (persona, 3 rules)
   [PASS] MCP servers: All MCP server scripts exist (memory, scheduler, tavily)
-  [PASS] Meilisearch: Meilisearch is healthy at http://localhost:7700
+  [PASS] Meilisearch: Meilisearch is healthy at http://localhost:7701
   [PASS] OpenCode CLI: `opencode` is available on PATH
   [PASS] Symlinks: 8 symlinks OK (agents, skills, lenses, ...)
 

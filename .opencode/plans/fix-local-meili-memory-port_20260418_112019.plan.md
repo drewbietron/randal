@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-18T11:21:31-05:00
 **File**: .opencode/plans/fix-local-meili-memory-port_20260418_112019.plan.md
-**Status**: Ready
+**Status**: Complete
 **Planning Turn**: 7 of ~7
 **Model**: openai/gpt-5.4
 
@@ -190,14 +190,14 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 - Revert the branch or restore the previous Meilisearch URL resolution behavior if the new strategy causes regressions.
 
 ## Acceptance Criteria
-- [ ] Local OpenCode memory/chat-history no longer fails because of an incorrect default connection target.
-- [ ] Railway-oriented memory configuration still resolves correctly.
-- [ ] The chosen configuration strategy is documented and test-covered enough to prevent silent drift.
-- [ ] Fresh local CLI initialization and bootstrap flows no longer reintroduce stale `7700` assumptions.
-- [ ] Both active memory MCP entrypoints follow the same resolved Meilisearch URL/auth contract, or the obsolete one is intentionally removed from the path.
-- [ ] Relevant targeted tests pass.
-- [ ] Broader validation passes for touched areas.
-- [ ] No remaining local setup/test/doc surface still advertises the superseded default `http://localhost:7700` unless it is an intentional explicit-override example.
+- [x] Local OpenCode memory/chat-history no longer fails because of an incorrect default connection target.
+- [x] Railway-oriented memory configuration still resolves correctly.
+- [x] The chosen configuration strategy is documented and test-covered enough to prevent silent drift.
+- [x] Fresh local CLI initialization and bootstrap flows no longer reintroduce stale `7700` assumptions.
+- [x] Both active memory MCP entrypoints follow the same resolved Meilisearch URL/auth contract, or the obsolete one is intentionally removed from the path.
+- [x] Relevant targeted tests pass.
+- [x] Broader validation passes for touched areas.
+- [x] No remaining local setup/test/doc surface still advertises the superseded default `http://localhost:7700` unless it is an intentional explicit-override example.
 
 ## Build Notes
 - Reserved for @build.
@@ -210,6 +210,10 @@ Local OpenCode chat-history and memory flows in `/Users/drewbie/dev/randal` are 
 - Step 3 completed in iteration 3. Branch: fix/local-meili-memory-port
 - `packages/cli/src/commands/serve.ts` now derives local Meilisearch startup settings from explicit localhost-style URLs only: canonical local `http://localhost:7701` publishes `7701:7700`, explicit legacy `http://127.0.0.1:7700` still publishes `127.0.0.1:7700:7700`, and non-local URLs skip local auto-start instead of being misclassified.
 - Verification: `bun test tools/mcp-memory-server.integration.test.ts` (8 pass after adding local-resolution coverage) and targeted `resolveLocalMeilisearchTarget()` smoke checks for canonical local, explicit legacy local, and remote-hosted endpoints.
+- Step 4 completed in iteration 4. Branch: fix/local-meili-memory-port
+- Adapted scope beyond the original file list to clear the remaining stale local-default surfaces found during the final sweep: updated `packages/memory` and runner tests, local example configs, and docs/config reference pages that still advertised `http://localhost:7700` as the default.
+- Verification: `bun test packages/core/src/config.test.ts` (48 pass), `bun test packages/memory/src/memory.test.ts packages/memory/src/stores/meilisearch.test.ts packages/memory/src/cross-agent.test.ts tests/integration/cross-agent-sharing.test.ts packages/runner/src/prompt-assembly.test.ts` (113 pass), and an isolated `randal init --yes` smoke run showing generated config now uses `memory.url: http://localhost:7701` with `apiKey: "${MEILI_MASTER_KEY}"`.
+- Final sweep: the only remaining `http://localhost:7700` references are intentional legacy-override examples/tests (`tools/mcp-memory-server.integration.test.ts` and `agent/README.md`).
 
 ## Planning Progress
 - [x] Requirements gathered (Turn 1)
