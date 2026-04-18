@@ -327,7 +327,7 @@ export const configSchema = z.object({
 	memory: z
 		.object({
 			store: z.literal("meilisearch").default("meilisearch"),
-			url: z.string().default("http://localhost:7700"),
+			url: z.string().default("http://localhost:7701"),
 			apiKey: z.string().default(""),
 			index: z.string().optional(),
 			embedder: embedderSchema.default({ type: "builtin" }),
