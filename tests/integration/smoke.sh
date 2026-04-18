@@ -114,8 +114,14 @@ fi
 rm -f "$CRON_TMP"
 
 # 10. Cron — delete
+# Railway's edge proxy can return transient 404 "Application not found" for
+# DELETE requests shortly after other operations.  Retry once after a delay.
 DEL_TMP=$(mktemp)
 DEL_HTTP=$(rcurl -s -o "$DEL_TMP" -w "%{http_code}" -X DELETE -H "$AUTH" "$BASE_URL/cron/ci-test" 2>/dev/null || true)
+if [ "$DEL_HTTP" != "200" ] && grep -qiE "Application not found|request_id" "$DEL_TMP" 2>/dev/null; then
+  sleep 2
+  DEL_HTTP=$(rcurl -s -o "$DEL_TMP" -w "%{http_code}" -X DELETE -H "$AUTH" "$BASE_URL/cron/ci-test" 2>/dev/null || true)
+fi
 LAST_BODY="HTTP $DEL_HTTP: $(cat "$DEL_TMP" | head -c 200)"
 if [ "$DEL_HTTP" = "200" ]; then
   cat "$DEL_TMP" | jq -e '.ok == true' > /dev/null 2>&1
