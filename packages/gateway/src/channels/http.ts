@@ -332,7 +332,114 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			}
 		}
 
-		// Submit job — returns immediately with job ID
+		// Posse auto-routing: if mesh coordinator is available and ?local=true is NOT set,
+		// attempt to route to the best remote agent. If the best agent scores well enough,
+		// delegate transparently — the caller gets the same response shape.
+		const localOnly = c.req.query("local") === "true";
+		if (!localOnly && meshCoordinator?.routeTask) {
+			try {
+				const prompt = body.prompt ?? body.specFile ?? "";
+				const routingDecision = await meshCoordinator.routeTask(prompt);
+
+				// Only auto-delegate if score exceeds threshold (0.3)
+				if (routingDecision && routingDecision.score > 0.3) {
+					// Resolve auth token for peer communication
+					const peerHttpChannel = config.gateway.channels.find((ch) => ch.type === "http");
+					const peerAuthToken =
+						process.env.RANDAL_PEER_AUTH_TOKEN ??
+						(peerHttpChannel?.type === "http" ? peerHttpChannel.auth : undefined);
+
+					const remoteEndpoint = routingDecision.instance.endpoint;
+					const remoteHeaders: Record<string, string> = {
+						"Content-Type": "application/json",
+					};
+					if (peerAuthToken) {
+						remoteHeaders.Authorization = `Bearer ${peerAuthToken}`;
+					}
+
+					const remoteResp = await fetch(`${remoteEndpoint}/job`, {
+						method: "POST",
+						headers: remoteHeaders,
+						body: JSON.stringify({
+							prompt: body.prompt,
+							specFile: body.specFile,
+							agent: body.agent,
+							model: body.model,
+							maxIterations: body.maxIterations,
+							workdir: body.workdir,
+						}),
+						signal: AbortSignal.timeout(15_000),
+					});
+
+					if (remoteResp.ok) {
+						const remoteData = (await remoteResp.json()) as {
+							id?: string;
+							jobId?: string;
+						};
+						const remoteJobId = remoteData.id ?? remoteData.jobId ?? "";
+						if (remoteJobId) {
+							// Create local tracking job
+							const localJob = createDelegatedJob(
+								{
+									prompt: body.prompt ?? "",
+									origin: { channel: "http", replyTo: "http", from: "api" },
+									model: body.model,
+									agent: body.agent,
+								},
+								routingDecision as Parameters<typeof createDelegatedJob>[1],
+								remoteJobId,
+							);
+							saveJob(localJob);
+
+							// Start async delegation tracker
+							const tracker = new DelegatedJobTracker(
+								localJob.id,
+								remoteEndpoint,
+								remoteJobId,
+								eventBus,
+								{ authToken: peerAuthToken },
+							);
+							tracker.start();
+							activeDelegationTrackers.set(localJob.id, tracker);
+
+							httpLogger.info("Auto-routed job to posse agent", {
+								localJobId: localJob.id,
+								remoteJobId,
+								remoteAgent: routingDecision.instance.name,
+								score: routingDecision.score,
+							});
+
+							return c.json(
+								{
+									id: localJob.id,
+									status: "delegated",
+									remoteJobId,
+									routedTo: {
+										name: routingDecision.instance.name,
+										endpoint: remoteEndpoint,
+										score: routingDecision.score,
+										breakdown: routingDecision.breakdown,
+									},
+								},
+								201,
+							);
+						}
+					}
+					// If remote submission failed, fall through to local execution
+					httpLogger.warn("Posse auto-routing failed, falling back to local execution", {
+						remoteAgent: routingDecision.instance.name,
+						remoteStatus: remoteResp.status,
+					});
+				}
+			} catch (err) {
+				// Non-fatal: routing failure should not block local execution
+				httpLogger.warn("Posse auto-routing error, falling back to local execution", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		}
+
+		// Local execution path (original behavior)
 		const { jobId, done } = runner.submit({
 			prompt: body.prompt,
 			specFile: body.specFile,
