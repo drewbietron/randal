@@ -89,6 +89,14 @@ jobs:
             echo "$response"
           }
 
+          graphql_maybe() {
+            local payload="$1"
+            curl -fsSL -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$payload"
+          }
+
           fail_target_resolution() {
             echo "::error::$1" >&2
             exit 1
@@ -103,7 +111,7 @@ jobs:
           default_project_name="${GITHUB_REPOSITORY##*/}"
           default_service_name="$default_project_name"
 
-          token_context=$(graphql '{"query":"query { projectToken { projectId environmentId } }"}')
+          token_context=$(graphql_maybe '{"query":"query { projectToken { projectId environmentId } }"}')
           token_project_id=$(echo "$token_context" | jq -r '.data.projectToken.projectId // empty')
           token_environment_id=$(echo "$token_context" | jq -r '.data.projectToken.environmentId // empty')
 
