@@ -28,6 +28,10 @@ gateway:
     - type: http
       port: 7600
       auth: "${RANDAL_API_TOKEN}"
+    - type: discord
+      token: "${DISCORD_BOT_TOKEN}"
+      allowFrom:
+        - "${DISCORD_ALLOW_FROM}"
 
 memory:
   store: meilisearch
