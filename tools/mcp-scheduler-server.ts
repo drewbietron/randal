@@ -170,10 +170,35 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 		if (!name || !prompt) {
 			throw new ToolError("name and prompt are required for action 'add'");
 		}
+
+		// Normalize schedule — LLMs often pass stringified objects instead of actual objects
+		let schedule: unknown = params.schedule ?? { every: "1h" };
+		if (typeof schedule === "string") {
+			// Try JSON parse first (handles '{"every":"1m"}')
+			try {
+				const parsed = JSON.parse(schedule);
+				if (typeof parsed === "object" && parsed !== null) {
+					schedule = parsed;
+				}
+			} catch {
+				// Try parsing JS-style object literals: { every: "1m" } or { at: "2026..." }
+				const raw = schedule as string;
+				const everyMatch = raw.match(/every\s*:\s*["']([^"']+)["']/);
+				const atMatch = raw.match(/at\s*:\s*["']([^"']+)["']/);
+
+				if (everyMatch) {
+					schedule = { every: everyMatch[1] };
+				} else if (atMatch) {
+					schedule = { at: atMatch[1] };
+				}
+				// else leave as string — it's a real cron expression like "0 9 * * 1-5"
+			}
+		}
+
 		const body: Record<string, unknown> = {
 			name,
 			prompt,
-			schedule: params.schedule ?? { every: "1h" },
+			schedule,
 			execution: params.execution ?? "isolated",
 		};
 		if (params.model) body.model = params.model;
