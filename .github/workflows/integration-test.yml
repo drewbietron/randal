@@ -55,13 +55,15 @@ jobs:
           echo "Creating Railway project: $PROJECT_NAME"
 
           # Build the GraphQL payload safely with jq + GraphQL variables.
-          # Include services in the response — Railway may auto-create one.
+          # We only need project ID + environment ID from the create response.
+          # Services are always created explicitly below (projectCreate may not
+          # include auto-created services in its response).
           if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" --arg ws "$RAILWAY_WORKSPACE_ID" \
-              '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } services { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
+              '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
           else
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" \
-              '{query: "mutation ($name: String!) { projectCreate(input: {name: $name}) { id name environments { edges { node { id name } } } services { edges { node { id name } } } } }", variables: {name: $name}}')
+              '{query: "mutation ($name: String!) { projectCreate(input: {name: $name}) { id name environments { edges { node { id name } } } } }", variables: {name: $name}}')
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
@@ -83,29 +85,24 @@ jobs:
           echo "Project created: $PROJECT_ID"
           echo "Environment: $ENV_ID"
 
-          # Use the auto-created service if one exists, otherwise create one
-          SERVICE_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.services.edges[0].node.id // empty')
+          # Always create a service explicitly — don't rely on auto-created
+          # services from projectCreate (they may not appear in the response).
+          echo "Creating service..."
+          SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
+            '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
+          SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$SVC_PAYLOAD")
+          echo "Service API Response: $SVC_RESULT"
 
-          if [ -n "$SERVICE_ID" ]; then
-            echo "Using auto-created service: $SERVICE_ID"
-          else
-            echo "No auto-created service — creating one..."
-            SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
-              '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
-            SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "$SVC_PAYLOAD")
-            echo "Service API Response: $SVC_RESULT"
-
-            SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
-            if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
-              echo "ERROR: Failed to create Railway service"
-              echo "$SVC_RESULT" | jq .
-              exit 1
-            fi
-            echo "Service created: $SERVICE_ID"
+          SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
+          if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
+            echo "ERROR: Failed to create Railway service"
+            echo "$SVC_RESULT" | jq .
+            exit 1
           fi
+          echo "Service created: $SERVICE_ID"
 
           # Export IDs as environment variables for subsequent steps.
           # The Railway CLI reads RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID,
@@ -161,6 +158,12 @@ jobs:
           echo "  Project:     $RAILWAY_PROJECT_ID"
           echo "  Service:     $RAILWAY_SERVICE_ID"
           echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
+
+          # Small delay for Railway's eventual consistency — the service
+          # needs to propagate before the CLI can find it.
+          echo "Waiting 5s for service to propagate..."
+          sleep 5
+
           railway up -d --service "$RAILWAY_SERVICE_ID"
 
       # Wait for the deployment to become healthy
