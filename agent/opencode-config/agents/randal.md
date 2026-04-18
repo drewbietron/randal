@@ -14,7 +14,6 @@ tools:
   todowrite: true
   question: true
   skill: true
-  worktree_cleanup: true
 permission:
   write:
     "*": deny
