@@ -18,7 +18,9 @@ on:
 
 env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
+  RAILWAY_API: https://backboard.railway.com/graphql/v2
 
 jobs:
   integration-test:
@@ -44,19 +46,58 @@ jobs:
           echo "MEILI_MASTER_KEY=$(uuidgen)" >> "$GITHUB_ENV"
 
       # Create an ephemeral Railway project for this CI run
+      # NOTE: `railway project create` does not exist. `railway init --name` requires
+      # interactive workspace selection when the token has access to multiple workspaces.
+      # The Railway GraphQL API is the only reliable non-interactive approach.
       - name: Create Railway project
         id: create-project
         run: |
           echo "Creating Railway project: $PROJECT_NAME"
-          railway project create "$PROJECT_NAME"
 
-          # Link to the newly created project
-          railway link --project "$PROJECT_NAME"
+          # Build the GraphQL mutation — include workspaceId if configured
+          if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
+            MUTATION="mutation { projectCreate(input: {name: \"$PROJECT_NAME\", workspaceId: \"$RAILWAY_WORKSPACE_ID\"}) { id name environments { edges { node { id name } } } } }"
+          else
+            MUTATION="mutation { projectCreate(input: {name: \"$PROJECT_NAME\"}) { id name environments { edges { node { id name } } } } }"
+          fi
 
-          # Capture the project ID for reliable teardown
-          PROJECT_ID=$(railway project list --json 2>/dev/null | jq -r ".[] | select(.name == \"$PROJECT_NAME\") | .id" || true)
-          echo "Project ID: $PROJECT_ID"
+          RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"$MUTATION\"}")
+
+          # Validate the response
+          PROJECT_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.id')
+          ENV_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.environments.edges[0].node.id')
+
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "ERROR: Failed to create Railway project"
+            echo "$RESULT" | jq .
+            exit 1
+          fi
+
+          echo "Project created: $PROJECT_ID"
+          echo "Environment: $ENV_ID"
+
+          # Create a service for the deployment
+          SVC_RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"mutation { serviceCreate(input: {name: \\\"randal\\\", projectId: \\\"$PROJECT_ID\\\"}) { id name } }\"}")
+
+          SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
+          echo "Service created: $SERVICE_ID"
+
+          # Link the Railway CLI to this project
+          LINK_ARGS="--project $PROJECT_ID --environment $ENV_ID --service $SERVICE_ID"
+          if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
+            LINK_ARGS="$LINK_ARGS --workspace $RAILWAY_WORKSPACE_ID"
+          fi
+          railway link $LINK_ARGS
+
           echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "environment_id=$ENV_ID" >> "$GITHUB_OUTPUT"
+          echo "service_id=$SERVICE_ID" >> "$GITHUB_OUTPUT"
           echo "project_created=true" >> "$GITHUB_OUTPUT"
 
       # Set environment variables on the Railway project
@@ -132,18 +173,23 @@ jobs:
           ./tests/integration/smoke.sh
 
       # Always tear down the Railway project, even on failure
+      # NOTE: `railway delete` / `railway project delete` may fail in non-interactive
+      # CI when multiple workspaces are accessible. Use the GraphQL API for reliable cleanup.
       - name: Teardown Railway project
         if: always() && steps.create-project.outputs.project_created == 'true'
         run: |
           PROJECT_ID="${{ steps.create-project.outputs.project_id }}"
           echo "Tearing down Railway project: $PROJECT_NAME (ID: $PROJECT_ID)"
 
-          # Prefer deletion by project ID for reliability; fall back to linked project
           if [ -n "$PROJECT_ID" ]; then
-            railway project delete "$PROJECT_ID" --yes 2>/dev/null || \
-              railway project delete --yes 2>/dev/null || true
+            RESULT=$(curl -sf -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\":\"mutation { projectDelete(id: \\\"$PROJECT_ID\\\") }\"}" 2>&1) || true
+            echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
           else
-            railway project delete --yes 2>/dev/null || true
+            echo "WARNING: No project ID — attempting CLI fallback"
+            railway delete --yes 2>/dev/null || true
           fi
           echo "Cleanup complete"
 
