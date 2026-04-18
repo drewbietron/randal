@@ -23,6 +23,7 @@ credentials:
     - DISCORD_BOT_TOKEN
     - FAL_KEY
     - ELEVENLABS_API_KEY
+    - RAILWAY_TOKEN           # Railway CLI / MCP server authentication
   # On Railway, secrets are injected as process env vars (not .env file).
   # 'inherit' passes parent process env vars through to the agent subprocess.
   inherit:
@@ -39,6 +40,7 @@ credentials:
     - FAL_KEY
     - ELEVENLABS_API_KEY
     - MEILI_MASTER_KEY
+    - RAILWAY_TOKEN
 
 gateway:
   channels:
