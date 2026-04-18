@@ -17,9 +17,6 @@ on:
   workflow_dispatch: # manual trigger
 
 env:
-  # RAILWAY_TOKEN is read by the Railway CLI for auth. Combined with
-  # RAILWAY_PROJECT_ID and RAILWAY_SERVICE_ID in GITHUB_ENV, it provides
-  # full project context — no `railway link` or .railway.json needed.
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
   RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
@@ -32,12 +29,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # Install Railway CLI (same pattern as railway-deploy.yml)
-      - name: Install Railway CLI
-        run: |
-          npm install -g @railway/cli
-          railway --version
 
       # Generate auth tokens for this run
       - name: Generate auth tokens
@@ -105,8 +96,6 @@ jobs:
           echo "Service created: $SERVICE_ID"
 
           # Export IDs as environment variables for subsequent steps.
-          # The Railway CLI reads RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID,
-          # and RAILWAY_ENVIRONMENT_ID from the environment — no `railway link` needed.
           echo "RAILWAY_PROJECT_ID=$PROJECT_ID" >> "$GITHUB_ENV"
           echo "RAILWAY_SERVICE_ID=$SERVICE_ID" >> "$GITHUB_ENV"
           echo "RAILWAY_ENVIRONMENT_ID=$ENV_ID" >> "$GITHUB_ENV"
@@ -148,47 +137,38 @@ jobs:
           fi
           echo "Environment variables set."
 
-      # Deploy to Railway
-      # The CLI reads RAILWAY_TOKEN for auth. Project/service/environment
-      # context is provided via both env vars (RAILWAY_PROJECT_ID, etc.)
-      # and ~/.railway/config.json — belt and suspenders for reliability.
+      # Deploy via Railway API — connect the service to the GitHub repo
+      # so Railway pulls and builds from source. No CLI needed.
       - name: Deploy to Railway
         run: |
-          echo "Deploying to Railway..."
+          echo "Deploying via Railway API (serviceConnect)..."
           echo "  Project:     $RAILWAY_PROJECT_ID"
           echo "  Service:     $RAILWAY_SERVICE_ID"
           echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
+          echo "  Repo:        drewbietron/randal"
+          echo "  Branch:      ${{ github.head_ref || github.ref_name }}"
 
-          # Small delay for Railway's eventual consistency — the service
-          # needs to propagate before the CLI can find it.
-          echo "Waiting 5s for service to propagate..."
-          sleep 5
+          # Connect service to GitHub repo — triggers an auto-deploy from source.
+          # Railway's GitHub integration builds from the repo's Dockerfile.
+          CONNECT_RESULT=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg sid "$RAILWAY_SERVICE_ID" \
+              --arg repo "drewbietron/randal" \
+              --arg branch "${{ github.head_ref || github.ref_name }}" \
+              '{query: "mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }",
+                variables: {id: $sid, input: {repo: $repo, branch: $branch}}}')")
+          echo "Connect result: $CONNECT_RESULT"
 
-          # Write Railway CLI config directly — equivalent to `railway link`.
-          # The CLI reads ~/.railway/config.json for project/service/environment
-          # context. This avoids "Service not found" errors in non-interactive CI.
-          mkdir -p ~/.railway
-          jq -n \
-            --arg pid "$RAILWAY_PROJECT_ID" \
-            --arg eid "$RAILWAY_ENVIRONMENT_ID" \
-            --arg sid "$RAILWAY_SERVICE_ID" \
-            --arg name "$PROJECT_NAME" \
-            '{
-              projects: {
-                ($pid): {
-                  environment: $eid,
-                  environmentName: "production",
-                  name: $name,
-                  service: $sid
-                }
-              },
-              default: $pid
-            }' > ~/.railway/config.json
-
-          echo "Wrote Railway CLI config:"
-          cat ~/.railway/config.json
-
-          railway up -d
+          # Validate the response
+          CONNECTED_ID=$(echo "$CONNECT_RESULT" | jq -r '.data.serviceConnect.id')
+          if [ -z "$CONNECTED_ID" ] || [ "$CONNECTED_ID" = "null" ]; then
+            echo "ERROR: Failed to connect service to GitHub repo"
+            echo "$CONNECT_RESULT" | jq .
+            exit 1
+          fi
+          echo "Service connected — deployment triggered from GitHub repo"
 
       # Wait for the deployment to become healthy
       - name: Wait for health
