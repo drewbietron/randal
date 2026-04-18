@@ -17,9 +17,9 @@ on:
   workflow_dispatch: # manual trigger
 
 env:
-  # RAILWAY_API_TOKEN is an account- or workspace-scoped token used for
-  # management operations (create project, service, set variables, etc.).
-  # RAILWAY_TOKEN (project-scoped) is generated at runtime for the new project.
+  # RAILWAY_API_TOKEN is an account- or workspace-scoped token used for all
+  # Railway operations: GraphQL management API calls and CLI deploys via
+  # `railway up --project`. Project tokens can't target ephemeral projects.
   RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
   RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
@@ -140,34 +140,14 @@ jobs:
           fi
           echo "Environment variables set."
 
-      # Generate a project-scoped token for the new project so the Railway CLI
-      # can deploy to it. The account token (RAILWAY_API_TOKEN) handles management
-      # operations, but `railway up` expects RAILWAY_TOKEN (a project token).
-      - name: Generate project token
-        run: |
-          echo "Generating project token for $RAILWAY_PROJECT_ID..."
-          TOKEN_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg pid "$RAILWAY_PROJECT_ID" --arg eid "$RAILWAY_ENVIRONMENT_ID" \
-              '{query: "mutation($pid: String!, $eid: String!) { projectTokenCreate(input: {projectId: $pid, environmentId: $eid, name: \"ci-deploy\"}) }", variables: {pid: $pid, eid: $eid}}')")
-
-          PROJECT_TOKEN=$(echo "$TOKEN_RESULT" | jq -r '.data.projectTokenCreate')
-          if [ -z "$PROJECT_TOKEN" ] || [ "$PROJECT_TOKEN" = "null" ]; then
-            echo "ERROR: Failed to generate project token"
-            echo "$TOKEN_RESULT" | jq .
-            exit 1
-          fi
-          echo "Project token generated successfully"
-
-          # Mask the token in logs, then export for subsequent steps
-          echo "::add-mask::$PROJECT_TOKEN"
-          echo "RAILWAY_TOKEN=$PROJECT_TOKEN" >> "$GITHUB_ENV"
-
       # Deploy via Railway CLI — push local source to the new project.
-      # serviceConnect requires GitHub OAuth integration at the account level
-      # which isn't available with API tokens. `railway up` uploads the
-      # checked-out source directly, sidestepping that requirement.
+      # serviceConnect requires GitHub OAuth at the account level, which isn't
+      # available with API tokens. `railway up` uploads the checked-out source
+      # directly, sidestepping that requirement.
+      #
+      # We use RAILWAY_API_TOKEN (account/workspace scope) with explicit
+      # --project, --environment, --service flags. Account tokens require
+      # --project to be specified (project tokens infer it).
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
@@ -178,9 +158,10 @@ jobs:
           echo "  Service:     $RAILWAY_SERVICE_ID"
           echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
 
-          # RAILWAY_TOKEN is now the project-scoped token generated above.
-          # --ci streams build logs and exits when the build completes.
+          # RAILWAY_API_TOKEN is set at workflow level from secrets.
+          # Use --project since account tokens aren't scoped to a project.
           railway up \
+            --project "$RAILWAY_PROJECT_ID" \
             --service "$RAILWAY_SERVICE_ID" \
             --environment "$RAILWAY_ENVIRONMENT_ID" \
             --ci
