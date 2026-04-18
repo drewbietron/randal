@@ -335,6 +335,14 @@ export class CronScheduler {
 			if (state) {
 				state.nextRun = "cron-expression";
 			}
+			// Ensure the shared cron check timer is running (it may not have been
+			// started during start() if no cron-expression jobs existed at boot)
+			if (!this.cronCheckTimer) {
+				this.cronCheckTimer = setInterval(() => {
+					this.checkCronExpressions();
+				}, 60_000);
+				logger.info("Cron check timer started (first cron expression job added at runtime)");
+			}
 		} else if ("every" in schedule) {
 			// Interval
 			const ms = parseDuration(schedule.every);
