@@ -17,7 +17,10 @@ on:
   workflow_dispatch: # manual trigger
 
 env:
-  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  # RAILWAY_API_TOKEN is an account- or workspace-scoped token used for
+  # management operations (create project, service, set variables, etc.).
+  # RAILWAY_TOKEN (project-scoped) is generated at runtime for the new project.
+  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
   RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
   RAILWAY_API: https://backboard.railway.com/graphql/v2
@@ -58,7 +61,7 @@ jobs:
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
           echo "API Response: $RESULT"
@@ -82,7 +85,7 @@ jobs:
           SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
             '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
           SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$SVC_PAYLOAD")
           echo "Service API Response: $SVC_RESULT"
@@ -119,7 +122,7 @@ jobs:
               '{query: "mutation ($input: VariableUpsertInput!) { variableUpsert(input: $input) }",
                 variables: {input: {projectId: $pid, serviceId: $sid, environmentId: $eid, name: $k, value: $v}}}')
             RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD")
             echo "  Set $key"
@@ -137,38 +140,50 @@ jobs:
           fi
           echo "Environment variables set."
 
-      # Deploy via Railway API — connect the service to the GitHub repo
-      # so Railway pulls and builds from source. No CLI needed.
+      # Generate a project-scoped token for the new project so the Railway CLI
+      # can deploy to it. The account token (RAILWAY_API_TOKEN) handles management
+      # operations, but `railway up` expects RAILWAY_TOKEN (a project token).
+      - name: Generate project token
+        run: |
+          echo "Generating project token for $RAILWAY_PROJECT_ID..."
+          TOKEN_RESULT=$(curl -s -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg pid "$RAILWAY_PROJECT_ID" --arg eid "$RAILWAY_ENVIRONMENT_ID" \
+              '{query: "mutation($pid: String!, $eid: String!) { projectTokenCreate(input: {projectId: $pid, environmentId: $eid, name: \"ci-deploy\"}) }", variables: {pid: $pid, eid: $eid}}')")
+
+          PROJECT_TOKEN=$(echo "$TOKEN_RESULT" | jq -r '.data.projectTokenCreate')
+          if [ -z "$PROJECT_TOKEN" ] || [ "$PROJECT_TOKEN" = "null" ]; then
+            echo "ERROR: Failed to generate project token"
+            echo "$TOKEN_RESULT" | jq .
+            exit 1
+          fi
+          echo "Project token generated successfully"
+
+          # Mask the token in logs, then export for subsequent steps
+          echo "::add-mask::$PROJECT_TOKEN"
+          echo "RAILWAY_TOKEN=$PROJECT_TOKEN" >> "$GITHUB_ENV"
+
+      # Deploy via Railway CLI — push local source to the new project.
+      # serviceConnect requires GitHub OAuth integration at the account level
+      # which isn't available with API tokens. `railway up` uploads the
+      # checked-out source directly, sidestepping that requirement.
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
       - name: Deploy to Railway
         run: |
-          echo "Deploying via Railway API (serviceConnect)..."
+          echo "Deploying via Railway CLI (railway up)..."
           echo "  Project:     $RAILWAY_PROJECT_ID"
           echo "  Service:     $RAILWAY_SERVICE_ID"
           echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
-          echo "  Repo:        drewbietron/randal"
-          echo "  Branch:      ${{ github.head_ref || github.ref_name }}"
 
-          # Connect service to GitHub repo — triggers an auto-deploy from source.
-          # Railway's GitHub integration builds from the repo's Dockerfile.
-          CONNECT_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg sid "$RAILWAY_SERVICE_ID" \
-              --arg repo "drewbietron/randal" \
-              --arg branch "${{ github.head_ref || github.ref_name }}" \
-              '{query: "mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }",
-                variables: {id: $sid, input: {repo: $repo, branch: $branch}}}')")
-          echo "Connect result: $CONNECT_RESULT"
-
-          # Validate the response
-          CONNECTED_ID=$(echo "$CONNECT_RESULT" | jq -r '.data.serviceConnect.id')
-          if [ -z "$CONNECTED_ID" ] || [ "$CONNECTED_ID" = "null" ]; then
-            echo "ERROR: Failed to connect service to GitHub repo"
-            echo "$CONNECT_RESULT" | jq .
-            exit 1
-          fi
-          echo "Service connected — deployment triggered from GitHub repo"
+          # RAILWAY_TOKEN is now the project-scoped token generated above.
+          # --ci streams build logs and exits when the build completes.
+          railway up \
+            --service "$RAILWAY_SERVICE_ID" \
+            --environment "$RAILWAY_ENVIRONMENT_ID" \
+            --ci
 
       # Wait for the deployment to become healthy
       - name: Wait for health
@@ -181,7 +196,7 @@ jobs:
             '{query: "mutation ($sid: String!, $eid: String!) { serviceDomainCreate(input: {serviceId: $sid, environmentId: $eid}) { domain } }",
               variables: {sid: $sid, eid: $eid}}')
           DOMAIN_RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$DOMAIN_PAYLOAD")
           echo "Domain API Response: $DOMAIN_RESULT"
@@ -240,7 +255,7 @@ jobs:
             DEL_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
               '{query: "mutation ($pid: String!) { projectDelete(id: $pid) }", variables: {pid: $pid}}')
             RESULT=$(curl -s -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$DEL_PAYLOAD") || true
             echo "Teardown API Response: $RESULT"
