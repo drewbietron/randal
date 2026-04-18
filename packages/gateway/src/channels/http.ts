@@ -1,4 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { resolve } from "node:path";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
@@ -1088,17 +1089,49 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		});
 	});
 
+	// Serve static assets (logo, etc.)
+	app.get("/assets/:filename", async (c) => {
+		const filename = c.req.param("filename");
+		if (!/^[a-zA-Z0-9._-]+$/.test(filename)) return c.text("Not found", 404);
+
+		const paths = [
+			resolve(import.meta.dir, "../../../../assets", filename),
+			resolve("/app/assets", filename),
+			resolve("./assets", filename),
+		];
+
+		for (const p of paths) {
+			try {
+				const file = Bun.file(p);
+				if (await file.exists()) {
+					const ext = filename.split(".").pop()?.toLowerCase();
+					const contentType =
+						ext === "png"
+							? "image/png"
+							: ext === "svg"
+								? "image/svg+xml"
+								: ext === "ico"
+									? "image/x-icon"
+									: "application/octet-stream";
+					return new Response(file, {
+						headers: { "Content-Type": contentType, "Cache-Control": "public, max-age=86400" },
+					});
+				}
+			} catch {
+				/* try next path */
+			}
+		}
+		return c.text("Not found", 404);
+	});
+
 	// Dashboard - serve static HTML at root
 	app.get("/", (c) => {
 		try {
 			const { getDashboardHtml } = require("@randal/dashboard");
 			return c.html(getDashboardHtml());
 		} catch {
-			// Fallback minimal dashboard — escape config.name to prevent XSS
 			const safeName = escapeHtml(config.name);
-			return c.html(
-				`<!DOCTYPE html><html><head><title>Randal</title></head><body><h1>${safeName} Dashboard</h1><p>Dashboard package not available.</p></body></html>`,
-			);
+			return c.html(buildFallbackDashboard(safeName, RANDAL_VERSION));
 		}
 	});
 
@@ -1207,4 +1240,78 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	});
 
 	return app;
+}
+
+/**
+ * Build a styled fallback dashboard page when @randal/dashboard is not available.
+ * Returns a complete HTML document string with inline styles and client-side health fetching.
+ */
+function buildFallbackDashboard(name: string, version: string): string {
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Randal — ${name}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#0a0a0a;color:#e0e0e0;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:2rem;
+}
+.c{max-width:480px;width:100%;text-align:center}
+.logo{width:200px;height:200px;border-radius:12px;margin-bottom:2rem;
+  border:2px solid #222;filter:drop-shadow(0 0 20px rgba(255,255,255,0.05))}
+h1{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.25rem;color:#fff}
+.sub{font-size:0.85rem;color:#666;
+  font-family:'SF Mono','Fira Code',Consolas,monospace;margin-bottom:2rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;
+  background:#1a1a1a;border-radius:8px;overflow:hidden;
+  border:1px solid #222;margin-bottom:1.5rem}
+.cell{padding:1rem;background:#111}
+.lbl{font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:#555;margin-bottom:0.25rem}
+.val{font-size:0.95rem;font-family:'SF Mono','Fira Code',Consolas,monospace;color:#ccc}
+.val.ok{color:#4ade80}.val.err{color:#f87171}.val.ld{color:#555}
+.pill{display:inline-block;padding:0.25rem 0.75rem;border-radius:9999px;
+  font-size:0.75rem;font-family:'SF Mono','Fira Code',Consolas,monospace;
+  background:#1a1a1a;border:1px solid #333;color:#888}
+.ft{margin-top:2rem;font-size:0.7rem;color:#333}
+</style>
+</head>
+<body>
+<div class="c">
+  <img src="/assets/posse.png" alt="Randal" class="logo" onerror="this.style.display='none'">
+  <h1>${name}</h1>
+  <p class="sub">autonomous ai agent</p>
+  <div class="grid">
+    <div class="cell"><div class="lbl">Status</div><div class="val ld" id="st">···</div></div>
+    <div class="cell"><div class="lbl">Uptime</div><div class="val ld" id="ut">···</div></div>
+    <div class="cell"><div class="lbl">Version</div><div class="val ld" id="vr">···</div></div>
+    <div class="cell"><div class="lbl">Channel</div><div class="val ld" id="ch">···</div></div>
+  </div>
+  <span class="pill">v${version}</span>
+  <div class="ft">powered by randal</div>
+</div>
+<script>
+fetch("/health").then(r=>r.json()).then(d=>{
+  const s=document.getElementById("st");
+  s.textContent=d.status||"unknown";
+  s.className="val "+(d.status==="ok"?"ok":"err");
+  const u=d.uptime?d.uptime:0;
+  const h=Math.floor(u/3600),m=Math.floor((u%3600)/60);
+  document.getElementById("ut").textContent=h>0?h+"h "+m+"m":m+"m";
+  document.getElementById("ut").className="val";
+  document.getElementById("vr").textContent=d.version||"—";
+  document.getElementById("vr").className="val";
+  document.getElementById("ch").textContent=d.updateChannel||"—";
+  document.getElementById("ch").className="val";
+}).catch(()=>{
+  const s=document.getElementById("st");
+  s.textContent="offline";s.className="val err";
+});
+</script>
+</body>
+</html>`;
 }

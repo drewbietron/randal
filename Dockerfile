@@ -59,6 +59,7 @@ RUN bun add -g opencode-ai
 COPY package.json bun.lock ./
 COPY packages/ packages/
 COPY tools/ tools/
+COPY assets/ assets/
 RUN bun install --frozen-lockfile
 
 # Copy agent config (agents, skills, lenses, rules, plugins for OpenCode)
