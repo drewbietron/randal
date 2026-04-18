@@ -86,9 +86,26 @@ test_case "DELETE /cron/:name removes job" $?
 curl -sf -H "$AUTH" "$BASE_URL/config" 2>/dev/null | jq -e '.runner.defaultAgent' > /dev/null 2>&1
 test_case "GET /config returns sanitized config" $?
 
-# 12. SSE events (connect, wait for ping, disconnect)
-timeout 20 curl -sf -N -H "$AUTH" "$BASE_URL/events" 2>/dev/null | head -1 | grep -q "event:" 2>/dev/null
-test_case "GET /events streams SSE" $?
+# 12. SSE events — submit a job, then connect and verify we receive the event.
+# Railway's proxy buffers small SSE frames (like keep-alive pings), so we need
+# real event data to flush through. We submit a quick job and wait for its event.
+SSE_PASS=1
+SSE_TMP=$(mktemp)
+SSE_JOB_RESP=$(curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"prompt":"sse-smoke-test"}' "$BASE_URL/job" 2>/dev/null || true)
+SSE_JOB_ID=$(echo "$SSE_JOB_RESP" | jq -r '.id' 2>/dev/null || true)
+if [ -n "$SSE_JOB_ID" ] && [ "$SSE_JOB_ID" != "null" ]; then
+  curl -s -N -H "$AUTH" "$BASE_URL/events" > "$SSE_TMP" 2>/dev/null &
+  SSE_PID=$!
+  sleep 30
+  kill $SSE_PID 2>/dev/null
+  wait $SSE_PID 2>/dev/null
+  if grep -q "event:" "$SSE_TMP" 2>/dev/null; then
+    SSE_PASS=0
+  fi
+fi
+rm -f "$SSE_TMP"
+test_case "GET /events streams SSE" $SSE_PASS
 
 # Results
 echo ""
