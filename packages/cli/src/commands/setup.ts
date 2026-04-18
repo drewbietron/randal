@@ -320,9 +320,7 @@ export async function executeSetup(options: SetupOptions): Promise<SetupResult> 
 			const exitCode = await proc.exited;
 			if (exitCode !== 0) {
 				const stderr = await new Response(proc.stderr).text();
-				console.warn(
-					`  Warning: Source config dependency install failed: ${stderr.trim()}`,
-				);
+				console.warn(`  Warning: Source config dependency install failed: ${stderr.trim()}`);
 			}
 		} catch (err) {
 			console.warn(
