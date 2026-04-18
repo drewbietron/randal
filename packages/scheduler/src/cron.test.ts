@@ -368,7 +368,7 @@ describe("CronScheduler", () => {
 		scheduler.stop();
 	});
 
-	test("main execution mode queues to heartbeat", async () => {
+	test("main execution mode queues to heartbeat and triggers immediate tick", async () => {
 		const { CronScheduler } = await import("./cron.js");
 		const { Heartbeat } = await import("./heartbeat.js");
 
@@ -406,13 +406,19 @@ describe("CronScheduler", () => {
 
 		scheduler.start();
 
-		// Wait for the job to fire
+		// Wait for the job to fire and the immediate heartbeat tick to process it
 		await new Promise((r) => setTimeout(r, 200));
 
-		// Check that heartbeat has the queued item
+		// The wake item was queued AND immediately processed via triggerNow(),
+		// so the queue should be drained and the runner should have been called
+		// with a prompt containing the cron wake item text.
 		const state = heartbeat.getState();
-		expect(state.pendingWakeItems.length).toBeGreaterThanOrEqual(1);
-		expect(state.pendingWakeItems.some((item) => item.source === "cron")).toBe(true);
+		// Queue is drained because triggerNow() processed it immediately
+		expect(state.pendingWakeItems.length).toBe(0);
+		// The heartbeat tick count should have increased (triggerNow called tick)
+		expect(state.tickCount).toBeGreaterThanOrEqual(1);
+		// Runner.execute was called by the heartbeat tick with the cron wake item
+		expect(mockRunner.execute).toHaveBeenCalled();
 
 		scheduler.stop();
 	});

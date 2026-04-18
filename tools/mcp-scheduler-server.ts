@@ -75,6 +75,22 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 					type: "string",
 					description: "Override the default model for this job",
 				},
+				target: {
+					type: "object",
+					description:
+						'Route job output to a specific channel. e.g. { channel: "discord", id: "1234567890" }. The brain can use RANDAL_REPLY_TO as the id.',
+					properties: {
+						channel: {
+							type: "string",
+							description: 'Channel name (e.g. "discord", "slack", "imessage")',
+						},
+						id: {
+							type: "string",
+							description: "Channel/thread ID to send results to",
+						},
+					},
+					required: ["channel", "id"],
+				},
 			},
 			required: ["action"],
 		},
@@ -161,6 +177,7 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 			execution: params.execution ?? "isolated",
 		};
 		if (params.model) body.model = params.model;
+		if (params.target) body.target = params.target;
 
 		const { ok, data } = await gatewayFetch("/cron", { method: "POST", body });
 		if (!ok) {

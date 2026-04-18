@@ -16,6 +16,8 @@ export interface CronJobConfig {
 	execution: "main" | "isolated";
 	model?: string;
 	announce: boolean;
+	/** Route job output to a specific channel (e.g. Discord thread). */
+	target?: { channel: string; id: string };
 }
 
 export interface CronJobState {
@@ -468,19 +470,39 @@ export class CronScheduler {
 				timestamp: new Date().toISOString(),
 			};
 			this.heartbeat.queueWakeItem(wakeItem);
+
+			// Trigger an immediate heartbeat tick so the wake item is processed
+			// without waiting for the next scheduled interval.
+			this.heartbeat.triggerNow().catch((err) => {
+				logger.warn("Immediate heartbeat tick after cron wake failed", {
+					name,
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
 		} else {
-			// Execute directly as isolated job
+			// Execute directly as isolated job.
+			// If the cron job has a target, route origin to that channel so
+			// adapters (Discord, Slack, etc.) pick up the events naturally.
+			const origin = config.target
+				? {
+						channel: config.target.channel,
+						replyTo: config.target.id,
+						from: "system",
+						triggerType: "cron" as const,
+					}
+				: {
+						channel: "scheduler",
+						replyTo: `cron:${name}`,
+						from: "system",
+						triggerType: "cron" as const,
+					};
+
 			try {
 				await this.runner.execute({
 					prompt: resolvedPrompt,
 					model: config.model,
 					maxIterations: 5,
-					origin: {
-						channel: "scheduler",
-						replyTo: `cron:${name}`,
-						from: "system",
-						triggerType: "cron",
-					},
+					origin,
 				});
 			} catch (err) {
 				logger.warn("Cron isolated job failed", {
