@@ -17,12 +17,10 @@ on:
   workflow_dispatch: # manual trigger
 
 env:
-  # RAILWAY_API_TOKEN is the account-level token used by the CLI for
-  # env-var-based project targeting (reads RAILWAY_PROJECT_ID, _SERVICE_ID,
-  # _ENVIRONMENT_ID).  Do NOT use RAILWAY_TOKEN — that's for project-scoped
-  # tokens and causes the CLI to ignore RAILWAY_SERVICE_ID, resulting in
-  # "Multiple services found".
-  RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  # RAILWAY_TOKEN is read by the Railway CLI for auth. Combined with
+  # RAILWAY_PROJECT_ID and RAILWAY_SERVICE_ID in GITHUB_ENV, it provides
+  # full project context — no `railway link` or .railway.json needed.
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
   RAILWAY_WORKSPACE_ID: ${{ secrets.RAILWAY_WORKSPACE_ID }}
   PROJECT_NAME: randal-ci-${{ github.run_id }}
   RAILWAY_API: https://backboard.railway.com/graphql/v2
@@ -56,17 +54,18 @@ jobs:
         run: |
           echo "Creating Railway project: $PROJECT_NAME"
 
-          # Build the GraphQL payload safely with jq + GraphQL variables
+          # Build the GraphQL payload safely with jq + GraphQL variables.
+          # Include services in the response — Railway may auto-create one.
           if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" --arg ws "$RAILWAY_WORKSPACE_ID" \
-              '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
+              '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } services { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
           else
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" \
-              '{query: "mutation ($name: String!) { projectCreate(input: {name: $name}) { id name environments { edges { node { id name } } } } }", variables: {name: $name}}')
+              '{query: "mutation ($name: String!) { projectCreate(input: {name: $name}) { id name environments { edges { node { id name } } } services { edges { node { id name } } } } }", variables: {name: $name}}')
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD")
           echo "API Response: $RESULT"
@@ -84,22 +83,29 @@ jobs:
           echo "Project created: $PROJECT_ID"
           echo "Environment: $ENV_ID"
 
-          # Create a service for the deployment
-          SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
-            '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
-          SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$SVC_PAYLOAD")
-          echo "Service API Response: $SVC_RESULT"
+          # Use the auto-created service if one exists, otherwise create one
+          SERVICE_ID=$(echo "$RESULT" | jq -r '.data.projectCreate.services.edges[0].node.id // empty')
 
-          SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
-          if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
-            echo "ERROR: Failed to create Railway service"
-            echo "$SVC_RESULT" | jq .
-            exit 1
+          if [ -n "$SERVICE_ID" ]; then
+            echo "Using auto-created service: $SERVICE_ID"
+          else
+            echo "No auto-created service — creating one..."
+            SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
+              '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
+            SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$SVC_PAYLOAD")
+            echo "Service API Response: $SVC_RESULT"
+
+            SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
+            if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
+              echo "ERROR: Failed to create Railway service"
+              echo "$SVC_RESULT" | jq .
+              exit 1
+            fi
+            echo "Service created: $SERVICE_ID"
           fi
-          echo "Service created: $SERVICE_ID"
 
           # Export IDs as environment variables for subsequent steps.
           # The Railway CLI reads RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID,
@@ -127,7 +133,7 @@ jobs:
               '{query: "mutation ($input: VariableUpsertInput!) { variableUpsert(input: $input) }",
                 variables: {input: {projectId: $pid, serviceId: $sid, environmentId: $eid, name: $k, value: $v}}}')
             RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$PAYLOAD")
             echo "  Set $key"
@@ -146,9 +152,9 @@ jobs:
           echo "Environment variables set."
 
       # Deploy to Railway
-      # The CLI reads RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID, and
-      # RAILWAY_ENVIRONMENT_ID from the environment when RAILWAY_API_TOKEN
-      # is set (account-level auth). No .railway.json or `railway link` needed.
+      # The CLI reads RAILWAY_TOKEN for auth and RAILWAY_PROJECT_ID,
+      # RAILWAY_SERVICE_ID for targeting. All three are set in GITHUB_ENV
+      # by the create-project step — no `railway link` or .railway.json needed.
       - name: Deploy to Railway
         run: |
           echo "Deploying to Railway..."
@@ -168,7 +174,7 @@ jobs:
             '{query: "mutation ($sid: String!, $eid: String!) { serviceDomainCreate(input: {serviceId: $sid, environmentId: $eid}) { domain } }",
               variables: {sid: $sid, eid: $eid}}')
           DOMAIN_RESULT=$(curl -sf -X POST "$RAILWAY_API" \
-            -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$DOMAIN_PAYLOAD")
           echo "Domain API Response: $DOMAIN_RESULT"
@@ -227,7 +233,7 @@ jobs:
             DEL_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
               '{query: "mutation ($pid: String!) { projectDelete(id: $pid) }", variables: {pid: $pid}}')
             RESULT=$(curl -s -X POST "$RAILWAY_API" \
-              -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$DEL_PAYLOAD") || true
             echo "Teardown API Response: $RESULT"
