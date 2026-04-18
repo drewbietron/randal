@@ -149,9 +149,9 @@ jobs:
           echo "Environment variables set."
 
       # Deploy to Railway
-      # The CLI reads RAILWAY_TOKEN for auth and RAILWAY_PROJECT_ID,
-      # RAILWAY_SERVICE_ID for targeting. All three are set in GITHUB_ENV
-      # by the create-project step — no `railway link` or .railway.json needed.
+      # The CLI reads RAILWAY_TOKEN for auth. Project/service/environment
+      # context is provided via both env vars (RAILWAY_PROJECT_ID, etc.)
+      # and ~/.railway/config.json — belt and suspenders for reliability.
       - name: Deploy to Railway
         run: |
           echo "Deploying to Railway..."
@@ -164,7 +164,31 @@ jobs:
           echo "Waiting 5s for service to propagate..."
           sleep 5
 
-          railway up -d --service "$RAILWAY_SERVICE_ID"
+          # Write Railway CLI config directly — equivalent to `railway link`.
+          # The CLI reads ~/.railway/config.json for project/service/environment
+          # context. This avoids "Service not found" errors in non-interactive CI.
+          mkdir -p ~/.railway
+          jq -n \
+            --arg pid "$RAILWAY_PROJECT_ID" \
+            --arg eid "$RAILWAY_ENVIRONMENT_ID" \
+            --arg sid "$RAILWAY_SERVICE_ID" \
+            --arg name "$PROJECT_NAME" \
+            '{
+              projects: {
+                ($pid): {
+                  environment: $eid,
+                  environmentName: "production",
+                  name: $name,
+                  service: $sid
+                }
+              },
+              default: $pid
+            }' > ~/.railway/config.json
+
+          echo "Wrote Railway CLI config:"
+          cat ~/.railway/config.json
+
+          railway up -d
 
       # Wait for the deployment to become healthy
       - name: Wait for health
