@@ -423,14 +423,14 @@ describe("MCP server conditional inclusion", () => {
 			);
 		});
 
-		test("environment uses {env:RANDAL_GATEWAY_TOKEN} placeholder", () => {
+		test("environment uses {env:RANDAL_GATEWAY_AUTH} placeholder", () => {
 			const config = minimalConfig({
 				heartbeat: { enabled: true },
 				gateway: { channels: [{ type: "http", port: 7600, auth: "tok" }] },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
-			expect(result.config.mcp.scheduler.environment?.RANDAL_GATEWAY_TOKEN).toBe(
-				"{env:RANDAL_GATEWAY_TOKEN}",
+			expect(result.config.mcp.scheduler.environment?.RANDAL_GATEWAY_AUTH).toBe(
+				"{env:RANDAL_GATEWAY_AUTH}",
 			);
 		});
 

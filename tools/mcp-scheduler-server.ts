@@ -12,7 +12,8 @@
  *
  * Environment variables:
  *   RANDAL_GATEWAY_URL   — Gateway URL (default: http://localhost:7600)
- *   RANDAL_GATEWAY_TOKEN — Auth token for gateway API
+ *   RANDAL_GATEWAY_AUTH  — Auth token for gateway API (set by runner)
+ *   RANDAL_GATEWAY_TOKEN — Legacy alias for auth token (deprecated)
  */
 
 import { ToolError, startMcpServer } from "./lib/mcp-transport.js";
@@ -23,7 +24,7 @@ import type { ToolDefinition, ToolHandler } from "./lib/mcp-transport.js";
 // ---------------------------------------------------------------------------
 
 const GATEWAY_URL = process.env.RANDAL_GATEWAY_URL || "http://localhost:7600";
-const GATEWAY_TOKEN = process.env.RANDAL_GATEWAY_TOKEN || "";
+const GATEWAY_TOKEN = process.env.RANDAL_GATEWAY_AUTH || process.env.RANDAL_GATEWAY_TOKEN || "";
 
 // ---------------------------------------------------------------------------
 // MCP tool schema definitions

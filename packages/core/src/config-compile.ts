@@ -274,7 +274,7 @@ function buildMcpSection(config: RandalConfig, toolsDir: string): Record<string,
 			command: ["bun", "run", `${toolsDir}/mcp-scheduler-server.ts`],
 			environment: {
 				RANDAL_GATEWAY_URL: gatewayUrl,
-				RANDAL_GATEWAY_TOKEN: "{env:RANDAL_GATEWAY_TOKEN}",
+				RANDAL_GATEWAY_AUTH: "{env:RANDAL_GATEWAY_AUTH}",
 			},
 			enabled: true,
 		};
