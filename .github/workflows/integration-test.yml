@@ -51,17 +51,19 @@ jobs:
         run: |
           echo "Creating Railway project: $PROJECT_NAME"
 
-          # Build the GraphQL mutation — include workspaceId if configured
+          # Build the GraphQL payload safely with jq to avoid shell quoting issues
           if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
-            MUTATION="mutation { projectCreate(input: {name: \"$PROJECT_NAME\", workspaceId: \"$RAILWAY_WORKSPACE_ID\"}) { id name environments { edges { node { id name } } } } }"
+            PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" --arg ws "$RAILWAY_WORKSPACE_ID" \
+              '{"query": "mutation { projectCreate(input: {name: \($name), workspaceId: \($ws)}) { id name environments { edges { node { id name } } } } }"}')
           else
-            MUTATION="mutation { projectCreate(input: {name: \"$PROJECT_NAME\"}) { id name environments { edges { node { id name } } } } }"
+            PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" \
+              '{"query": "mutation { projectCreate(input: {name: \($name)}) { id name environments { edges { node { id name } } } } }"}')
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"$MUTATION\"}")
+            -d "$PAYLOAD")
           echo "API Response: $RESULT"
 
           # Validate the response
@@ -78,10 +80,12 @@ jobs:
           echo "Environment: $ENV_ID"
 
           # Create a service for the deployment
+          SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
+            '{"query": "mutation { serviceCreate(input: {name: \"randal\", projectId: \($pid)}) { id name } }"}')
           SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { serviceCreate(input: {name: \\\"randal\\\", projectId: \\\"$PROJECT_ID\\\"}) { id name } }\"}")
+            -d "$SVC_PAYLOAD")
           echo "Service API Response: $SVC_RESULT"
 
           SERVICE_ID=$(echo "$SVC_RESULT" | jq -r '.data.serviceCreate.id')
@@ -186,10 +190,12 @@ jobs:
           echo "Tearing down Railway project: $PROJECT_NAME (ID: $PROJECT_ID)"
 
           if [ -n "$PROJECT_ID" ]; then
+            DEL_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
+              '{"query": "mutation { projectDelete(id: \($pid)) }"}')
             RESULT=$(curl -s -X POST "$RAILWAY_API" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
-              -d "{\"query\":\"mutation { projectDelete(id: \\\"$PROJECT_ID\\\") }\"}") || true
+              -d "$DEL_PAYLOAD") || true
             echo "Teardown API Response: $RESULT"
             echo "$RESULT" | jq . 2>/dev/null || echo "$RESULT"
           else
