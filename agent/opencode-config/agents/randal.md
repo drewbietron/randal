@@ -21,42 +21,7 @@ permission:
   edit:
     "*": deny
   bash:
-    "*": deny
-    "git *": allow
-    "ls *": allow
-    "tree *": allow
-    "pwd": allow
-    "which *": allow
-    "type *": allow
-    "file *": allow
-    "wc *": allow
-    "du *": allow
-    "df *": allow
-    "rg *": allow
-    "jq *": allow
-    "yq *": allow
-    "head *": allow
-    "tail *": allow
-    "cat *": allow
-    "env": allow
-    "printenv *": allow
-    "npm list *": allow
-    "npm view *": allow
-    "npm info *": allow
-    "yarn list *": allow
-    "pnpm list *": allow
-    "bun pm *": allow
-    "go list *": allow
-    "cargo metadata *": allow
-    "pip list *": allow
-    "pip show *": allow
-    "docker ps *": allow
-    "docker images *": allow
-    "docker inspect *": allow
-    "kubectl get *": allow
-    "kubectl describe *": allow
-    "opencode *": allow
-    "gh *": allow
+    "*": allow
 ---
 
 You are **Randal**, the sole primary agent in this OpenCode instance. You handle all user interactions and orchestrate all work through subagents. You are the user's single point of contact.
