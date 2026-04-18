@@ -1,0 +1,162 @@
+name: Integration Tests (Railway)
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "docker/**"
+      - "packages/gateway/**"
+      - "packages/runner/**"
+      - "packages/scheduler/**"
+      - "packages/cli/**"
+      - "packages/core/**"
+      - "randal.config.railway.yaml"
+      - "randal.config.ci.yaml"
+      - "tests/integration/smoke.sh"
+      - ".github/workflows/integration-test.yml"
+  workflow_dispatch: # manual trigger
+
+env:
+  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  PROJECT_NAME: randal-ci-${{ github.run_id }}
+
+jobs:
+  integration-test:
+    name: Deploy & Smoke Test
+    runs-on: ubuntu-latest
+    # Don't run if Railway token isn't configured
+    if: ${{ secrets.RAILWAY_TOKEN != '' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Install Railway CLI (same pattern as railway-deploy.yml)
+      - name: Install Railway CLI
+        run: |
+          curl -fsSL https://railway.com/install.sh | sh
+          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Railway CLI
+        run: railway --version
+
+      # Generate auth tokens for this run
+      - name: Generate auth tokens
+        run: |
+          echo "RANDAL_API_TOKEN=$(uuidgen)" >> "$GITHUB_ENV"
+          echo "MEILI_MASTER_KEY=$(uuidgen)" >> "$GITHUB_ENV"
+
+      # Create an ephemeral Railway project for this CI run
+      - name: Create Railway project
+        id: create-project
+        run: |
+          echo "Creating Railway project: $PROJECT_NAME"
+          railway project create "$PROJECT_NAME"
+
+          # Link to the newly created project
+          railway link --project "$PROJECT_NAME"
+
+          # Capture the project ID for reliable teardown
+          PROJECT_ID=$(railway project list --json 2>/dev/null | jq -r ".[] | select(.name == \"$PROJECT_NAME\") | .id" || true)
+          echo "Project ID: $PROJECT_ID"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "project_created=true" >> "$GITHUB_OUTPUT"
+
+      # Set environment variables on the Railway project
+      - name: Set environment variables
+        run: |
+          railway variable set \
+            RANDAL_API_TOKEN="$RANDAL_API_TOKEN" \
+            MEILI_MASTER_KEY="$MEILI_MASTER_KEY" \
+            RANDAL_CONFIG="randal.config.ci.yaml" \
+            PORT="7600"
+
+          # Only set OpenRouter key if available (needed for job submission test)
+          if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
+            railway variable set OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}"
+          fi
+
+      # Deploy to Railway
+      - name: Deploy to Railway
+        run: |
+          echo "Deploying to Railway..."
+          railway up -d
+
+      # Wait for the deployment to become healthy
+      - name: Wait for health
+        id: health-check
+        run: |
+          # Get the deployment URL
+          DEPLOY_URL=$(railway domain 2>/dev/null || true)
+
+          # If railway domain didn't work, try to get it from status
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "Waiting 30s for Railway to assign a domain..."
+            sleep 30
+            DEPLOY_URL=$(railway domain 2>/dev/null || true)
+          fi
+
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "ERROR: Could not get deployment URL"
+            exit 1
+          fi
+
+          # Ensure URL has https:// prefix
+          if [[ ! "$DEPLOY_URL" =~ ^https?:// ]]; then
+            DEPLOY_URL="https://$DEPLOY_URL"
+          fi
+
+          echo "Deployment URL: $DEPLOY_URL"
+          echo "BASE_URL=$DEPLOY_URL" >> "$GITHUB_ENV"
+
+          # Poll /health every 10s for up to 5 minutes
+          echo "Waiting for deployment to become healthy..."
+          ATTEMPTS=30
+          for i in $(seq 1 $ATTEMPTS); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$DEPLOY_URL/health" 2>/dev/null || true)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Health check passed on attempt $i"
+              curl -sf "$DEPLOY_URL/health" | jq .
+              exit 0
+            fi
+            echo "Attempt $i/$ATTEMPTS — got HTTP $HTTP_CODE, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "ERROR: Deployment did not become healthy after $((ATTEMPTS * 10))s"
+          exit 1
+
+      # Run smoke tests
+      - name: Run smoke tests
+        env:
+          AUTH_TOKEN: ${{ env.RANDAL_API_TOKEN }}
+        run: |
+          chmod +x tests/integration/smoke.sh
+          ./tests/integration/smoke.sh
+
+      # Always tear down the Railway project, even on failure
+      - name: Teardown Railway project
+        if: always() && steps.create-project.outputs.project_created == 'true'
+        run: |
+          PROJECT_ID="${{ steps.create-project.outputs.project_id }}"
+          echo "Tearing down Railway project: $PROJECT_NAME (ID: $PROJECT_ID)"
+
+          # Prefer deletion by project ID for reliability; fall back to linked project
+          if [ -n "$PROJECT_ID" ]; then
+            railway project delete "$PROJECT_ID" --yes 2>/dev/null || \
+              railway project delete --yes 2>/dev/null || true
+          else
+            railway project delete --yes 2>/dev/null || true
+          fi
+          echo "Cleanup complete"
+
+      # Summary
+      - name: Post results summary
+        if: always()
+        run: |
+          echo "## Integration Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Project**: \`$PROJECT_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Status**: \`${{ job.status }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Triggered by**: \`${{ github.event_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Branch**: \`${{ github.head_ref || github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"

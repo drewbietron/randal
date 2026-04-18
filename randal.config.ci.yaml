@@ -1,0 +1,36 @@
+# Minimal config for CI integration tests — no Discord, no heartbeat
+name: randal-ci
+
+runner:
+  defaultAgent: opencode
+  defaultModel: "openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+  workdir: /app/workspace
+
+credentials:
+  allow:
+    - OPENROUTER_API_KEY
+    - RANDAL_API_TOKEN
+    - MEILI_MASTER_KEY
+  inherit:
+    - PATH
+    - HOME
+    - OPENROUTER_API_KEY
+
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+    # No Discord channel in CI
+
+memory:
+  store: meilisearch
+  url: "http://127.0.0.1:7700"
+  apiKey: "${MEILI_MASTER_KEY}"
+  index: memory-ci
+
+heartbeat:
+  enabled: false
+
+sandbox:
+  enforcement: env-scrub
