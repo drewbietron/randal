@@ -39,7 +39,8 @@ const STATIC_CONTENT_ENTRIES = [
 
 /** Resolve the root directory of the Randal repository. */
 function getRepoRoot(): string {
-	return resolve(import.meta.dir, "../../../../..");
+	// import.meta.dir = packages/cli/src/commands → 4 levels up to repo root
+	return resolve(import.meta.dir, "../../../..");
 }
 
 /** Resolve the agent/opencode-config source directory. */

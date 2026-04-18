@@ -61,6 +61,10 @@ COPY packages/ packages/
 COPY tools/ tools/
 RUN bun install --frozen-lockfile
 
+# Copy agent config (agents, skills, lenses, rules, plugins for OpenCode)
+# setup.ts resolves this via getRepoRoot()/agent/opencode-config
+COPY agent/opencode-config/ agent/opencode-config/
+
 # Create directories (including /app/tools/bin for persistent agent-installed binaries)
 RUN mkdir -p /app/meeli-data /app/workspace /app/knowledge /app/tools/bin
 
