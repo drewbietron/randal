@@ -256,9 +256,9 @@ function buildMcpSection(config: RandalConfig, toolsDir: string): Record<string,
 			SUMMARY_MODEL: deriveSummaryModel(config),
 		};
 
-		// Pass through Meilisearch API key if configured
+		// Compile the canonical auth variable expected by the memory MCP runtime.
 		if (config.memory.apiKey) {
-			memoryEnv.MEILI_API_KEY = config.memory.apiKey;
+			memoryEnv.MEILI_MASTER_KEY = config.memory.apiKey;
 		}
 
 		mcp.memory = {

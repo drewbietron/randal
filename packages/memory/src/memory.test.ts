@@ -40,7 +40,7 @@ runner:
   workdir: /tmp
 `);
 		// Verify memory config defaults
-		expect(config.memory.url).toBe("http://localhost:7700");
+		expect(config.memory.url).toBe("http://localhost:7701");
 		expect(config.memory.apiKey).toBe("");
 	});
 
@@ -88,7 +88,7 @@ name: test-agent
 runner:
   workdir: /tmp
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test
   sharing:${publishLine}${readLine}
   autoInject:
@@ -354,7 +354,7 @@ name: test-agent
 runner:
   workdir: /tmp
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test
   sharing:
     readFrom: []
@@ -461,7 +461,7 @@ name: test-agent
 runner:
   workdir: /tmp
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test
   sharing:
     readFrom: []

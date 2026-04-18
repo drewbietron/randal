@@ -24,8 +24,9 @@
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
  * Environment variables:
- *   MEILI_URL            — Meilisearch URL (default: http://localhost:7700)
- *   MEILI_MASTER_KEY     — optional Meilisearch API key
+ *   MEILI_URL            — Meilisearch URL (default: http://localhost:7701)
+ *   MEILI_MASTER_KEY     — optional Meilisearch API key (canonical)
+ *   MEILI_API_KEY        — legacy Meilisearch API key fallback
  *   MEILI_INDEX          — index name (default: memory-randal)
  *   OPENROUTER_API_KEY   — OpenRouter API key for semantic embeddings (optional)
  *   EMBEDDING_MODEL      — embedding model (default: openai/text-embedding-3-small)
@@ -74,8 +75,8 @@ import { z } from "zod";
 // Configuration from environment
 // ---------------------------------------------------------------------------
 
-const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
-const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
+const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
+const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || process.env.MEILI_API_KEY || "";
 const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
@@ -221,7 +222,7 @@ function classifyInitError(err: unknown): string {
 		lower.includes("invalid api key") ||
 		lower.includes("invalid_api_key")
 	) {
-		return `Authentication failed at ${MEILI_URL} — check MEILI_MASTER_KEY`;
+		return `Authentication failed at ${MEILI_URL} — check MEILI_MASTER_KEY (or legacy MEILI_API_KEY)`;
 	}
 	if (
 		lower.includes("econnrefused") ||
@@ -402,7 +403,8 @@ function getAnalyticsError(): string {
 }
 
 /** Standard hint for Meilisearch connectivity issues. */
-const MEILI_HINT = "Check MEILI_URL and MEILI_MASTER_KEY environment variables";
+const MEILI_HINT =
+	"Check MEILI_URL and MEILI_MASTER_KEY environment variables (MEILI_API_KEY is legacy-only)";
 
 // ---------------------------------------------------------------------------
 // Periodic dump scheduling
