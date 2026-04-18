@@ -51,13 +51,13 @@ jobs:
         run: |
           echo "Creating Railway project: $PROJECT_NAME"
 
-          # Build the GraphQL payload safely with jq to avoid shell quoting issues
+          # Build the GraphQL payload safely with jq + GraphQL variables
           if [ -n "$RAILWAY_WORKSPACE_ID" ]; then
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" --arg ws "$RAILWAY_WORKSPACE_ID" \
-              '{"query": "mutation { projectCreate(input: {name: \($name), workspaceId: \($ws)}) { id name environments { edges { node { id name } } } } }"}')
+              '{query: "mutation ($name: String!, $ws: String!) { projectCreate(input: {name: $name, workspaceId: $ws}) { id name environments { edges { node { id name } } } } }", variables: {name: $name, ws: $ws}}')
           else
             PAYLOAD=$(jq -n --arg name "$PROJECT_NAME" \
-              '{"query": "mutation { projectCreate(input: {name: \($name)}) { id name environments { edges { node { id name } } } } }"}')
+              '{query: "mutation ($name: String!) { projectCreate(input: {name: $name}) { id name environments { edges { node { id name } } } } }", variables: {name: $name}}')
           fi
 
           RESULT=$(curl -s -X POST "$RAILWAY_API" \
@@ -81,7 +81,7 @@ jobs:
 
           # Create a service for the deployment
           SVC_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
-            '{"query": "mutation { serviceCreate(input: {name: \"randal\", projectId: \($pid)}) { id name } }"}')
+            '{query: "mutation ($pid: String!) { serviceCreate(input: {name: \"randal\", projectId: $pid}) { id name } }", variables: {pid: $pid}}')
           SVC_RESULT=$(curl -s -X POST "$RAILWAY_API" \
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
@@ -191,7 +191,7 @@ jobs:
 
           if [ -n "$PROJECT_ID" ]; then
             DEL_PAYLOAD=$(jq -n --arg pid "$PROJECT_ID" \
-              '{"query": "mutation { projectDelete(id: \($pid)) }"}')
+              '{query: "mutation ($pid: String!) { projectDelete(id: $pid) }", variables: {pid: $pid}}')
             RESULT=$(curl -s -X POST "$RAILWAY_API" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
