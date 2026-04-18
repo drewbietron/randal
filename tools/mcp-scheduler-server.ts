@@ -195,6 +195,19 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 			}
 		}
 
+		// Auto-capture channel context if no explicit target provided.
+		// When the brain is running inside a Discord session, RANDAL_CHANNEL
+		// and RANDAL_REPLY_TO are set by the runner.  Saving them here means
+		// cron-job output will automatically route back to that thread.
+		let target = params.target as { channel: string; id: string } | undefined;
+		if (!target) {
+			const channel = process.env.RANDAL_CHANNEL;
+			const replyTo = process.env.RANDAL_REPLY_TO;
+			if (channel && replyTo) {
+				target = { channel, id: replyTo };
+			}
+		}
+
 		const body: Record<string, unknown> = {
 			name,
 			prompt,
@@ -202,7 +215,7 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 			execution: params.execution ?? "isolated",
 		};
 		if (params.model) body.model = params.model;
-		if (params.target) body.target = params.target;
+		if (target) body.target = target;
 
 		const { ok, data } = await gatewayFetch("/cron", { method: "POST", body });
 		if (!ok) {

@@ -595,6 +595,12 @@ export class DiscordChannel implements ChannelAdapter {
 		const job = this.deps.runner.getJob(event.jobId);
 		if (!job?.origin || job.origin.channel !== "discord") return;
 
+		// Auto-register cron/scheduled jobs that target Discord but weren't
+		// initiated from a Discord message (no jobToChannel entry yet).
+		if (job.origin.replyTo && !this.jobToChannel.has(event.jobId)) {
+			this.jobToChannel.set(event.jobId, job.origin.replyTo);
+		}
+
 		// Find the conversation channel for this job
 		const channelId = this.jobToChannel.get(event.jobId);
 		const convo = channelId ? this.conversations.get(channelId) : undefined;
