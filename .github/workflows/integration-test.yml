@@ -161,7 +161,7 @@ jobs:
           echo "  Project:     $RAILWAY_PROJECT_ID"
           echo "  Service:     $RAILWAY_SERVICE_ID"
           echo "  Environment: $RAILWAY_ENVIRONMENT_ID"
-          railway up -d
+          railway up -d --service "$RAILWAY_SERVICE_ID"
 
       # Wait for the deployment to become healthy
       - name: Wait for health
