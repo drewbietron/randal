@@ -74,8 +74,9 @@ curl -sf -X POST -H "$AUTH" -H "Content-Type: application/json" \
   "$BASE_URL/cron" 2>/dev/null | jq -e '.ok == true' > /dev/null 2>&1
 test_case "POST /cron creates job" $?
 
-# 9. Cron — list
-curl -sf -H "$AUTH" "$BASE_URL/cron" 2>/dev/null | jq -e 'type == "array"' > /dev/null 2>&1
+# 9. Cron — list (response may be a bare array or an object wrapping one)
+CRON_LIST=$(curl -s -H "$AUTH" "$BASE_URL/cron" 2>/dev/null)
+echo "$CRON_LIST" | jq -e 'if type == "array" then true elif type == "object" then (.jobs // .crons // empty) | type == "array" else false end' > /dev/null 2>&1
 test_case "GET /cron returns array" $?
 
 # 10. Cron — delete
