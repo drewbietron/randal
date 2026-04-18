@@ -364,6 +364,9 @@ jobs:
 
             STATUS=$(echo "$RESPONSE" | jq -r '.data.deployment.status // empty')
             DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.data.deployment.url // .data.deployment.staticUrl // empty')
+            if [[ -n "$DEPLOYMENT_URL" && "$DEPLOYMENT_URL" != http://* && "$DEPLOYMENT_URL" != https://* ]]; then
+              DEPLOYMENT_URL="https://$DEPLOYMENT_URL"
+            fi
             echo "Attempt $i/$ATTEMPTS: status=$STATUS url=${DEPLOYMENT_URL:-n/a}"
 
             case "$STATUS" in
