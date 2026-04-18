@@ -138,9 +138,9 @@ jobs:
 
           if [[ -z "$target_project_id" ]]; then
             if [[ -n "$target_workspace_id" ]]; then
-              projects_response=$(graphql "$(jq -cn --arg workspaceId "$target_workspace_id" '{query: "query workspaceProjects($workspaceId: String!) { projects(workspaceId: $workspaceId) { edges { node { id name } } } }", variables: {workspaceId: $workspaceId}}')")
+              projects_response=$(graphql "$(jq -cn --arg workspaceId "$target_workspace_id" '{query: "query workspaceProjects($workspaceId: String!) { projects(workspaceId: $workspaceId) { edges { node { id name environments { edges { node { id name } } } services { edges { node { id name } } } } } } }", variables: {workspaceId: $workspaceId}}')")
             else
-              projects_response=$(graphql '{"query":"query { projects { edges { node { id name } } } }"}')
+              projects_response=$(graphql '{"query":"query { projects { edges { node { id name environments { edges { node { id name } } } services { edges { node { id name } } } } } } }"}')
             fi
             matched_projects=$(echo "$projects_response" | jq -c --arg name "$target_project_name" '[.data.projects.edges[].node | select(.name == $name)]')
             matched_project_count=$(echo "$matched_projects" | jq 'length')
@@ -148,7 +148,14 @@ jobs:
             if [[ "$matched_project_count" == "1" ]]; then
               target_project_id=$(echo "$matched_projects" | jq -r '.[0].id')
             else
-              fail_target_resolution "Could not resolve a unique Railway project for '$target_project_name'. Set repository variable RAILWAY_PROJECT_ID or RAILWAY_PROJECT_NAME explicitly."
+              refined_projects=$(echo "$matched_projects" | jq -c --arg env "$target_environment" --arg service "$target_service_name" '[.[] | select((([.environments.edges[].node.name] | index($env)) != null) and ((([.services.edges[].node.name] | index($service)) != null) or ([.services.edges[].node] | length) == 1))]')
+              refined_project_count=$(echo "$refined_projects" | jq 'length')
+
+              if [[ "$refined_project_count" == "1" ]]; then
+                target_project_id=$(echo "$refined_projects" | jq -r '.[0].id')
+              else
+                fail_target_resolution "Could not resolve a unique Railway project for '$target_project_name'. Set repository variable RAILWAY_PROJECT_ID or RAILWAY_PROJECT_NAME explicitly."
+              fi
             fi
           fi
 
