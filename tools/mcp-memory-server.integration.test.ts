@@ -13,6 +13,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Server, type Subprocess, spawn } from "bun";
 import { MeiliSearch } from "meilisearch";
+import { resolveLocalMeilisearchTarget } from "../packages/cli/src/commands/serve.ts";
 
 // ---------------------------------------------------------------------------
 // Skip guard — probe Meilisearch availability so CI skips automatically
@@ -194,6 +195,73 @@ const TEST_POSSE = `test-posse-${Date.now()}`;
 const TEST_INDEX = `posse-registry-${TEST_POSSE}`;
 const SELF_NAME = "integration-self";
 const PEER_NAME = "integration-peer";
+
+function resolveMemoryTypesInSubprocess(env: Record<string, string>): { url: string; key: string } {
+	const proc = Bun.spawnSync(
+		[
+			"bun",
+			"--eval",
+			'const mod = await import("./tools/mcp-memory/types.ts"); console.log(JSON.stringify({ url: mod.MEILI_URL, key: mod.MEILI_MASTER_KEY }));',
+		],
+		{
+			cwd: import.meta.dir.replace(/\/tools$/, ""),
+			env: {
+				...process.env,
+				...env,
+			},
+		},
+	);
+
+	if (proc.exitCode !== 0) {
+		throw new Error(proc.stderr.toString() || "failed to resolve memory types in subprocess");
+	}
+
+	return JSON.parse(proc.stdout.toString()) as { url: string; key: string };
+}
+
+describe("local Meilisearch resolution", () => {
+	test("shared tools/mcp-memory defaults to localhost:7701", () => {
+		const resolved = resolveMemoryTypesInSubprocess({
+			MEILI_URL: "",
+			MEILI_MASTER_KEY: "",
+			MEILI_API_KEY: "",
+		});
+
+		expect(resolved.url).toBe("http://localhost:7701");
+		expect(resolved.key).toBe("");
+	});
+
+	test("shared tools/mcp-memory honors explicit localhost:7700 override and legacy auth", () => {
+		const resolved = resolveMemoryTypesInSubprocess({
+			MEILI_URL: "http://localhost:7700",
+			MEILI_MASTER_KEY: "",
+			MEILI_API_KEY: "legacy-key",
+		});
+
+		expect(resolved.url).toBe("http://localhost:7700");
+		expect(resolved.key).toBe("legacy-key");
+	});
+
+	test("serve CLI derives local host port from canonical localhost URL", () => {
+		expect(resolveLocalMeilisearchTarget("http://localhost:7701")).toEqual({
+			hostname: "localhost",
+			port: 7701,
+			httpAddr: "localhost:7701",
+			dockerPublish: "7701:7700",
+		});
+		expect(resolveLocalMeilisearchTarget("http://127.0.0.1:7700")).toEqual({
+			hostname: "127.0.0.1",
+			port: 7700,
+			httpAddr: "127.0.0.1:7700",
+			dockerPublish: "127.0.0.1:7700:7700",
+		});
+	});
+
+	test("serve CLI skips local Docker inference for remote endpoints", () => {
+		expect(resolveLocalMeilisearchTarget("https://meili.internal:7700")).toBeNull();
+		expect(resolveLocalMeilisearchTarget("http://192.168.1.10:7701")).toBeNull();
+	});
+});
 
 // ---------------------------------------------------------------------------
 // Integration tests

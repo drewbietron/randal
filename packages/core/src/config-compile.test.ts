@@ -47,12 +47,12 @@ describe("edge cases", () => {
 	test("config with no capabilities but memory.store set includes memory MCP", () => {
 		const config = minimalConfig({
 			capabilities: [],
-			memory: { store: "meilisearch", url: "http://localhost:7700" },
+			memory: { store: "meilisearch", url: "http://localhost:7701" },
 		});
 		const result = compileOpenCodeConfig(config, defaultOptions());
 		expect(result.config.mcp.memory).toBeDefined();
 		expect(result.config.mcp.memory.type).toBe("local");
-		expect(result.config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7700");
+		expect(result.config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7701");
 	});
 
 	test("empty tools array does not produce tool permissions", () => {
@@ -247,25 +247,25 @@ describe("edge cases", () => {
 		const config = minimalConfig({
 			memory: {
 				store: "meilisearch",
-				url: "http://localhost:7700",
+				url: "http://localhost:7701",
 				apiKey: "my-master-key",
 			},
 		});
 		const result = compileOpenCodeConfig(config, defaultOptions());
-		expect(result.config.mcp.memory.environment?.MEILI_API_KEY).toBe("my-master-key");
+		expect(result.config.mcp.memory.environment?.MEILI_MASTER_KEY).toBe("my-master-key");
 	});
 
 	test("memory MCP omits apiKey when empty", () => {
 		const config = minimalConfig({
 			memory: {
 				store: "meilisearch",
-				url: "http://localhost:7700",
+				url: "http://localhost:7701",
 				apiKey: "",
 			},
 		});
 		const result = compileOpenCodeConfig(config, defaultOptions());
 		// Empty apiKey should not be included
-		expect(result.config.mcp.memory.environment?.MEILI_API_KEY).toBeUndefined();
+		expect(result.config.mcp.memory.environment?.MEILI_MASTER_KEY).toBeUndefined();
 	});
 
 	test("scheduler MCP derives gateway URL from config", () => {
@@ -299,7 +299,7 @@ describe("MCP server conditional inclusion", () => {
 	describe("memory MCP", () => {
 		test("present when memory.store is 'meilisearch'", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700" },
+				memory: { store: "meilisearch", url: "http://localhost:7701" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
 			expect(result.config.mcp.memory).toBeDefined();
@@ -326,40 +326,40 @@ describe("MCP server conditional inclusion", () => {
 
 		test("environment includes SUMMARY_MODEL", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700" },
+				memory: { store: "meilisearch", url: "http://localhost:7701" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
 			expect(result.config.mcp.memory.environment?.SUMMARY_MODEL).toBeDefined();
 			expect(typeof result.config.mcp.memory.environment?.SUMMARY_MODEL).toBe("string");
 		});
 
-		test("environment includes MEILI_API_KEY when configured", () => {
+		test("environment includes MEILI_MASTER_KEY when configured", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700", apiKey: "secret-key" },
+				memory: { store: "meilisearch", url: "http://localhost:7701", apiKey: "secret-key" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
-			expect(result.config.mcp.memory.environment?.MEILI_API_KEY).toBe("secret-key");
+			expect(result.config.mcp.memory.environment?.MEILI_MASTER_KEY).toBe("secret-key");
 		});
 
-		test("environment omits MEILI_API_KEY when empty string", () => {
+		test("environment omits MEILI_MASTER_KEY when empty string", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700", apiKey: "" },
+				memory: { store: "meilisearch", url: "http://localhost:7701", apiKey: "" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
-			expect(result.config.mcp.memory.environment?.MEILI_API_KEY).toBeUndefined();
+			expect(result.config.mcp.memory.environment?.MEILI_MASTER_KEY).toBeUndefined();
 		});
 
-		test("environment omits MEILI_API_KEY when not provided", () => {
+		test("environment omits MEILI_MASTER_KEY when not provided", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700" },
+				memory: { store: "meilisearch", url: "http://localhost:7701" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions());
-			expect(result.config.mcp.memory.environment?.MEILI_API_KEY).toBeUndefined();
+			expect(result.config.mcp.memory.environment?.MEILI_MASTER_KEY).toBeUndefined();
 		});
 
 		test("command path uses toolsDir", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700" },
+				memory: { store: "meilisearch", url: "http://localhost:7701" },
 			});
 			const result = compileOpenCodeConfig(config, defaultOptions({ toolsDir: "/custom/tools" }));
 			const cmd = result.config.mcp.memory.command ?? [];
@@ -557,7 +557,7 @@ describe("MCP server conditional inclusion", () => {
 	describe("multiple MCP servers together", () => {
 		test("all five servers present with full capabilities", () => {
 			const config = minimalConfig({
-				memory: { store: "meilisearch", url: "http://localhost:7700" },
+				memory: { store: "meilisearch", url: "http://localhost:7701" },
 				heartbeat: { enabled: true },
 				gateway: { channels: [{ type: "http", port: 7600, auth: "tok" }] },
 				capabilities: ["search", "video", "image-gen"],
@@ -778,7 +778,7 @@ describe("output integrity", () => {
 	test("compileOpenCodeConfig returns JSON-serializable object", () => {
 		const config = minimalConfig({
 			capabilities: ["search", "video", "image-gen"],
-			memory: { store: "meilisearch", url: "http://localhost:7700" },
+			memory: { store: "meilisearch", url: "http://localhost:7701" },
 			heartbeat: { enabled: true },
 			gateway: { channels: [{ type: "http", port: 7600, auth: "tok" }] },
 		});

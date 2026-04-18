@@ -81,7 +81,7 @@ name: test-agent
 runner:
   workdir: /tmp
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test-key
   sharing:${memPublish}${memRead}
 skills:

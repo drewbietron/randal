@@ -104,7 +104,7 @@ function createStoreWithMock(
 	} = {},
 ) {
 	const store = new MeilisearchStore({
-		url: "http://localhost:7700",
+		url: "http://localhost:7701",
 		apiKey: "test-key",
 		index: "test-index",
 		embeddingService: options.embeddingService,
