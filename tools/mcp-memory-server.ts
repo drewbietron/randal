@@ -823,6 +823,7 @@ const TOOL_DEFINITIONS = [
 				},
 				categories: {
 					type: "array",
+					items: { type: "string" },
 					description: "Optional category tags for the annotation",
 				},
 				agent: {
@@ -855,6 +856,7 @@ const TOOL_DEFINITIONS = [
 				},
 				filesChanged: {
 					type: "array",
+					items: { type: "string" },
 					description: "List of files changed during the task",
 				},
 			},

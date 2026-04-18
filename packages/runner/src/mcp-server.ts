@@ -474,6 +474,7 @@ export class McpServer {
 				feedback: { type: "string", description: "Optional feedback text" },
 				categories: {
 					type: "array",
+					items: { type: "string" },
 					description: "Optional category tags for the annotation",
 				},
 			},
