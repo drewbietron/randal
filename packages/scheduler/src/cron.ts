@@ -465,8 +465,7 @@ export class CronScheduler {
 		// Tell the brain its output will be auto-delivered to the target channel
 		let finalPrompt = resolvedPrompt;
 		if (config.target?.channel) {
-			const seed = Math.random().toString(36).slice(2, 8);
-			finalPrompt = `[System: Your response will be automatically delivered to the user's ${config.target.channel} channel. Just produce your response directly — do NOT try to use channel_send, emit_event, or any channel tools. Simply write your response as plain text. Each invocation is stateless — you have no memory of previous responses. Use this random seed to vary your output: ${seed}]\n\n${resolvedPrompt}`;
+			finalPrompt = `[System: Your response will be automatically delivered to the user's ${config.target.channel} channel. Just produce your response directly — do NOT try to use channel_send, emit_event, or any channel tools. Simply write your response as plain text.]\n\n${resolvedPrompt}`;
 		}
 
 		if (config.execution === "main" && this.heartbeat) {
