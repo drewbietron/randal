@@ -29,6 +29,7 @@ on:
 
 env:
   RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+  RAILWAY_API: https://backboard.railway.com/graphql/v2
 
 jobs:
   deploy:
@@ -54,119 +55,336 @@ jobs:
             echo "Railway token found"
           fi
 
-      # Install Railway CLI (no Node.js needed)
-      - name: Install Railway CLI
+      - name: Resolve Railway target metadata
+        if: env.SKIP_DEPLOY != 'true'
+        env:
+          CONFIGURED_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+          CONFIGURED_PROJECT_NAME: ${{ vars.RAILWAY_PROJECT_NAME }}
+          CONFIGURED_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+          CONFIGURED_SERVICE_NAME: ${{ vars.RAILWAY_SERVICE_NAME }}
+          CONFIGURED_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+        run: |
+          set -euo pipefail
+
+          graphql() {
+            local payload="$1"
+            local response
+            response=$(curl -fsSL -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$payload")
+
+            if echo "$response" | jq -e '.errors and (.errors | length > 0)' > /dev/null; then
+              echo "Railway GraphQL request failed:" >&2
+              echo "$response" | jq . >&2
+              exit 1
+            fi
+
+            echo "$response"
+          }
+
+          fail_target_resolution() {
+            echo "::error::$1" >&2
+            exit 1
+          }
+
+          target_environment="production"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            target_environment="${{ github.event.inputs.environment }}"
+          fi
+          echo "RAILWAY_TARGET_ENVIRONMENT=$target_environment" >> "$GITHUB_ENV"
+
+          default_project_name="${GITHUB_REPOSITORY##*/}"
+          default_service_name="$default_project_name"
+
+          token_context=$(graphql '{"query":"query { projectToken { projectId environmentId } }"}')
+          token_project_id=$(echo "$token_context" | jq -r '.data.projectToken.projectId // empty')
+          token_environment_id=$(echo "$token_context" | jq -r '.data.projectToken.environmentId // empty')
+
+          target_project_id="$CONFIGURED_PROJECT_ID"
+          target_project_name="$CONFIGURED_PROJECT_NAME"
+          target_service_id="$CONFIGURED_SERVICE_ID"
+          target_service_name="$CONFIGURED_SERVICE_NAME"
+          target_environment_id="$CONFIGURED_ENVIRONMENT_ID"
+
+          if [[ -z "$target_project_id" && -n "$token_project_id" ]]; then
+            target_project_id="$token_project_id"
+          fi
+
+          if [[ -z "$target_project_name" ]]; then
+            target_project_name="$default_project_name"
+          fi
+
+          if [[ -z "$target_service_name" ]]; then
+            target_service_name="$default_service_name"
+          fi
+
+          if [[ -z "$target_project_id" ]]; then
+            projects_response=$(graphql '{"query":"query { projects { edges { node { id name } } } }"}')
+            matched_projects=$(echo "$projects_response" | jq -c --arg name "$target_project_name" '[.data.projects.edges[].node | select(.name == $name)]')
+            matched_project_count=$(echo "$matched_projects" | jq 'length')
+
+            if [[ "$matched_project_count" == "1" ]]; then
+              target_project_id=$(echo "$matched_projects" | jq -r '.[0].id')
+            else
+              fail_target_resolution "Could not resolve a unique Railway project for '$target_project_name'. Set repository variable RAILWAY_PROJECT_ID or RAILWAY_PROJECT_NAME explicitly."
+            fi
+          fi
+
+          project_response=$(graphql "$(jq -cn --arg projectId "$target_project_id" '{query: "query project($projectId: String!) { project(id: $projectId) { id name environments { edges { node { id name } } } services { edges { node { id name } } } } }", variables: {projectId: $projectId}}')")
+
+          resolved_project_name=$(echo "$project_response" | jq -r '.data.project.name // empty')
+          if [[ -z "$resolved_project_name" ]]; then
+            fail_target_resolution "Railway project '$target_project_id' is not accessible with the configured token."
+          fi
+
+          environments=$(echo "$project_response" | jq -c '[.data.project.environments.edges[].node]')
+          services=$(echo "$project_response" | jq -c '[.data.project.services.edges[].node]')
+
+          if [[ -z "$target_environment_id" && -n "$token_environment_id" ]]; then
+            token_environment_name=$(echo "$environments" | jq -r --arg id "$token_environment_id" '.[] | select(.id == $id) | .name')
+            if [[ -z "$token_environment_name" ]]; then
+              fail_target_resolution "Configured Railway token resolved environment '$token_environment_id', but that environment was not found in project '$resolved_project_name'."
+            fi
+            if [[ "$token_environment_name" != "$target_environment" ]]; then
+              fail_target_resolution "Workflow requested Railway environment '$target_environment', but the configured Railway token is scoped to '$token_environment_name'. Use a token for the requested environment or set RAILWAY_ENVIRONMENT_ID explicitly."
+            fi
+            target_environment_id="$token_environment_id"
+          fi
+
+          if [[ -z "$target_environment_id" ]]; then
+            matched_environments=$(echo "$environments" | jq -c --arg name "$target_environment" '[.[] | select(.name == $name)]')
+            matched_environment_count=$(echo "$matched_environments" | jq 'length')
+
+            if [[ "$matched_environment_count" == "1" ]]; then
+              target_environment_id=$(echo "$matched_environments" | jq -r '.[0].id')
+            else
+              fail_target_resolution "Could not resolve a unique Railway environment named '$target_environment' in project '$resolved_project_name'. Set repository variable RAILWAY_ENVIRONMENT_ID explicitly."
+            fi
+          fi
+
+          if [[ -z "$target_service_id" ]]; then
+            matched_services=$(echo "$services" | jq -c --arg name "$target_service_name" '[.[] | select(.name == $name)]')
+            matched_service_count=$(echo "$matched_services" | jq 'length')
+            service_count=$(echo "$services" | jq 'length')
+
+            if [[ "$matched_service_count" == "1" ]]; then
+              target_service_id=$(echo "$matched_services" | jq -r '.[0].id')
+            elif [[ "$service_count" == "1" ]]; then
+              target_service_id=$(echo "$services" | jq -r '.[0].id')
+            else
+              fail_target_resolution "Could not resolve a unique Railway service in project '$resolved_project_name'. Set repository variable RAILWAY_SERVICE_ID or RAILWAY_SERVICE_NAME explicitly."
+            fi
+          fi
+
+          service_instance_response=$(graphql "$(jq -cn --arg serviceId "$target_service_id" --arg environmentId "$target_environment_id" '{query: "query serviceInstance($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id serviceName } }", variables: {serviceId: $serviceId, environmentId: $environmentId}}')")
+
+          service_instance_id=$(echo "$service_instance_response" | jq -r '.data.serviceInstance.id // empty')
+          resolved_service_name=$(echo "$service_instance_response" | jq -r '.data.serviceInstance.serviceName // empty')
+
+          if [[ -z "$service_instance_id" ]]; then
+            fail_target_resolution "Resolved Railway service '$target_service_id' is not available in environment '$target_environment'."
+          fi
+
+          echo "Resolved Railway target: project=$resolved_project_name service=$resolved_service_name environment=$target_environment"
+          echo "RAILWAY_PROJECT_ID=$target_project_id" >> "$GITHUB_ENV"
+          echo "RAILWAY_SERVICE_ID=$target_service_id" >> "$GITHUB_ENV"
+          echo "RAILWAY_ENVIRONMENT_ID=$target_environment_id" >> "$GITHUB_ENV"
+          echo "RAILWAY_SERVICE_NAME=$resolved_service_name" >> "$GITHUB_ENV"
+
+      - name: Connect service to current branch
         if: env.SKIP_DEPLOY != 'true'
         run: |
-          curl -fsSL https://railway.com/install.sh | sh
-          echo "$HOME/.railway/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
 
-      - name: Verify Railway CLI
-        if: env.SKIP_DEPLOY != 'true'
-        run: railway --version
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          REPO="${{ github.repository }}"
 
-      # Set environment variables in Railway
-      # These come from GitHub Secrets
+          PAYLOAD=$(jq -cn \
+            --arg serviceId "$RAILWAY_SERVICE_ID" \
+            --arg repo "$REPO" \
+            --arg branch "$BRANCH" \
+            '{query: "mutation serviceConnect($serviceId: String!, $repo: String!, $branch: String!) { serviceConnect(id: $serviceId, input: {repo: $repo, branch: $branch}) { id } }", variables: {serviceId: $serviceId, repo: $repo, branch: $branch}}')
+
+          RESPONSE=$(curl -fsSL -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          if echo "$RESPONSE" | jq -e '.errors and (.errors | length > 0)' > /dev/null; then
+            echo "$RESPONSE" | jq . >&2
+            exit 1
+          fi
+
+          echo "Connected Railway service '$RAILWAY_SERVICE_NAME' to $REPO@$BRANCH"
+
       - name: Set Environment Variables
         if: env.SKIP_DEPLOY != 'true'
         run: |
-          echo "Setting Railway environment variables..."
+          set -euo pipefail
 
-          # Required variables
+          VARIABLES=$(jq -cn \
+            --arg randal "${{ secrets.RANDAL_API_TOKEN }}" \
+            --arg meili "${{ secrets.MEILI_MASTER_KEY }}" \
+            '{RANDAL_API_TOKEN: $randal, MEILI_MASTER_KEY: $meili}')
+
+          if [[ -z "${{ secrets.RANDAL_API_TOKEN }}" ]]; then
+            echo "RANDAL_API_TOKEN secret is required." >&2
+            exit 1
+          fi
+
+          if [[ -z "${{ secrets.MEILI_MASTER_KEY }}" ]]; then
+            echo "MEILI_MASTER_KEY secret is required." >&2
+            exit 1
+          fi
+
           if [[ -n "${{ secrets.OPENROUTER_API_KEY }}" ]]; then
-            railway variable set OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}"
-            echo "✓ Set OPENROUTER_API_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.OPENROUTER_API_KEY }}" '. + {OPENROUTER_API_KEY: $value}')
           elif [[ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]]; then
-            railway variable set ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}"
-            echo "✓ Set ANTHROPIC_API_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.ANTHROPIC_API_KEY }}" '. + {ANTHROPIC_API_KEY: $value}')
           elif [[ -n "${{ secrets.OPENAI_API_KEY }}" ]]; then
-            railway variable set OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
-            echo "✓ Set OPENAI_API_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.OPENAI_API_KEY }}" '. + {OPENAI_API_KEY: $value}')
           else
-            echo "Warning: No API key set (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)"
+            echo "No provider API key configured; deploy will proceed without OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY."
           fi
 
-          if [[ -n "${{ secrets.RANDAL_API_TOKEN }}" ]]; then
-            railway variable set RANDAL_API_TOKEN="${{ secrets.RANDAL_API_TOKEN }}"
-            echo "✓ Set RANDAL_API_TOKEN"
-          else
-            echo "Error: RANDAL_API_TOKEN is required"
-            exit 1
-          fi
-
-          if [[ -n "${{ secrets.MEILI_MASTER_KEY }}" ]]; then
-            railway variable set MEILI_MASTER_KEY="${{ secrets.MEILI_MASTER_KEY }}"
-            echo "✓ Set MEILI_MASTER_KEY"
-          else
-            echo "Error: MEILI_MASTER_KEY is required"
-            exit 1
-          fi
-
-          # Optional variables - only set if they exist
           if [[ -n "${{ secrets.TAVILY_API_KEY }}" ]]; then
-            railway variable set TAVILY_API_KEY="${{ secrets.TAVILY_API_KEY }}"
-            echo "✓ Set TAVILY_API_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.TAVILY_API_KEY }}" '. + {TAVILY_API_KEY: $value}')
           fi
 
           if [[ -n "${{ secrets.GH_TOKEN }}" ]]; then
-            railway variable set GH_TOKEN="${{ secrets.GH_TOKEN }}"
-            echo "✓ Set GH_TOKEN"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.GH_TOKEN }}" '. + {GH_TOKEN: $value}')
           fi
 
           if [[ -n "${{ secrets.DISCORD_BOT_TOKEN }}" ]]; then
-            railway variable set DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}"
-            echo "✓ Set DISCORD_BOT_TOKEN"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.DISCORD_BOT_TOKEN }}" '. + {DISCORD_BOT_TOKEN: $value}')
           fi
 
           if [[ -n "${{ secrets.FAL_KEY }}" ]]; then
-            railway variable set FAL_KEY="${{ secrets.FAL_KEY }}"
-            echo "✓ Set FAL_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.FAL_KEY }}" '. + {FAL_KEY: $value}')
           fi
 
           if [[ -n "${{ secrets.ELEVENLABS_API_KEY }}" ]]; then
-            railway variable set ELEVENLABS_API_KEY="${{ secrets.ELEVENLABS_API_KEY }}"
-            echo "✓ Set ELEVENLABS_API_KEY"
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.ELEVENLABS_API_KEY }}" '. + {ELEVENLABS_API_KEY: $value}')
           fi
 
-          echo "Environment variables set successfully!"
+          PAYLOAD=$(jq -cn \
+            --arg projectId "$RAILWAY_PROJECT_ID" \
+            --arg serviceId "$RAILWAY_SERVICE_ID" \
+            --arg environmentId "$RAILWAY_ENVIRONMENT_ID" \
+            --argjson variables "$VARIABLES" \
+            '{query: "mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }", variables: {input: {projectId: $projectId, serviceId: $serviceId, environmentId: $environmentId, variables: $variables, skipDeploys: true}}}')
+
+          RESPONSE=$(curl -fsSL -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          if echo "$RESPONSE" | jq -e '.errors and (.errors | length > 0)' > /dev/null; then
+            echo "$RESPONSE" | jq . >&2
+            exit 1
+          fi
+
+          echo "Environment variables upserted successfully."
 
       # Deploy to Railway
       - name: Deploy to Railway
         if: env.SKIP_DEPLOY != 'true'
         run: |
-          echo "Starting Railway deployment..."
+          set -euo pipefail
 
-          # Set deployment message
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            DEPLOY_MSG="${{ github.event.inputs.deploy_message }}"
-          else
-            DEPLOY_MSG="Auto-deploy: ${{ github.event.head_commit.message }}"
+          echo "Starting Railway deployment for service '$RAILWAY_SERVICE_NAME' in environment '$RAILWAY_TARGET_ENVIRONMENT'..."
+
+          PAYLOAD=$(jq -cn \
+            --arg serviceId "$RAILWAY_SERVICE_ID" \
+            --arg environmentId "$RAILWAY_ENVIRONMENT_ID" \
+            '{query: "mutation serviceInstanceDeployV2($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }", variables: {serviceId: $serviceId, environmentId: $environmentId}}')
+
+          RESPONSE=$(curl -fsSL -X POST "$RAILWAY_API" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          if echo "$RESPONSE" | jq -e '.errors and (.errors | length > 0)' > /dev/null; then
+            echo "$RESPONSE" | jq . >&2
+            exit 1
           fi
 
-          echo "Deployment message: $DEPLOY_MSG"
+          DEPLOYMENT_ID=$(echo "$RESPONSE" | jq -r '.data.serviceInstanceDeployV2 // empty')
+          if [[ -z "$DEPLOYMENT_ID" ]]; then
+            echo "$RESPONSE" | jq . >&2
+            exit 1
+          fi
 
-          # Run deployment
-          railway up -d
-
-          echo "Deployment command executed successfully!"
+          echo "Triggered deployment: $DEPLOYMENT_ID"
+          echo "RAILWAY_DEPLOYMENT_ID=$DEPLOYMENT_ID" >> "$GITHUB_ENV"
 
       # Verify deployment status
       - name: Verify Deployment
         if: env.SKIP_DEPLOY != 'true'
         run: |
-          echo "Checking deployment status..."
-          sleep 10
+          set -euo pipefail
 
-          # Get deployment status
-          STATUS=$(railway status 2>&1 || true)
-          echo "$STATUS"
+          echo "Checking deployment status for $RAILWAY_DEPLOYMENT_ID..."
+          ATTEMPTS=60
+          DEPLOYMENT_URL=""
 
-          # Check if deployment is healthy
-          if echo "$STATUS" | grep -q "error\|failed\|unhealthy"; then
-            echo "Warning: Deployment may have issues"
-          else
-            echo "✓ Deployment appears healthy"
+          for i in $(seq 1 "$ATTEMPTS"); do
+            PAYLOAD=$(jq -cn \
+              --arg deploymentId "$RAILWAY_DEPLOYMENT_ID" \
+              '{query: "query deployment($deploymentId: String!) { deployment(id: $deploymentId) { id status url staticUrl } }", variables: {deploymentId: $deploymentId}}')
+
+            RESPONSE=$(curl -fsSL -X POST "$RAILWAY_API" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD")
+
+            if echo "$RESPONSE" | jq -e '.errors and (.errors | length > 0)' > /dev/null; then
+              echo "$RESPONSE" | jq . >&2
+              exit 1
+            fi
+
+            STATUS=$(echo "$RESPONSE" | jq -r '.data.deployment.status // empty')
+            DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.data.deployment.url // .data.deployment.staticUrl // empty')
+            echo "Attempt $i/$ATTEMPTS: status=$STATUS url=${DEPLOYMENT_URL:-n/a}"
+
+            case "$STATUS" in
+              SUCCESS|SLEEPING)
+                break
+                ;;
+              FAILED|CRASHED|REMOVED|SKIPPED)
+                echo "Deployment failed with status '$STATUS'." >&2
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          if [[ -z "${STATUS:-}" || ( "$STATUS" != "SUCCESS" && "$STATUS" != "SLEEPING" ) ]]; then
+            echo "Deployment did not reach a healthy terminal status in time." >&2
+            exit 1
           fi
+
+          if [[ -z "$DEPLOYMENT_URL" ]]; then
+            echo "Deployment succeeded but Railway did not expose a deployment URL for health verification." >&2
+            exit 1
+          fi
+
+          HEALTH_URL="$DEPLOYMENT_URL/health"
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              echo "Health check passed at $HEALTH_URL"
+              curl -fsSL "$HEALTH_URL" | jq .
+              exit 0
+            fi
+            echo "Health check attempt $i/12 returned HTTP $HTTP_CODE"
+            sleep 10
+          done
+
+          echo "Deployment reached status '$STATUS' but /health never returned 200 at $HEALTH_URL" >&2
+          exit 1
 
       # Post-deployment notification (optional)
       - name: Post Deployment Summary
