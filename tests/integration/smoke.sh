@@ -39,6 +39,15 @@ fi
 
 AUTH="Authorization: Bearer $AUTH_TOKEN"
 COOKIE_JAR=$(mktemp)
+COOKIE_HEADER=""
+
+rcurl_cookie() {
+  if [ -n "$COOKIE_HEADER" ]; then
+    rcurl -H "$COOKIE_HEADER" -b "$COOKIE_JAR" "$@"
+  else
+    rcurl -b "$COOKIE_JAR" "$@"
+  fi
+}
 
 cleanup() {
   rm -f "$COOKIE_JAR"
@@ -67,26 +76,49 @@ fi
 rm -f "$ROOT_TMP"
 
 # 3. Exchange bearer token for session cookie
-SESSION_BODY=$(rcurl -sf -c "$COOKIE_JAR" -X POST -H "$AUTH" "$BASE_URL/auth/session" 2>/dev/null || true)
-LAST_BODY="$SESSION_BODY"
+SESSION_HEADERS_TMP=$(mktemp)
+SESSION_BODY_TMP=$(mktemp)
+SESSION_HTTP=$(rcurl -s -D "$SESSION_HEADERS_TMP" -o "$SESSION_BODY_TMP" -w "%{http_code}" -c "$COOKIE_JAR" -X POST -H "$AUTH" "$BASE_URL/auth/session" 2>/dev/null || true)
+SESSION_BODY=$(dd if="$SESSION_BODY_TMP" bs=200 count=1 2>/dev/null)
+SESSION_COOKIE=$(awk '
+  BEGIN { IGNORECASE = 1 }
+  /^Set-Cookie:/ {
+    line = $0
+    sub(/\r$/, "", line)
+    if (line ~ /randal_session=/) {
+      sub(/^.*randal_session=/, "", line)
+      sub(/;.*/, "", line)
+      print line
+      exit
+    }
+  }
+' "$SESSION_HEADERS_TMP")
+if [ -n "$SESSION_COOKIE" ]; then
+  COOKIE_HEADER="Cookie: randal_session=$SESSION_COOKIE"
+fi
 COOKIE_PRESENT=$(grep -c "randal_session" "$COOKIE_JAR" 2>/dev/null || true)
-echo "$SESSION_BODY" | jq -e '.ok == true' > /dev/null 2>&1 && [ "$COOKIE_PRESENT" -gt 0 ]
-test_case "POST /auth/session sets session cookie" $?
+LAST_BODY="HTTP $SESSION_HTTP: $SESSION_BODY | Set-Cookie: $(grep -i '^Set-Cookie:' "$SESSION_HEADERS_TMP" | head -c 120 || true)"
+if [ "$SESSION_HTTP" = "200" ] && echo "$SESSION_BODY" | jq -e '.ok == true' > /dev/null 2>&1 && { [ -n "$SESSION_COOKIE" ] || [ "$COOKIE_PRESENT" -gt 0 ]; }; then
+  test_case "POST /auth/session sets session cookie" 0
+else
+  test_case "POST /auth/session sets session cookie" 1
+fi
+rm -f "$SESSION_HEADERS_TMP" "$SESSION_BODY_TMP"
 
 # 4. Instance info via cookie-backed auth
-LAST_BODY=$(rcurl -sf -b "$COOKIE_JAR" "$BASE_URL/instance" 2>/dev/null || true)
+LAST_BODY=$(rcurl_cookie -sf "$BASE_URL/instance" 2>/dev/null || true)
 echo "$LAST_BODY" | jq -e '.name' > /dev/null 2>&1
 test_case "GET /instance returns name via session cookie" $?
 
 # 5. Jobs list via cookie-backed auth
-COOKIE_JOBS=$(rcurl -sf -b "$COOKIE_JAR" "$BASE_URL/jobs" 2>/dev/null || true)
+COOKIE_JOBS=$(rcurl_cookie -sf "$BASE_URL/jobs" 2>/dev/null || true)
 LAST_BODY="$COOKIE_JOBS"
 echo "$COOKIE_JOBS" | jq -e 'type == "array"' > /dev/null 2>&1
 test_case "GET /jobs returns array via session cookie" $?
 
 # 6. Posse status via cookie-backed auth
 POSSE_TMP=$(mktemp)
-POSSE_HTTP=$(rcurl -s -o "$POSSE_TMP" -w "%{http_code}" -b "$COOKIE_JAR" "$BASE_URL/posse" 2>/dev/null || true)
+POSSE_HTTP=$(rcurl_cookie -s -o "$POSSE_TMP" -w "%{http_code}" "$BASE_URL/posse" 2>/dev/null || true)
 LAST_BODY="HTTP $POSSE_HTTP: $(dd if="$POSSE_TMP" bs=200 count=1 2>/dev/null)"
 if [ "$POSSE_HTTP" = "200" ]; then
   jq -e '.self and (.agents | type == "array")' "$POSSE_TMP" > /dev/null 2>&1
@@ -100,7 +132,7 @@ rm -f "$POSSE_TMP"
 
 # 7. Posse jobs via cookie-backed auth
 POSSE_JOBS_TMP=$(mktemp)
-POSSE_JOBS_HTTP=$(rcurl -s -o "$POSSE_JOBS_TMP" -w "%{http_code}" -b "$COOKIE_JAR" "$BASE_URL/posse/jobs" 2>/dev/null || true)
+POSSE_JOBS_HTTP=$(rcurl_cookie -s -o "$POSSE_JOBS_TMP" -w "%{http_code}" "$BASE_URL/posse/jobs" 2>/dev/null || true)
 LAST_BODY="HTTP $POSSE_JOBS_HTTP: $(dd if="$POSSE_JOBS_TMP" bs=200 count=1 2>/dev/null)"
 if [ "$POSSE_JOBS_HTTP" = "200" ]; then
   jq -e '.jobs | type == "array"' "$POSSE_JOBS_TMP" > /dev/null 2>&1
@@ -113,13 +145,13 @@ fi
 rm -f "$POSSE_JOBS_TMP"
 
 # 8. Mesh status via cookie-backed auth
-COOKIE_MESH=$(rcurl -sf -b "$COOKIE_JAR" "$BASE_URL/mesh/status" 2>/dev/null || true)
+COOKIE_MESH=$(rcurl_cookie -sf "$BASE_URL/mesh/status" 2>/dev/null || true)
 LAST_BODY="$COOKIE_MESH"
 echo "$COOKIE_MESH" | jq -e '.instances | type == "array"' > /dev/null 2>&1
 test_case "GET /mesh/status returns JSON via session cookie" $?
 
 # 9. Scheduler status via cookie-backed auth
-LAST_BODY=$(rcurl -sf -b "$COOKIE_JAR" "$BASE_URL/scheduler" 2>/dev/null || true)
+LAST_BODY=$(rcurl_cookie -sf "$BASE_URL/scheduler" 2>/dev/null || true)
 echo "$LAST_BODY" | jq -e '.' > /dev/null 2>&1
 test_case "GET /scheduler returns JSON via session cookie" $?
 
@@ -219,7 +251,11 @@ test_case "GET /config returns sanitized config" $?
 # Railway may buffer event bodies, so validate the GET response status and SSE content type.
 SSE_HEADERS_TMP=$(mktemp)
 SSE_BODY_TMP=$(mktemp)
-rcurl -sS -N --max-time 5 -D "$SSE_HEADERS_TMP" -o "$SSE_BODY_TMP" -b "$COOKIE_JAR" "$BASE_URL/events" 2>/dev/null || true
+if [ -n "$COOKIE_HEADER" ]; then
+  rcurl -sS -N --max-time 5 -D "$SSE_HEADERS_TMP" -o "$SSE_BODY_TMP" -H "$COOKIE_HEADER" -b "$COOKIE_JAR" "$BASE_URL/events" 2>/dev/null || true
+else
+  rcurl -sS -N --max-time 5 -D "$SSE_HEADERS_TMP" -o "$SSE_BODY_TMP" -b "$COOKIE_JAR" "$BASE_URL/events" 2>/dev/null || true
+fi
 SSE_STATUS=$(awk 'toupper($1) ~ /^HTTP\// { code=$2 } END { print code ? code : "000" }' "$SSE_HEADERS_TMP")
 SSE_TYPE=$(grep -i '^content-type:' "$SSE_HEADERS_TMP" | grep -i 'text/event-stream' || true)
 LAST_BODY="HTTP $SSE_STATUS: $(dd if="$SSE_HEADERS_TMP" bs=200 count=1 2>/dev/null)"
