@@ -8,7 +8,10 @@ const LOCAL_MEILI_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 export function getLocalMeilisearchTarget(url: string): URL | null {
 	try {
 		const parsed = new URL(url);
-		if ((parsed.protocol === "http:" || parsed.protocol === "https:") && LOCAL_MEILI_HOSTS.has(parsed.hostname)) {
+		if (
+			(parsed.protocol === "http:" || parsed.protocol === "https:") &&
+			LOCAL_MEILI_HOSTS.has(parsed.hostname)
+		) {
 			return parsed;
 		}
 	} catch {
@@ -112,9 +115,9 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 		const proc = Bun.spawn(
 			[binary, "--db-path", dbPath, "--master-key", masterKey, "--http-addr", localTarget.host],
 			{
-			stdout: "ignore",
-			stderr: "ignore",
-			stdin: "ignore",
+				stdout: "ignore",
+				stderr: "ignore",
+				stdin: "ignore",
 			},
 		);
 		proc.unref();
