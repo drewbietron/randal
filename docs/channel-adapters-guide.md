@@ -57,6 +57,8 @@ gateway:
 Authenticated API routes require `Authorization: Bearer <token>` or `?token=<token>`.
 Only `/`, `/health`, and `/assets/*` are intentionally public. Internal routes
 under `/_internal/*` are not public and require the normal HTTP auth token.
+If `gateway.channels[http].auth` is unset, protected routes fail closed with a
+configuration error instead of silently becoming public.
 
 ### Security
 

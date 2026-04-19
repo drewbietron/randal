@@ -8,6 +8,13 @@ import { EventBus } from "./events.js";
 function makeTestApp(
 	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
 ) {
+	return makeHttpTestApp("test-token", overrides);
+}
+
+function makeHttpTestApp(
+	authToken: string,
+	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
+) {
 	const config = parseConfig(`
 name: test-gateway
 runner:
@@ -20,7 +27,7 @@ gateway:
   channels:
     - type: http
       port: 7600
-      auth: test-token
+      auth: ${JSON.stringify(authToken)}
 `);
 
 	const eventBus = new EventBus();
@@ -31,6 +38,12 @@ gateway:
 
 	const app = createHttpApp({ config, runner, eventBus, ...overrides });
 	return { app, config, runner, eventBus };
+}
+
+function makeNoAuthTestApp(
+	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
+) {
+	return makeHttpTestApp("", overrides);
 }
 
 const authHeaders = { Authorization: "Bearer test-token" };
@@ -190,6 +203,33 @@ describe("HTTP API", () => {
 		const data = await res.json();
 		expect(data.enabled).toBe(true);
 		expect(data.sessions).toHaveLength(1);
+	});
+
+	test("missing HTTP auth leaves only the intentional public surface reachable", async () => {
+		const { app } = makeNoAuthTestApp();
+
+		const rootRes = await app.request("/");
+		expect(rootRes.status).toBe(200);
+
+		const healthRes = await app.request("/health");
+		expect(healthRes.status).toBe(200);
+
+		const instanceRes = await app.request("/instance");
+		expect(instanceRes.status).toBe(503);
+		expect(await instanceRes.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
+	});
+
+	test("missing HTTP auth fails closed for /voice/status even with a bearer token", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/voice/status", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
 	});
 });
 
@@ -362,6 +402,34 @@ describe("Internal Events API", () => {
 		});
 		expect(res.status).toBe(200);
 		expect(sent).toEqual([{ target: "123", message: "hello" }]);
+	});
+
+	test("GET /_internal/channels fails closed when HTTP auth is unset", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/_internal/channels", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
+	});
+
+	test("POST /_internal/events fails closed when HTTP auth is unset", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "misconfigured",
+				message: "still blocked",
+			}),
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
 	});
 
 	test("POST /_internal/events emits brain event to EventBus", async () => {

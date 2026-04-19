@@ -210,27 +210,29 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		if (path === "/" || path === "/health" || path.startsWith("/assets/")) {
 			return next();
 		}
-		if (authToken) {
-			// 1. Try session cookie first (no token in URL — preferred for SSE)
-			const cookieHeader = c.req.header("Cookie") ?? "";
-			const sessionMatch = cookieHeader.match(/randal_session=([^;]+)/);
-			if (sessionMatch) {
-				const sessionId = sessionMatch[1];
-				const session = sessions.get(sessionId);
-				if (session && Date.now() - session.createdAt < SESSION_TTL_MS) {
-					return next();
-				}
-				// Expired or invalid session — fall through to token auth
-			}
+		if (!authToken) {
+			return c.json({ error: "HTTP auth is not configured for protected routes" }, 503);
+		}
 
-			// 2. Authorization header or ?token= query param
-			const header = c.req.header("Authorization");
-			const headerToken = header?.replace("Bearer ", "");
-			const queryToken = new URL(c.req.url).searchParams.get("token");
-			const token = headerToken || queryToken;
-			if (!token || !safeCompare(token, authToken)) {
-				return c.json({ error: "Unauthorized" }, 401);
+		// 1. Try session cookie first (no token in URL — preferred for SSE)
+		const cookieHeader = c.req.header("Cookie") ?? "";
+		const sessionMatch = cookieHeader.match(/randal_session=([^;]+)/);
+		if (sessionMatch) {
+			const sessionId = sessionMatch[1];
+			const session = sessions.get(sessionId);
+			if (session && Date.now() - session.createdAt < SESSION_TTL_MS) {
+				return next();
 			}
+			// Expired or invalid session — fall through to token auth
+		}
+
+		// 2. Authorization header or ?token= query param
+		const header = c.req.header("Authorization");
+		const headerToken = header?.replace("Bearer ", "");
+		const queryToken = new URL(c.req.url).searchParams.get("token");
+		const token = headerToken || queryToken;
+		if (!token || !safeCompare(token, authToken)) {
+			return c.json({ error: "Unauthorized" }, 401);
 		}
 		await next();
 	});

@@ -186,6 +186,9 @@ Current voice-related HTTP surface:
 - No public Twilio voice webhook endpoint is currently mounted by the gateway.
 - No `POST /api/voice/call` route is currently implemented by the gateway.
 
+If HTTP auth is not configured on the gateway, `GET /voice/status` fails closed
+instead of becoming publicly reachable.
+
 The dashboard may still render voice UI based on local capability checks, but a
 browser voice session cannot rely on a gateway-issued participant token until a
 real token endpoint is added.
