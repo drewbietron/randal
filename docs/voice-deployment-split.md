@@ -1,10 +1,16 @@
 # Voice Deployment Split
 
-Step 3 production voice hosting is split across two runtime domains:
+Voice is optional. When you do enable it in production, do not think of it as
+"one Docker compose file starts everything." The real deployment is split across
+three concerns:
 
-1. Railway-hosted Randal gateway/brain runtime
-2. Public network frontage for Twilio-reachable HTTPS/WebSocket traffic
+1. The Randal gateway/runner process
+2. A public HTTPS/WSS entrypoint for Randal's voice routes
 3. Public LiveKit + SIP/media infrastructure
+
+For this branch's intended architecture, the gateway/runner stays on Railway and
+the voice/media side is exposed through public infrastructure that Twilio and
+remote clients can reach.
 
 ## Railway-hosted pieces
 
@@ -12,10 +18,12 @@ Step 3 production voice hosting is split across two runtime domains:
 - `@randal/voice` runtime/bootstrap code invoked by the gateway
 - Memory, jobs, and non-voice channels
 
+This is the application process started by `randal serve`.
+
 ## Gateway-hosted voice endpoints
 
 These routes are implemented by `@randal/gateway` and executed inside the same
-Randal gateway/runtime process as the Step 2 runner bridge:
+Randal gateway/runtime process as the runner bridge:
 
 - Twilio webhooks:
   - `POST /voice/twiml/inbound`
@@ -31,11 +39,17 @@ These routes must be reachable at the public HTTPS/WebSocket base URL exposed as
 - the Railway-hosted gateway itself, if it is directly reachable by Twilio and suitable for WebSocket traffic
 - or a dedicated public reverse proxy / edge host that forwards to the same gateway runtime
 
+`RANDAL_VOICE_PUBLIC_URL` should point at this public gateway entrypoint, not at
+the LiveKit WebSocket endpoint.
+
 ## Public media infrastructure
 
 - LiveKit server
 - LiveKit SIP bridge
 - any public SIP/RTP exposure required for Twilio trunking
+
+These pieces are separate from the Randal gateway process. The local
+`docker-compose.voice.yml` file is only a dev convenience for this media layer.
 
 ## Required environment split
 
@@ -56,11 +70,20 @@ TWILIO_PHONE_NUMBER=<twilio number>
 
 `RANDAL_VOICE_PUBLIC_URL` must point to the public HTTPS/WebSocket entrypoint for the gateway voice routes above.
 
+Recommended interpretation of the env vars:
+
+- `LIVEKIT_*`: how Randal connects to LiveKit
+- `DEEPGRAM_API_KEY`: STT provider credential
+- `ELEVENLABS_*`: TTS provider credential and optional explicit voice selection
+- `TWILIO_*`: only required when PSTN phone calling is enabled
+- `RANDAL_VOICE_PUBLIC_URL`: public base URL for Twilio/browser access to Randal's own voice routes
+
 ## Railway notes
 
 - Railway is a good home for the gateway/runner because the runner bridge and webhook handlers are normal HTTP/WebSocket application traffic.
 - LiveKit SIP and RTP exposure still need public media infrastructure outside the gateway process.
 - If Railway is used, treat it as the gateway/brain host; expose `RANDAL_VOICE_PUBLIC_URL` through a public domain or proxy that Twilio can reach.
+- The merge workflow in `.github/workflows/railway-deploy.yml` can upsert the voice env vars into the Railway service, but the external LiveKit/Twilio accounts still have to be created and wired up separately.
 
 ## Local development
 
@@ -79,3 +102,5 @@ This starts:
 It does **not** start the Randal gateway itself. Run the gateway separately, for example with `randal serve`.
 
 For local webhook testing, expose the gateway with a public HTTPS tunnel and set `RANDAL_VOICE_PUBLIC_URL` to that URL.
+
+If you are not testing voice, skip this entire stack.

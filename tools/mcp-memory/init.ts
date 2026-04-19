@@ -117,7 +117,7 @@ export function classifyInitError(err: unknown): string {
 		lower.includes("invalid api key") ||
 		lower.includes("invalid_api_key")
 	) {
-		return `Authentication failed at ${MEILI_URL} — check MEILI_MASTER_KEY`;
+		return `Authentication failed at ${MEILI_URL} — check MEILI_MASTER_KEY (or legacy MEILI_API_KEY)`;
 	}
 	if (
 		lower.includes("econnrefused") ||

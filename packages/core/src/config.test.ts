@@ -30,7 +30,7 @@ describe("configSchema", () => {
 		expect(result.credentials.envFile).toBe("./.env");
 		expect(result.credentials.inherit).toEqual(["PATH", "HOME", "USER", "SHELL", "TERM"]);
 		expect(result.memory.store).toBe("meilisearch");
-		expect(result.memory.url).toBe("http://localhost:7700");
+		expect(result.memory.url).toBe("http://localhost:7701");
 		expect(result.memory.apiKey).toBe("");
 		expect(result.memory.autoInject.enabled).toBe(true);
 		expect(result.memory.autoInject.maxResults).toBe(5);
@@ -80,7 +80,7 @@ describe("configSchema", () => {
 				channels: [{ type: "http" as const, port: 7600, auth: "secret" }],
 			},
 			memory: {
-				url: "http://localhost:7700",
+				url: "http://localhost:7701",
 				apiKey: "master-key",
 				index: "memory-support",
 				embedder: { type: "builtin" as const },

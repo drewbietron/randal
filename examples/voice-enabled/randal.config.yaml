@@ -1,5 +1,7 @@
 # Voice-enabled Randal instance
-# Requires: LiveKit server, Twilio account, Deepgram API key, ElevenLabs API key
+# Requires: LiveKit, one STT provider, one TTS provider
+# Twilio is only required for PSTN phone calls.
+# Set RANDAL_VOICE_PUBLIC_URL when Twilio or remote clients must reach the gateway voice routes.
 # See docs/voice-video-guide.md for setup instructions
 #
 # Run `randal setup` to generate opencode.json from this config.
@@ -27,6 +29,7 @@ gateway:
     - type: http
       port: 7600
       auth: ${API_TOKEN}
+    # Optional voice channel. Remove this and the voice block below if you want a text-only agent.
     - type: voice
 
 voice:

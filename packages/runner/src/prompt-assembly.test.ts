@@ -399,7 +399,7 @@ describe("buildSystemPrompt", () => {
 		gateway: { channels: [] as unknown[] },
 		memory: {
 			store: "meilisearch" as const,
-			url: "http://localhost:7700",
+			url: "http://localhost:7701",
 			apiKey: "",
 			embedder: { type: "builtin" as const },
 			semanticRatio: 0.7,

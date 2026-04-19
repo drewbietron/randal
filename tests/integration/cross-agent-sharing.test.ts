@@ -50,7 +50,7 @@ name: ${name}
 runner:
   workdir: ${agentDir}
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test
   sharing:
     publishTo: "${sharedIndexName}"
@@ -204,7 +204,7 @@ name: agent-b
 runner:
   workdir: ${dirB}
 memory:
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: test
   sharing:
     readFrom: ["shared-team"]
