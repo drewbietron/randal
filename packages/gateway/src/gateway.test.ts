@@ -123,8 +123,10 @@ describe("HTTP API", () => {
 		expect(res.status).toBe(200);
 		const html = await res.text();
 		expect(html).toContain("<!DOCTYPE html>");
-		// Dashboard is loaded from the actual file or fallback
-		expect(html).toContain("Randal");
+		expect(html).toContain("<title>Randal Dashboard</title>");
+		expect(html).toContain('fetch("/auth/session"');
+		expect(html).toContain("unlock to view live coordination state");
+		expect(html).not.toContain('<div class="ft">powered by randal</div>');
 	});
 
 	test("GET /skills returns empty when no skill manager", async () => {
