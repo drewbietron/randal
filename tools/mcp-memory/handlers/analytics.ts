@@ -16,7 +16,7 @@ import type { Annotation, AnnotationVerdict } from "@randal/core";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
 import { annotationStore, ensureAnalytics, getAnalyticsError } from "../init.js";
-import { ANALYTICS_ENABLED, MEILI_HINT } from "../types.js";
+import { ANALYTICS_ENABLED, MEILI_HINT, sessionHasGrant } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -151,6 +151,15 @@ async function getAnnotationsAndScores(agingHalfLife?: number) {
 // ---------------------------------------------------------------------------
 
 async function handleReliabilityScores(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return {
+			message: "Voice session is not allowed to use analytics tools",
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+		};
+	}
+
 	if (!ANALYTICS_ENABLED) {
 		return {
 			message: "Analytics not enabled",
@@ -199,6 +208,10 @@ async function handleReliabilityScores(params: Record<string, unknown>): Promise
 }
 
 async function handleRecommendations(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { message: "Voice session is not allowed to use analytics tools", recommendations: [] };
+	}
+
 	if (!ANALYTICS_ENABLED) {
 		return { message: "Analytics not enabled", recommendations: [] };
 	}
@@ -219,6 +232,10 @@ async function handleRecommendations(_params: Record<string, unknown>): Promise<
 }
 
 async function handleGetFeedback(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { feedback: "", message: "Voice session is not allowed to use analytics tools" };
+	}
+
 	const domain = params.domain as string;
 	if (!domain) {
 		throw new ToolError("Missing required parameter: domain");
@@ -244,6 +261,10 @@ async function handleGetFeedback(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleAnnotate(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { success: false, message: "Voice session is not allowed to use analytics tools" };
+	}
+
 	const jobId = params.jobId as string;
 	const verdict = params.verdict as string;
 

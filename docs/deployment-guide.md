@@ -148,6 +148,12 @@ open http://localhost:7600/
 
 Railway provides a simple container hosting platform. The official Randal Docker image bundles everything — Bun, Meilisearch, OpenCode, and Randal — so you only need a single service.
 
+For voice deployments, treat Railway as a public gateway unless you explicitly
+put the service behind private networking or another authenticated edge. Only
+`/`, `/health`, and `/assets/*` are intentionally public. Browser token
+issuance (`POST /api/voice/token`) and voice status (`GET /voice/status`) stay
+behind normal HTTP auth.
+
 ### 1. Project Structure
 
 Create a deployment directory with:
@@ -223,6 +229,19 @@ railway up
 # Or push to your connected Git repo for auto-deploy
 git push origin main
 ```
+
+### Voice Deployment Guidance
+
+Shared-instance voice is supported, but the safest production posture is split
+deployment:
+
+1. Admin/browser voice instance: private or tightly restricted, authenticated
+   browser token issuance, full admin voice access.
+2. External/PSTN voice instance: public-facing, explicit external grants, no
+   ambient admin trust unless intentionally configured.
+
+Use one shared instance only if you accept the larger blast radius of putting a
+single gateway in front of both admin and external voice paths.
 
 ---
 

@@ -52,6 +52,12 @@ gateway:
       port: 7600
       auth: ${API_TOKEN}
       corsOrigin: ${CORS_ORIGIN}
+    - type: voice
+      access:
+        trustedCallers:
+          - ${ADMIN_CALLER_E164}
+        unknownInbound: external
+        defaultExternalGrants: [memory, events]
     - type: discord
       token: ${DISCORD_BOT_TOKEN}
       allowFrom:
@@ -238,6 +244,7 @@ credentials:
     - TWILIO_ACCOUNT_SID
     - TWILIO_AUTH_TOKEN
     - TWILIO_PHONE_NUMBER
+    - ADMIN_CALLER_E164
     - DEEPGRAM_API_KEY
     - ELEVENLABS_API_KEY
     - OPENAI_API_KEY

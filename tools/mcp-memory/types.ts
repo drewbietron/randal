@@ -47,6 +47,9 @@ export const RANDAL_REPLY_TO = process.env.RANDAL_REPLY_TO || "";
 export const RANDAL_TRIGGER = process.env.RANDAL_TRIGGER || "";
 export const RANDAL_BRAIN_SESSION = process.env.RANDAL_BRAIN_SESSION || "";
 export const RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
+export const RANDAL_SESSION_ACCESS_CLASS = process.env.RANDAL_SESSION_ACCESS_CLASS || "";
+export const RANDAL_SESSION_ALLOWED_GRANTS = process.env.RANDAL_SESSION_ALLOWED_GRANTS || "";
+export const RANDAL_VOICE_ACCESS = process.env.RANDAL_VOICE_ACCESS || "";
 
 // ---------------------------------------------------------------------------
 // Posse configuration — enables cross-instance delegation tools
@@ -160,6 +163,23 @@ export function resolveSearchScope(explicitScope: string | undefined): string | 
 		return undefined;
 	}
 	return defaultScope;
+}
+
+export function isExternalVoiceSession(): boolean {
+	return RANDAL_SESSION_ACCESS_CLASS === "external";
+}
+
+export function sessionHasGrant(grant: string): boolean {
+	if (!isExternalVoiceSession()) return true;
+	return RANDAL_SESSION_ALLOWED_GRANTS.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean)
+		.includes(grant);
+}
+
+export function denyUnlessGranted<T>(grant: string, denied: T): T | null {
+	if (sessionHasGrant(grant)) return null;
+	return denied;
 }
 
 /**

@@ -101,6 +101,7 @@ async function callMcpServer(
 	method: string,
 	params?: Record<string, unknown>,
 	overrideUrl?: string,
+	envOverrides: Record<string, string> = {},
 ): Promise<JsonRpcResponse> {
 	const request = {
 		jsonrpc: "2.0",
@@ -124,6 +125,7 @@ async function callMcpServer(
 				...process.env,
 				RANDAL_GATEWAY_URL: overrideUrl ?? gatewayUrl,
 				RANDAL_GATEWAY_TOKEN: "",
+				...envOverrides,
 			},
 		},
 	);
@@ -188,6 +190,23 @@ describe("MCP Scheduler Server", () => {
 			const { text, isError } = parseToolResult(response);
 			expect(isError).toBe(true);
 			expect(text).toContain("gateway is not running");
+		});
+
+		test("denies external voice sessions without scheduler grant", async () => {
+			const response = await callMcpServer(
+				"tools/call",
+				{ name: "schedule_info", arguments: {} },
+				undefined,
+				{
+					RANDAL_SESSION_ACCESS_CLASS: "external",
+					RANDAL_SESSION_ALLOWED_GRANTS: "memory",
+				},
+			);
+
+			const { text } = parseToolResult(response);
+			expect(JSON.parse(text)).toEqual({
+				message: "Voice session is not allowed to use scheduler tools",
+			});
 		});
 	});
 

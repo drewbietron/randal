@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
 import { ensureStore, getStoreError, store } from "../init.js";
-import { MEILI_HINT, resolveSearchScope, resolveStoreScope } from "../types.js";
+import { MEILI_HINT, resolveSearchScope, resolveStoreScope, sessionHasGrant } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -89,6 +89,10 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 // ---------------------------------------------------------------------------
 
 async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { results: [], message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const query = params.query as string;
 	if (!query) {
 		throw new ToolError("Missing required parameter: query");
@@ -123,6 +127,10 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { stored: false, message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const content = params.content as string;
 	const category = params.category as string;
 	const source = (params.source as string) || "self";
@@ -174,6 +182,10 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { results: [], message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
 	if (!(await ensureStore())) {

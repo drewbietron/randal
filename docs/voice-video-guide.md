@@ -175,25 +175,39 @@ voice:
 
 ## Browser voice widget integration
 
-Randal ships a lightweight voice widget that connects to a LiveKit room from
-the browser. To enable it:
+The gateway now exposes an authenticated browser token route:
 
-1. Make sure the `voice` channel is in your gateway config:
+- `POST /api/voice/token`: authenticated-only. Issues a LiveKit room token and
+  returns a serialized `VoiceSessionAccess` envelope for the browser session.
+  Browser-authenticated voice resolves to `admin` for v1.
+- `GET /voice/status`: authenticated-only. Returns whether voice is enabled,
+  whether browser/media voice is ready, whether PSTN voice is ready, and active
+  sessions.
+- No public Twilio voice webhook endpoint is currently mounted by the gateway.
+- No `POST /api/voice/call` route is currently implemented by the gateway.
 
-```yaml
-gateway:
-  channels:
-    - type: voice
+If HTTP auth is not configured on the gateway, these protected routes fail
+closed instead of becoming publicly reachable.
+
+Trust boundary:
+
+- Browser voice here inherits the existing gateway admin auth model.
+- In practice that means the same bearer token or gateway session cookie that
+  already protects the admin HTTP surface can mint browser voice tokens.
+- This is not a separate end-user identity system.
+- If you need end-user browser voice with different trust, run a separate
+  external-facing instance and keep the admin/browser instance private.
+
+Example:
+
+```bash
+curl -X POST http://localhost:7600/api/voice/token \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participantName":"browser-user","roomName":"browser-room"}'
 ```
 
-2. The dashboard (served by `@randal/dashboard`) automatically renders a
-   microphone button when voice is enabled.
-3. Clicking the button requests a LiveKit participant token from the gateway,
-   joins the room, and streams audio.
-
-For custom UIs, use the
-[LiveKit JavaScript SDK](https://docs.livekit.io/reference/js/) and request a
-token from `POST /api/voice/token`.
+Anonymous browser clients do not get an implicit admin voice session.
 
 ---
 
@@ -235,25 +249,13 @@ voice:
 
 ## Outbound calling
 
-Randal can place outbound phone calls via Twilio:
+The gateway docs previously described `POST /api/voice/call`, but that route is
+not implemented in this repo today. Treat outbound PSTN calling as not exposed
+over the current HTTP gateway until a concrete route and Twilio request
+validation path land in source.
 
-```bash
-randal call +15559876543 --prompt "Check in with the client about delivery"
-```
-
-Or programmatically through the gateway API:
-
-```bash
-curl -X POST http://localhost:7600/api/voice/call \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"to": "+15559876543", "prompt": "Check in about delivery"}'
-```
-
-The call flow:
-1. Twilio places the outbound call.
-2. When answered, audio is bridged into a LiveKit room.
-3. The STT/Runner/TTS pipeline handles the conversation.
+PSTN-specific operations still require Twilio credentials even when browser
+voice is otherwise configured and working.
 
 ---
 
@@ -310,10 +312,31 @@ voice:
 gateway:
   channels:
     - type: voice
+      access:
+        trustedCallers:
+          - ${ADMIN_CALLER_E164}
+        unknownInbound: external
+        defaultExternalGrants: [memory]
     - type: http
       port: 7600
       auth: ${API_TOKEN}
 ```
+
+## Shared vs Split Deployments
+
+Shared admin + external voice on one instance is supported, but it still has a
+larger blast radius because one publicly reachable gateway fronts the whole
+instance.
+
+Recommended production posture:
+
+1. Run a private or tightly restricted admin/browser voice instance.
+2. Run a separate public-facing external/PSTN voice instance with a narrower
+   grant envelope.
+3. Share only the minimum data paths those instances actually need.
+
+Use a single shared instance only when the operational simplicity is worth the
+residual risk.
 
 ---
 

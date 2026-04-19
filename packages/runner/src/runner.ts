@@ -1,6 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	readdirSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { getPrimaryDomain } from "@randal/analytics";
 import type {
 	Annotation,
@@ -11,8 +20,15 @@ import type {
 	RunnerEvent,
 	RunnerEventType,
 	SkillDeployment,
+	VoiceSessionAccess,
 } from "@randal/core";
-import { type RandalConfig, createLogger } from "@randal/core";
+import {
+	type RandalConfig,
+	applyVoiceSessionAccessToOpenCodeConfig,
+	compileOpenCodeConfig,
+	createLogger,
+	parseVoiceSessionAccess,
+} from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
 import { compactContext, shouldCompact } from "./compaction.js";
@@ -48,6 +64,87 @@ function resolveModelFromEnv(configDefault: string, env: Record<string, string>)
 		return "anthropic/claude-sonnet-4";
 	}
 	return configDefault;
+}
+
+function getRepoRoot(): string {
+	return resolve(import.meta.dir, "../../..");
+}
+
+function buildVoiceScopedOpenCodeHome(options: {
+	env: Record<string, string>;
+	config: RandalConfig;
+	configBasePath?: string;
+	job: Job;
+	voiceAccess: VoiceSessionAccess;
+}): string {
+	const sourceHome = options.env.HOME ?? process.env.HOME ?? "";
+	const scopedHome = mkdtempSync(join(tmpdir(), "randal-opencode-home-"));
+	const targetConfigDir = join(scopedHome, ".config", "opencode");
+	mkdirSync(targetConfigDir, { recursive: true });
+
+	const sourceConfigDir = sourceHome ? join(sourceHome, ".config", "opencode") : "";
+	if (sourceConfigDir && existsSync(sourceConfigDir)) {
+		for (const entry of readdirSync(sourceConfigDir)) {
+			if (entry === "opencode.json") continue;
+			try {
+				symlinkSync(join(sourceConfigDir, entry), join(targetConfigDir, entry));
+			} catch {
+				// Best effort — the tailored opencode.json is the critical override.
+			}
+		}
+	}
+
+	const compiled = compileOpenCodeConfig(options.config, {
+		basePath: options.configBasePath ?? options.job.workdir,
+		repoRoot: getRepoRoot(),
+		toolsDir: join(getRepoRoot(), "tools"),
+	}).config;
+	const scopedConfig = applyVoiceSessionAccessToOpenCodeConfig(compiled, options.voiceAccess);
+	writeFileSync(
+		join(targetConfigDir, "opencode.json"),
+		`${JSON.stringify(scopedConfig, null, "\t")}\n`,
+	);
+
+	return scopedHome;
+}
+
+function applyVoiceSessionPolicy(options: {
+	env: Record<string, string>;
+	config: RandalConfig;
+	configBasePath?: string;
+	job: Job;
+	agentName: string;
+}): string | null {
+	const access = requireVoiceSessionAccess(options.job);
+	if (!access) return null;
+
+	options.env.RANDAL_VOICE_ACCESS = JSON.stringify(access);
+	options.env.RANDAL_SESSION_ACCESS_CLASS = access.accessClass;
+	options.env.RANDAL_SESSION_ALLOWED_GRANTS = access.capabilities.grants.join(",");
+
+	if (access.accessClass !== "external") {
+		return null;
+	}
+
+	if (!access.capabilities.grants.includes("search")) {
+		options.env.TAVILY_API_KEY = "";
+	}
+
+	if (options.agentName !== "opencode") {
+		return null;
+	}
+
+	const scopedHome = buildVoiceScopedOpenCodeHome({ ...options, voiceAccess: access });
+	options.env.HOME = scopedHome;
+	return scopedHome;
+}
+
+function requireVoiceSessionAccess(job: Job): VoiceSessionAccess | null {
+	if (job.origin?.channel !== "voice") {
+		return null;
+	}
+
+	return parseVoiceSessionAccess(job.metadata?.RANDAL_VOICE_ACCESS);
 }
 
 export type EventHandler = (event: RunnerEvent) => void;
@@ -433,6 +530,7 @@ export class Runner {
 
 		const adapter = getAdapter(job.agent);
 		const { env, tempHome, auditLog } = await buildProcessEnv(this.config, this.configBasePath);
+		const tempHomes = tempHome ? [tempHome] : [];
 
 		// Log credential resolution diagnostics
 		const apiKeyVars = Object.keys(env).filter(
@@ -476,6 +574,29 @@ export class Runner {
 			for (const [key, value] of Object.entries(job.metadata)) {
 				env[key] = value;
 			}
+		}
+
+		if (job.origin?.channel === "voice" && !requireVoiceSessionAccess(job)) {
+			job.status = "failed";
+			job.error = "Voice session access metadata is missing or invalid";
+			job.exitCode = null;
+			job.completedAt = new Date().toISOString();
+			job.duration = 0;
+			syncJobToLoopState(job);
+			this.emit("job.failed", job, { error: job.error });
+			await this.autoAnnotate(job);
+			return job;
+		}
+
+		const voiceScopedHome = applyVoiceSessionPolicy({
+			env,
+			config: this.config,
+			configBasePath: this.configBasePath,
+			job,
+			agentName: job.agent,
+		});
+		if (voiceScopedHome) {
+			tempHomes.push(voiceScopedHome);
 		}
 
 		// Derive gateway URL for MCP tool callbacks (channel_send, channel_list)
@@ -794,7 +915,9 @@ export class Runner {
 			await this.autoAnnotate(job);
 			return job;
 		} finally {
-			cleanupTempHome(tempHome);
+			for (const home of tempHomes) {
+				cleanupTempHome(home);
+			}
 		}
 	}
 

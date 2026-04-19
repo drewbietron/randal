@@ -20,6 +20,24 @@ voice:
   enabled: true
 `;
 
+const browserOnlyYaml = `
+name: test-agent
+runner:
+  workdir: /tmp/test
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: test-api-key
+    apiSecret: test-api-secret
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: edge
+    voice: en-US-GuyNeural
+`;
+
 const fullyEnabledYaml = `
 name: test-agent
 runner:
@@ -30,6 +48,36 @@ voice:
     url: wss://livekit.example.com
     apiKey: test-api-key
     apiSecret: test-api-secret
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+    voice: test-voice
+`;
+
+const pstnReadyYaml = `
+name: test-agent
+runner:
+  workdir: /tmp/test
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: test-api-key
+    apiSecret: test-api-secret
+  twilio:
+    accountSid: twilio-account
+    authToken: twilio-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+    voice: test-voice
 `;
 
 function makeConfig(yaml: string): RandalConfig {
@@ -49,7 +97,7 @@ describe("VoiceEngine", () => {
 			expect(sessions).toEqual([]);
 		});
 
-		test("start with enabled but missing LiveKit config warns and returns", async () => {
+		test("start with enabled but missing browser/media config warns and returns", async () => {
 			const config = makeConfig(enabledNoLivekitYaml);
 			const engine = new VoiceEngine({ config });
 
@@ -68,6 +116,16 @@ describe("VoiceEngine", () => {
 			await engine.start();
 			const sessions = engine.getActiveSessions();
 			expect(sessions).toEqual([]);
+		});
+
+		test("browser-only config starts without Twilio", async () => {
+			const config = makeConfig(browserOnlyYaml);
+			const engine = new VoiceEngine({ config });
+
+			expect(engine.isBrowserVoiceReady()).toBe(true);
+			expect(engine.isPstnVoiceReady()).toBe(false);
+			await engine.start();
+			expect(engine.getActiveSessions()).toEqual([]);
 		});
 	});
 
@@ -232,7 +290,7 @@ describe("VoiceEngine", () => {
 
 	describe("initiateCall", () => {
 		test("creates outbound session with phone number", async () => {
-			const config = makeConfig(fullyEnabledYaml);
+			const config = makeConfig(pstnReadyYaml);
 			const engine = new VoiceEngine({ config });
 			await engine.start();
 
@@ -245,6 +303,49 @@ describe("VoiceEngine", () => {
 			expect(session.callDirection).toBe("outbound");
 			expect(session.phoneNumber).toBe("+15551234567");
 			expect(session.roomName.startsWith("call-")).toBe(true);
+		});
+
+		test("fails clearly without Twilio config", async () => {
+			const config = makeConfig(browserOnlyYaml);
+			const engine = new VoiceEngine({ config });
+			await engine.start();
+
+			await expect(
+				engine.initiateCall({
+					to: "+15551234567",
+					reason: "Test call",
+				}),
+			).rejects.toThrow("PSTN voice requires Twilio");
+		});
+	});
+
+	describe("generateRoomToken", () => {
+		test("generates a real LiveKit-style JWT for browser-only voice config", async () => {
+			const config = makeConfig(browserOnlyYaml);
+			const engine = new VoiceEngine({ config });
+			await engine.start();
+
+			const token = await engine.generateRoomToken("browser-room", "browser-user");
+			const parts = token.split(".");
+			expect(parts).toHaveLength(3);
+			const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8")) as {
+				iss: string;
+				sub: string;
+				video: { room: string; roomJoin: boolean };
+			};
+			expect(payload.iss).toBe("test-api-key");
+			expect(payload.sub).toBe("browser-user");
+			expect(payload.video.room).toBe("browser-room");
+			expect(payload.video.roomJoin).toBe(true);
+		});
+
+		test("fails clearly without browser/media config", async () => {
+			const config = makeConfig(enabledNoLivekitYaml);
+			const engine = new VoiceEngine({ config });
+
+			await expect(engine.generateRoomToken("browser-room", "browser-user")).rejects.toThrow(
+				"Browser/media voice requires LiveKit, STT, and TTS configuration",
+			);
 		});
 	});
 

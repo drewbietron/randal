@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { type RunnerEvent, parseConfig } from "@randal/core";
 import { Runner } from "@randal/runner";
-import { createHttpApp } from "./channels/http.js";
+import type { ChannelAdapter } from "./channels/channel.js";
+import { type HttpChannelOptions, createHttpApp } from "./channels/http.js";
 import { EventBus } from "./events.js";
 
-function makeTestApp() {
+function makeTestApp(
+	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
+) {
+	return makeHttpTestApp("test-token", overrides);
+}
+
+function makeHttpTestApp(
+	authToken: string,
+	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
+) {
 	const config = parseConfig(`
 name: test-gateway
 runner:
@@ -17,7 +27,7 @@ gateway:
   channels:
     - type: http
       port: 7600
-      auth: test-token
+      auth: ${JSON.stringify(authToken)}
 `);
 
 	const eventBus = new EventBus();
@@ -26,9 +36,17 @@ gateway:
 		onEvent: (e) => eventBus.emit(e),
 	});
 
-	const app = createHttpApp({ config, runner, eventBus });
+	const app = createHttpApp({ config, runner, eventBus, ...overrides });
 	return { app, config, runner, eventBus };
 }
+
+function makeNoAuthTestApp(
+	overrides: Partial<Pick<HttpChannelOptions, "channelAdapters" | "voiceManager">> = {},
+) {
+	return makeHttpTestApp("", overrides);
+}
+
+const authHeaders = { Authorization: "Bearer test-token" };
 
 describe("HTTP API", () => {
 	test("GET /health returns ok without auth", async () => {
@@ -52,7 +70,7 @@ describe("HTTP API", () => {
 	test("GET /instance returns info", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/instance", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
@@ -75,7 +93,7 @@ describe("HTTP API", () => {
 	test("GET /jobs returns empty initially", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/jobs", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const jobs = await res.json();
@@ -85,7 +103,7 @@ describe("HTTP API", () => {
 	test("GET /job/:id returns 404 for unknown", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/job/nonexistent", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(404);
 	});
@@ -94,7 +112,7 @@ describe("HTTP API", () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/job/nonexistent", {
 			method: "DELETE",
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(404);
 	});
@@ -102,7 +120,7 @@ describe("HTTP API", () => {
 	test("GET /config returns sanitized config with skills", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/config", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
@@ -130,7 +148,7 @@ describe("HTTP API", () => {
 	test("GET /skills returns empty when no skill manager", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/skills", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const skills = await res.json();
@@ -141,7 +159,7 @@ describe("HTTP API", () => {
 	test("GET /skills/search requires q parameter", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/skills/search", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(400);
 		const data = await res.json();
@@ -151,9 +169,167 @@ describe("HTTP API", () => {
 	test("GET /skills/:name returns 400 when no skill manager", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/skills/nonexistent", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(400);
+	});
+
+	test("GET /voice/status requires authentication", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/voice/status");
+		expect(res.status).toBe(401);
+	});
+
+	test("GET /voice/status returns voice status when authenticated", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => true,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [
+					{
+						id: "session-1",
+						callId: "call-1",
+						status: "active",
+						duration: 42,
+						transcriptLength: 3,
+						startedAt: "2026-04-19T16:00:00.000Z",
+					},
+				],
+				issueBrowserToken: async () => ({
+					token: "browser-token",
+					sessionId: "browser-session-1",
+					roomName: "browser-room",
+					participantName: "browser-user",
+					access:
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-session-1"}}',
+				}),
+			},
+		});
+		const res = await app.request("/voice/status", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.enabled).toBe(true);
+		expect(data.browserReady).toBe(true);
+		expect(data.pstnReady).toBe(false);
+		expect(data.sessions).toHaveLength(1);
+	});
+
+	test("POST /api/voice/token requires authentication", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test("POST /api/voice/token returns authenticated browser admin token", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => true,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async ({ participantName, roomName }) => ({
+					token:
+						"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkta2V5Iiwic3ViIjoiYnJvd3Nlci11c2VyIiwidmlkZW8iOnsicm9vbSI6ImJyb3dzZXItcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.signature",
+					sessionId: "browser-session-2",
+					roomName: roomName ?? "browser-room",
+					participantName,
+					access:
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-session-2"}}',
+				}),
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user", roomName: "browser-room" }),
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.token.split(".")).toHaveLength(3);
+		expect(data.sessionId).toBe("browser-session-2");
+		expect(data.roomName).toBe("browser-room");
+		expect(data.participantName).toBe("browser-user");
+		expect(data.access).toContain('"accessClass":"admin"');
+		expect(data.access).toContain('"sessionId":"browser-session-2"');
+		expect(data.access).not.toContain('"sessionId":"browser-room"');
+	});
+
+	test("POST /api/voice/token rejects when voice is disabled", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => false,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async () => {
+					throw new Error("should not be called");
+				},
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(400);
+		expect(await res.json()).toEqual({ error: "Voice is disabled" });
+	});
+
+	test("POST /api/voice/token rejects when browser voice is not configured", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => true,
+				isBrowserVoiceReady: () => false,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async () => {
+					throw new Error("should not be called");
+				},
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(400);
+		expect(await res.json()).toEqual({
+			error: "Browser/media voice requires LiveKit, STT, and TTS configuration",
+		});
+	});
+
+	test("missing HTTP auth leaves only the intentional public surface reachable", async () => {
+		const { app } = makeNoAuthTestApp();
+
+		const rootRes = await app.request("/");
+		expect(rootRes.status).toBe(200);
+
+		const healthRes = await app.request("/health");
+		expect(healthRes.status).toBe(200);
+
+		const instanceRes = await app.request("/instance");
+		expect(instanceRes.status).toBe(503);
+		expect(await instanceRes.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
+	});
+
+	test("missing HTTP auth fails closed for /voice/status even with a bearer token", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/voice/status", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
 	});
 });
 
@@ -194,7 +370,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse returns 404 when posse not configured", async () => {
 		const { app } = makeTestApp(); // no posse in config
 		const res = await app.request("/posse", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(404);
 		const data = await res.json();
@@ -204,7 +380,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse returns posse info when configured", async () => {
 		const { app } = makePosseTestApp();
 		const res = await app.request("/posse", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
@@ -216,7 +392,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse/memory/search returns 404 when no posse", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/posse/memory/search?q=test", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(404);
 	});
@@ -224,7 +400,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse/memory/search requires q parameter", async () => {
 		const { app } = makePosseTestApp();
 		const res = await app.request("/posse/memory/search", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(400);
 	});
@@ -232,7 +408,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse/memory/search?scope=self returns empty without memory manager", async () => {
 		const { app } = makePosseTestApp();
 		const res = await app.request("/posse/memory/search?q=test&scope=self", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
@@ -242,7 +418,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse/memory/recent returns 404 when no posse", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/posse/memory/recent", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(404);
 	});
@@ -250,7 +426,7 @@ describe("Posse HTTP API", () => {
 	test("GET /posse/memory/recent returns empty without memory manager", async () => {
 		const { app } = makePosseTestApp();
 		const res = await app.request("/posse/memory/recent?scope=self", {
-			headers: { Authorization: "Bearer test-token" },
+			headers: authHeaders,
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
@@ -271,6 +447,91 @@ describe("Posse HTTP API", () => {
 // ---- Internal Events API tests ----
 
 describe("Internal Events API", () => {
+	test("GET /_internal/channels requires authentication", async () => {
+		const adapter: ChannelAdapter = {
+			name: "discord",
+			start: async () => {},
+			stop: () => {},
+		};
+		const { app } = makeTestApp({ channelAdapters: [adapter] });
+		const res = await app.request("/_internal/channels");
+		expect(res.status).toBe(401);
+	});
+
+	test("GET /_internal/channels lists adapters when authenticated", async () => {
+		const adapter: ChannelAdapter = {
+			name: "discord",
+			start: async () => {},
+			stop: () => {},
+			send: async () => {},
+		};
+		const { app } = makeTestApp({ channelAdapters: [adapter] });
+		const res = await app.request("/_internal/channels", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.channels).toEqual([{ name: "discord", canSend: true }]);
+	});
+
+	test("POST /_internal/channel/send requires authentication", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/_internal/channel/send", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ channel: "discord", target: "123", message: "hello" }),
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test("POST /_internal/channel/send dispatches when authenticated", async () => {
+		const sent: Array<{ target: string; message: string }> = [];
+		const adapter: ChannelAdapter = {
+			name: "discord",
+			start: async () => {},
+			stop: () => {},
+			send: async (target, message) => {
+				sent.push({ target, message });
+			},
+		};
+		const { app } = makeTestApp({ channelAdapters: [adapter] });
+		const res = await app.request("/_internal/channel/send", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ channel: "discord", target: "123", message: "hello" }),
+		});
+		expect(res.status).toBe(200);
+		expect(sent).toEqual([{ target: "123", message: "hello" }]);
+	});
+
+	test("GET /_internal/channels fails closed when HTTP auth is unset", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/_internal/channels", {
+			headers: authHeaders,
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
+	});
+
+	test("POST /_internal/events fails closed when HTTP auth is unset", async () => {
+		const { app } = makeNoAuthTestApp();
+		const res = await app.request("/_internal/events", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({
+				type: "notification",
+				jobId: "misconfigured",
+				message: "still blocked",
+			}),
+		});
+		expect(res.status).toBe(503);
+		expect(await res.json()).toEqual({
+			error: "HTTP auth is not configured for protected routes",
+		});
+	});
+
 	test("POST /_internal/events emits brain event to EventBus", async () => {
 		const { app, eventBus } = makeTestApp();
 		const events: RunnerEvent[] = [];
@@ -278,7 +539,7 @@ describe("Internal Events API", () => {
 
 		const res = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "notification",
 				jobId: "test-job",
@@ -302,7 +563,7 @@ describe("Internal Events API", () => {
 
 		const res = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({ type: "notification" }),
 		});
 
@@ -314,7 +575,7 @@ describe("Internal Events API", () => {
 
 		const res = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "invalid",
 				jobId: "test-job",
@@ -331,7 +592,7 @@ describe("Internal Events API", () => {
 		// First call succeeds
 		const res1 = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "notification",
 				jobId: "rate-test",
@@ -343,7 +604,7 @@ describe("Internal Events API", () => {
 		// Second call within 10s is rate limited
 		const res2 = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "notification",
 				jobId: "rate-test",
@@ -360,7 +621,7 @@ describe("Internal Events API", () => {
 
 		const res1 = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "notification",
 				jobId: "multi-type",
@@ -372,7 +633,7 @@ describe("Internal Events API", () => {
 		// Different type for same job should succeed
 		const res2 = await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "alert",
 				jobId: "multi-type",
@@ -382,10 +643,9 @@ describe("Internal Events API", () => {
 		expect(res2.status).toBe(200);
 	});
 
-	test("POST /_internal/events does not require auth token", async () => {
+	test("POST /_internal/events requires auth token", async () => {
 		const { app } = makeTestApp();
 
-		// No Authorization header — should still work (internal endpoint)
 		const res = await app.request("/_internal/events", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
@@ -395,7 +655,7 @@ describe("Internal Events API", () => {
 				message: "no auth needed",
 			}),
 		});
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(401);
 	});
 
 	test("POST /_internal/events includes severity in emitted event", async () => {
@@ -405,7 +665,7 @@ describe("Internal Events API", () => {
 
 		await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "alert",
 				jobId: "sev-test",
@@ -433,7 +693,7 @@ describe("Internal Events API", () => {
 
 		await app.request("/_internal/events", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { ...authHeaders, "Content-Type": "application/json" },
 			body: JSON.stringify({
 				type: "alert",
 				jobId: "e2e-test",

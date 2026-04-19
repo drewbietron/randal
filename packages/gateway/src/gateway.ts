@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { MeshInstance, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
-import { createLogger } from "@randal/core";
+import { createLogger, createVoiceSessionAccess, serializeVoiceSessionAccess } from "@randal/core";
 import { EmbeddingService } from "@randal/memory";
 import {
 	MemoryManager,
@@ -21,6 +22,7 @@ import {
 } from "@randal/mesh";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
+import { VoiceEngine } from "@randal/voice";
 import { MeiliSearch } from "meilisearch";
 import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
@@ -422,6 +424,42 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 
 	// Mutable adapter registry — populated after channel start, accessed at request time
 	const channelAdapters: ChannelAdapter[] = [];
+	const voiceEngine = new VoiceEngine({ config });
+	const voiceManager = {
+		isEnabled: () => voiceEngine.enabled,
+		isBrowserVoiceReady: () => voiceEngine.isBrowserVoiceReady(),
+		isPstnVoiceReady: () => voiceEngine.isPstnVoiceReady(),
+		getSessions: () =>
+			voiceEngine.getActiveSessions().map((session) => ({
+				id: session.id,
+				callId: session.participantId,
+				status: session.status,
+				duration: session.duration,
+				transcriptLength: session.transcript.length,
+				startedAt: session.startedAt,
+			})),
+		issueBrowserToken: async (options: { participantName: string; roomName?: string }) => {
+			const sessionId = `browser-session-${randomUUID()}`;
+			const roomName = options.roomName ?? `browser-${Date.now()}`;
+			const access = createVoiceSessionAccess({
+				accessClass: "admin",
+				source: {
+					transport: "browser",
+					direction: "inbound",
+					sessionId,
+				},
+			});
+
+			return {
+				token: await voiceEngine.generateRoomToken(roomName, options.participantName),
+				sessionId,
+				roomName,
+				participantName: options.participantName,
+				access: serializeVoiceSessionAccess(access),
+			};
+		},
+	};
+	await voiceEngine.start();
 
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
@@ -436,6 +474,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		analyticsEngine,
 		channelAdapters,
 		meshCoordinator,
+		voiceManager,
 	});
 
 	// Mount hooks router if enabled
@@ -714,6 +753,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 					/* already stopping */
 				}
 			}
+			voiceEngine.stop().catch(() => {});
 			skillWatcher?.stop();
 			scheduler.stop();
 			server.stop();

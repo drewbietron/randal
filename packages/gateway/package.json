@@ -15,7 +15,8 @@
 		"@randal/memory": "workspace:*",
 		"@randal/mesh": "workspace:*",
 		"@randal/runner": "workspace:*",
-		"@randal/scheduler": "workspace:*"
+		"@randal/scheduler": "workspace:*",
+		"@randal/voice": "workspace:*"
 	},
 	"optionalDependencies": {
 		"telegraf": "^4.16.0",

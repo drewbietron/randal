@@ -380,9 +380,19 @@ Server and channel configuration. Defaults to `{}` if omitted.
 
 **Setup:** See the [Discord Integration Guide](./discord-guide.md) for full setup instructions.
 
+### 🎙️ Voice Channel
+
+| Field | Type | Default | Required | Description |
+|-------|------|---------|----------|-------------|
+| `type` | `"voice"` | — | Yes | Channel type discriminator. |
+| `allowFrom` | string[] | `[]` | No | Legacy trusted admin caller list. Preserved as an admin-trust input for PSTN callers. |
+| `access.trustedCallers` | string[] | `[]` | No | Additional trusted admin caller E.164 numbers. |
+| `access.unknownInbound` | `"deny" \| "external"` | `"deny"` | No | Unknown inbound caller handling. `deny` is the secure default. |
+| `access.defaultExternalGrants` | string[] | `[]` | No | Default explicit grants for `external` voice sessions when no per-session override is supplied. |
+
 ### Other Channels
 
-Additional channel types (iMessage, Telegram, Slack, Email, WhatsApp, Signal, Voice) are community-maintained. See the [Channel Adapters Guide](./channel-adapters-guide.md#-community-channels) for details and `packages/core/src/config.ts` for their config schemas.
+Additional channel types (iMessage, Telegram, Slack, Email, WhatsApp, Signal) are community-maintained. See the [Channel Adapters Guide](./channel-adapters-guide.md#-community-channels) for details and `packages/core/src/config.ts` for their config schemas.
 
 ---
 
@@ -732,6 +742,9 @@ memory:
 | `voice.video.publishScreen` | boolean | `false` | Publish agent screen as video track |
 | `voice.video.recordSessions` | boolean | `false` | Record voice/video sessions |
 | `voice.video.recordPath` | string | `"./recordings"` | Path to save recordings |
+
+Browser/media voice requires LiveKit + STT + TTS configuration. PSTN calling
+requires Twilio in addition to that browser/media baseline.
 
 ---
 

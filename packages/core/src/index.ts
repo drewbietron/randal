@@ -20,6 +20,7 @@ export type {
 	OpenCodeConfig,
 	ResolvedIdentity,
 } from "./config-compile.js";
+export { applyVoiceSessionAccessToOpenCodeConfig } from "./config-compile.js";
 
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
@@ -59,6 +60,22 @@ export type {
 } from "./types.js";
 
 export { MESH_DOMAINS } from "./types.js";
+
+export {
+	VOICE_ACCESS_METADATA_KEY,
+	createVoiceSessionAccess,
+	parseVoiceSessionAccess,
+	serializeVoiceSessionAccess,
+	voiceAccessHasGrant,
+} from "./voice-access.js";
+export type {
+	VoiceAccessClass,
+	VoiceCapabilityEnvelope,
+	VoiceSessionAccess,
+	VoiceSessionDirection,
+	VoiceSessionSourceFacts,
+	VoiceSessionTransport,
+} from "./voice-access.js";
 
 export { posseConfigSchema, parsePosseConfig } from "./posse-config.js";
 export type { PosseConfig } from "./posse-config.js";

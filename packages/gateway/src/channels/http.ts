@@ -123,6 +123,8 @@ export interface HttpChannelOptions {
 	/** Voice channel manager instance (optional). */
 	voiceManager?: {
 		isEnabled(): boolean;
+		isBrowserVoiceReady(): boolean;
+		isPstnVoiceReady(): boolean;
 		getSessions(): Array<{
 			id: string;
 			callId: string;
@@ -130,6 +132,16 @@ export interface HttpChannelOptions {
 			duration: number;
 			transcriptLength: number;
 			startedAt: string;
+		}>;
+		issueBrowserToken(options: {
+			participantName: string;
+			roomName?: string;
+		}): Promise<{
+			token: string;
+			sessionId: string;
+			roomName: string;
+			participantName: string;
+			access: string;
 		}>;
 	};
 	/** Channel adapter registry for internal API dispatch. */
@@ -203,39 +215,36 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		);
 	}
 
-	// Protect all routes except root dashboard and health check
+	// Protect all routes except the intentionally public dashboard surface.
 	app.use("*", async (c, next) => {
 		const path = c.req.path;
-		// Dashboard root, health endpoint, and static assets are public
-		if (
-			path === "/" ||
-			path === "/health" ||
-			path.startsWith("/assets/") ||
-			path.startsWith("/_internal/")
-		) {
+		// Dashboard root, health endpoint, and static assets are public.
+		if (path === "/" || path === "/health" || path.startsWith("/assets/")) {
 			return next();
 		}
-		if (authToken) {
-			// 1. Try session cookie first (no token in URL — preferred for SSE)
-			const cookieHeader = c.req.header("Cookie") ?? "";
-			const sessionMatch = cookieHeader.match(/randal_session=([^;]+)/);
-			if (sessionMatch) {
-				const sessionId = sessionMatch[1];
-				const session = sessions.get(sessionId);
-				if (session && Date.now() - session.createdAt < SESSION_TTL_MS) {
-					return next();
-				}
-				// Expired or invalid session — fall through to token auth
-			}
+		if (!authToken) {
+			return c.json({ error: "HTTP auth is not configured for protected routes" }, 503);
+		}
 
-			// 2. Authorization header or ?token= query param
-			const header = c.req.header("Authorization");
-			const headerToken = header?.replace("Bearer ", "");
-			const queryToken = new URL(c.req.url).searchParams.get("token");
-			const token = headerToken || queryToken;
-			if (!token || !safeCompare(token, authToken)) {
-				return c.json({ error: "Unauthorized" }, 401);
+		// 1. Try session cookie first (no token in URL — preferred for SSE)
+		const cookieHeader = c.req.header("Cookie") ?? "";
+		const sessionMatch = cookieHeader.match(/randal_session=([^;]+)/);
+		if (sessionMatch) {
+			const sessionId = sessionMatch[1];
+			const session = sessions.get(sessionId);
+			if (session && Date.now() - session.createdAt < SESSION_TTL_MS) {
+				return next();
 			}
+			// Expired or invalid session — fall through to token auth
+		}
+
+		// 2. Authorization header or ?token= query param
+		const header = c.req.header("Authorization");
+		const headerToken = header?.replace("Bearer ", "");
+		const queryToken = new URL(c.req.url).searchParams.get("token");
+		const token = headerToken || queryToken;
+		if (!token || !safeCompare(token, authToken)) {
+			return c.json({ error: "Unauthorized" }, 401);
 		}
 		await next();
 	});
@@ -1402,13 +1411,38 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	// Voice session status
 	app.get("/voice/status", (c) => {
 		if (!voiceManager) {
-			return c.json({ enabled: false, sessions: [] });
+			return c.json({ enabled: false, browserReady: false, pstnReady: false, sessions: [] });
 		}
 
 		return c.json({
 			enabled: voiceManager.isEnabled(),
+			browserReady: voiceManager.isBrowserVoiceReady(),
+			pstnReady: voiceManager.isPstnVoiceReady(),
 			sessions: voiceManager.getSessions(),
 		});
+	});
+
+	app.post("/api/voice/token", async (c) => {
+		if (!voiceManager) {
+			return c.json({ error: "Voice is not enabled" }, 400);
+		}
+		if (!voiceManager.isEnabled()) {
+			return c.json({ error: "Voice is disabled" }, 400);
+		}
+		if (!voiceManager.isBrowserVoiceReady()) {
+			return c.json(
+				{ error: "Browser/media voice requires LiveKit, STT, and TTS configuration" },
+				400,
+			);
+		}
+
+		const body = await c.req
+			.json<{ participantName?: string; roomName?: string }>()
+			.catch(() => ({}));
+		const participantName = body.participantName?.trim() || "browser-user";
+		const roomName = body.roomName?.trim() || undefined;
+		const token = await voiceManager.issueBrowserToken({ participantName, roomName });
+		return c.json(token);
 	});
 
 	// Config (sanitized, read-only)

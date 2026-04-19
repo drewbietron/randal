@@ -19,6 +19,7 @@ import {
 	RANDAL_JOB_ID,
 	RANDAL_REPLY_TO,
 	RANDAL_TRIGGER,
+	sessionHasGrant,
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -188,6 +189,10 @@ async function gatewayFetch(path: string, options?: RequestInit): Promise<unknow
 // ---------------------------------------------------------------------------
 
 async function handleStruggleCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	return checkStruggle({
 		iterations_without_progress: (params.iterations_without_progress as number) ?? 0,
 		recent_errors: (params.recent_errors as number) ?? 0,
@@ -197,6 +202,14 @@ async function handleStruggleCheck(params: Record<string, unknown>): Promise<unk
 }
 
 async function handleContextCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return {
+			hasContext: false,
+			content: null,
+			message: "Voice session is not allowed to inspect session state",
+		};
+	}
+
 	const workdir = (params.workdir as string) || process.cwd();
 	const contextPath = join(workdir, "context.md");
 
@@ -224,6 +237,10 @@ async function handleContextCheck(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	return {
 		jobId: RANDAL_JOB_ID || null,
 		channel: RANDAL_CHANNEL || null,
@@ -237,6 +254,10 @@ async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown>
 }
 
 async function handleChannelList(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { channels: [], message: "Voice session is not allowed to use channel tools" };
+	}
+
 	if (!RANDAL_GATEWAY_URL) {
 		return { channels: [], message: "No gateway connection (interactive mode)" };
 	}
@@ -251,6 +272,10 @@ async function handleChannelList(_params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { sent: false, message: "Voice session is not allowed to use channel tools" };
+	}
+
 	const channel = params.channel as string;
 	const target = params.target as string;
 	const message = params.message as string;
@@ -278,6 +303,10 @@ async function handleChannelSend(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("events")) {
+		return { emitted: false, message: "Voice session is not allowed to emit events" };
+	}
+
 	const type = params.type as string;
 	const message = params.message as string;
 	const severity = params.severity as string | undefined;
@@ -307,9 +336,14 @@ async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown
 	}
 
 	try {
+		const headers: Record<string, string> = { "Content-Type": "application/json" };
+		if (RANDAL_GATEWAY_AUTH) {
+			headers.Authorization = `Bearer ${RANDAL_GATEWAY_AUTH}`;
+		}
+
 		const resp = await fetch(`${RANDAL_GATEWAY_URL}/_internal/events`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers,
 			body: JSON.stringify({
 				type,
 				jobId: RANDAL_JOB_ID,

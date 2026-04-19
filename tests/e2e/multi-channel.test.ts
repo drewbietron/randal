@@ -90,7 +90,16 @@ describe("multi-channel E2E", () => {
 		expect(signal.name).toBe("signal");
 
 		const voice = new VoiceChannel(
-			{ type: "voice", provider: "twilio", allowFrom: [] } as never,
+			{
+				type: "voice",
+				provider: "twilio",
+				allowFrom: [],
+				access: {
+					trustedCallers: ["+15551111111", "+15552222222"],
+					unknownInbound: "deny",
+					defaultExternalGrants: [],
+				},
+			} as never,
 			deps,
 		);
 		expect(voice.name).toBe("voice");
@@ -99,7 +108,16 @@ describe("multi-channel E2E", () => {
 	test("VoiceChannel session management", async () => {
 		const deps = makeMockDeps();
 		const voice = new VoiceChannel(
-			{ type: "voice", provider: "twilio", allowFrom: [] } as never,
+			{
+				type: "voice",
+				provider: "twilio",
+				allowFrom: [],
+				access: {
+					trustedCallers: ["+15551111111", "+15552222222"],
+					unknownInbound: "deny",
+					defaultExternalGrants: [],
+				},
+			} as never,
 			deps,
 		);
 

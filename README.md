@@ -431,6 +431,7 @@ See [`examples/imported-service/`](examples/imported-service/) for the full patt
 | [`examples/multi-instance-mesh/`](examples/multi-instance-mesh/) | 🌐 Multi-machine mesh with specialization-based routing |
 | [`examples/full-platform/`](examples/full-platform/) | 🏢 Full platform config with all features enabled |
 | [`examples/voice-enabled/`](examples/voice-enabled/) | 🎙️ Voice/video integration with LiveKit + Twilio |
+| [`examples/browser-voice/`](examples/browser-voice/) | 🎙️ Browser-only voice with no Twilio dependency |
 | [`examples/prompt-layers/`](examples/prompt-layers/) | 📝 Identity, knowledge, rules, and layered prompt composition |
 | [`examples/analytics-driven/`](examples/analytics-driven/) | 📊 Self-learning loop with annotation feedback |
 

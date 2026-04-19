@@ -1,7 +1,15 @@
-import { createLogger } from "@randal/core";
-import type { RandalConfig, RunnerEvent } from "@randal/core";
+import {
+	type RandalConfig,
+	type RunnerEvent,
+	VOICE_ACCESS_METADATA_KEY,
+	type VoiceAccessClass,
+	type VoiceSessionAccess,
+	createLogger,
+	serializeVoiceSessionAccess,
+} from "@randal/core";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
 import { normalizePhone } from "./utils.js";
+import { resolveVoiceSessionAccess } from "./voice-access.js";
 
 // Extract voice channel config type from the discriminated union
 type VoiceChannelConfig = Extract<RandalConfig["gateway"]["channels"][number], { type: "voice" }>;
@@ -13,6 +21,7 @@ interface VoiceSession {
 	phoneNumber: string;
 	startedAt: number;
 	lastActivityAt: number;
+	access: VoiceSessionAccess;
 }
 
 /**
@@ -46,19 +55,35 @@ export class VoiceChannel implements ChannelAdapter {
 	 * @param ttsCallback Function to call when we need to speak text back
 	 */
 	registerSession(sessionId: string, phoneNumber: string, ttsCallback: TtsCallback): void {
-		// allowFrom filter by phone number
-		const allowFrom = this.channelConfig.allowFrom;
-		if (allowFrom && allowFrom.length > 0) {
-			const normalizedPhone = normalizePhone(phoneNumber);
-			const allowed = allowFrom.some((phone) => normalizePhone(phone) === normalizedPhone);
-			if (!allowed) {
-				this.logger.warn("Voice session rejected by allowFrom filter", {
-					sessionId,
-					phoneNumber,
-				});
-				ttsCallback("You are not authorized to use this service.");
-				return;
-			}
+		this.registerSessionWithAccess(sessionId, phoneNumber, ttsCallback, {});
+	}
+
+	registerSessionWithAccess(
+		sessionId: string,
+		phoneNumber: string,
+		ttsCallback: TtsCallback,
+		options: {
+			direction?: "inbound" | "outbound";
+			trustedSource?: boolean;
+			requestedAccess?: { accessClass?: VoiceAccessClass; grants?: string[] };
+		},
+	): void {
+		const resolution = resolveVoiceSessionAccess(this.channelConfig, {
+			sessionId,
+			phoneNumber,
+			direction: options.direction ?? "inbound",
+			trustedSource: options.trustedSource,
+			requestedAccess: options.requestedAccess,
+		});
+		if (!resolution.allowed) {
+			this.logger.warn("Voice session rejected by access policy", {
+				sessionId,
+				phoneNumber,
+				direction: options.direction ?? "inbound",
+				requestedAccess: options.requestedAccess,
+			});
+			ttsCallback(resolution.reason);
+			return;
 		}
 
 		const session: VoiceSession = {
@@ -66,6 +91,7 @@ export class VoiceChannel implements ChannelAdapter {
 			phoneNumber,
 			startedAt: Date.now(),
 			lastActivityAt: Date.now(),
+			access: resolution.access,
 		};
 
 		this.sessions.set(sessionId, session);
@@ -74,6 +100,8 @@ export class VoiceChannel implements ChannelAdapter {
 		this.logger.info("Voice session registered", {
 			sessionId,
 			phoneNumber,
+			accessClass: resolution.access.accessClass,
+			grants: resolution.access.capabilities.grants,
 		});
 	}
 
@@ -119,7 +147,11 @@ export class VoiceChannel implements ChannelAdapter {
 		};
 
 		try {
-			const response = await handleCommand(trimmed, this.deps, origin);
+			const response = await handleCommand(trimmed, this.deps, origin, {
+				metadata: {
+					[VOICE_ACCESS_METADATA_KEY]: serializeVoiceSessionAccess(session.access),
+				},
+			});
 			await ttsCallback(response);
 		} catch (err) {
 			this.logger.error("Voice command handling failed", {

@@ -477,3 +477,58 @@ describe("param validation — memory tools", () => {
 		expect(resp.result?.isError).toBeUndefined();
 	});
 });
+
+describe("voice access restrictions", () => {
+	let proc: Subprocess;
+
+	beforeAll(async () => {
+		proc = await startServer({
+			RANDAL_SESSION_ACCESS_CLASS: "external",
+			RANDAL_SESSION_ALLOWED_GRANTS: "memory",
+			RANDAL_GATEWAY_URL: "http://localhost:7600",
+			RANDAL_JOB_ID: "voice-job-1",
+		});
+	});
+
+	afterAll(() => {
+		proc.kill();
+	});
+
+	test("denies ungranted channel tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "channel_send", {
+			channel: "discord",
+			target: "123",
+			message: "hello",
+		});
+		const result = parseToolResult(resp) as { sent: boolean; message: string };
+		expect(result.sent).toBe(false);
+		expect(result.message).toContain("not allowed to use channel tools");
+	});
+
+	test("denies ungranted chat tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "chat_recent", {});
+		const result = parseToolResult(resp) as { results: unknown[]; message: string };
+		expect(result.results).toEqual([]);
+		expect(result.message).toContain("not allowed to use chat tools");
+	});
+
+	test("denies ungranted session tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "job_info", {});
+		const result = parseToolResult(resp) as { message: string };
+		expect(result.message).toContain("not allowed to inspect session state");
+	});
+
+	test("denies ungranted analytics tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "recommendations", {});
+		const result = parseToolResult(resp) as { recommendations: unknown[]; message: string };
+		expect(result.recommendations).toEqual([]);
+		expect(result.message).toContain("not allowed to use analytics tools");
+	});
+
+	test("allows explicitly granted memory tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "memory_recent", {});
+		const result = parseToolResult(resp) as { results: unknown[]; message?: string };
+		expect(Array.isArray(result.results)).toBe(true);
+		expect(result.message).not.toContain("not allowed");
+	});
+});

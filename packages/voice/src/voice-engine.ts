@@ -3,10 +3,15 @@
  * R2.1, R2.2: Core voice/video functionality.
  */
 
+import { createHmac, randomUUID } from "node:crypto";
 import type { RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
 
 const logger = createLogger({ context: { component: "voice-engine" } });
+
+function base64UrlEncode(input: string): string {
+	return Buffer.from(input).toString("base64url");
+}
 
 export interface VoiceSession {
 	id: string;
@@ -47,15 +52,33 @@ export class VoiceEngine {
 		return this.config.voice.enabled;
 	}
 
+	isBrowserVoiceReady(): boolean {
+		return Boolean(
+			this.config.voice.livekit.url &&
+				this.config.voice.livekit.apiKey &&
+				this.config.voice.livekit.apiSecret &&
+				this.config.voice.stt.apiKey &&
+				(this.config.voice.tts.provider === "edge" || this.config.voice.tts.apiKey),
+		);
+	}
+
+	isPstnVoiceReady(): boolean {
+		return Boolean(
+			this.isBrowserVoiceReady() &&
+				this.config.voice.twilio.accountSid &&
+				this.config.voice.twilio.authToken &&
+				this.config.voice.twilio.phoneNumber,
+		);
+	}
+
 	async start(): Promise<void> {
 		if (!this.enabled) {
 			logger.debug("Voice engine disabled, skipping start");
 			return;
 		}
 
-		// Validate required config
-		if (!this.config.voice.livekit.url || !this.config.voice.livekit.apiKey) {
-			logger.warn("Voice enabled but LiveKit config incomplete, skipping start");
+		if (!this.isBrowserVoiceReady()) {
+			logger.warn("Voice enabled but browser/media config incomplete, skipping start");
 			return;
 		}
 
@@ -169,6 +192,12 @@ export class VoiceEngine {
 		passcode?: string;
 		displayName?: string;
 	}): Promise<VoiceSession> {
+		if (!this.isBrowserVoiceReady()) {
+			throw new Error(
+				"Browser/media voice requires LiveKit, STT, and TTS configuration before joining calls",
+			);
+		}
+
 		logger.info("Joining video call", {
 			platform: options.platform,
 			meetingId: options.meetingId,
@@ -190,6 +219,12 @@ export class VoiceEngine {
 		script?: string;
 		maxDuration?: number;
 	}): Promise<VoiceSession> {
+		if (!this.isPstnVoiceReady()) {
+			throw new Error(
+				"PSTN voice requires Twilio accountSid, authToken, and phoneNumber plus browser/media voice configuration",
+			);
+		}
+
 		logger.info("Initiating outbound call", {
 			to: options.to,
 			reason: options.reason,
@@ -207,9 +242,38 @@ export class VoiceEngine {
 	 * R2.6: Browser WebRTC voice.
 	 */
 	async generateRoomToken(roomName: string, participantName: string): Promise<string> {
-		// In production, this would use livekit-server-sdk-js to generate a JWT token
-		// For now, return a placeholder that real implementations would replace
+		if (!this.isBrowserVoiceReady()) {
+			throw new Error(
+				"Browser/media voice requires LiveKit, STT, and TTS configuration before generating room tokens",
+			);
+		}
+
 		logger.debug("Generating room token", { roomName, participantName });
-		return `token-${roomName}-${participantName}-${Date.now()}`;
+
+		const now = Math.floor(Date.now() / 1000);
+		const header = { alg: "HS256", typ: "JWT" };
+		const payload = {
+			iss: this.config.voice.livekit.apiKey,
+			sub: participantName,
+			nbf: now,
+			iat: now,
+			exp: now + 60 * 60,
+			jti: randomUUID(),
+			video: {
+				room: roomName,
+				roomJoin: true,
+				canPublish: true,
+				canSubscribe: true,
+			},
+		};
+
+		const encodedHeader = base64UrlEncode(JSON.stringify(header));
+		const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+		const signingInput = `${encodedHeader}.${encodedPayload}`;
+		const signature = createHmac("sha256", this.config.voice.livekit.apiSecret)
+			.update(signingInput)
+			.digest("base64url");
+
+		return `${signingInput}.${signature}`;
 	}
 }
