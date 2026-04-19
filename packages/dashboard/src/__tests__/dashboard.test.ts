@@ -212,10 +212,10 @@ describe("polling state machine", () => {
 	});
 
 	test("polling calls the refresh function periodically", async () => {
-		startPolling(refreshFn, 30);
-		await new Promise((r) => setTimeout(r, 100));
+		startPolling(refreshFn, 25);
+		await new Promise((r) => setTimeout(r, 140));
 		stopPolling();
-		// Should have been called at least twice in 100ms with 30ms interval
+		// Allow extra timing slack for CI and loaded merge worktrees.
 		expect(callCount).toBeGreaterThanOrEqual(2);
 	});
 

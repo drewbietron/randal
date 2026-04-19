@@ -9,8 +9,7 @@ services:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-randal-local-key}
     command:
       - meilisearch
-      - --schedule-snapshot
-      - --snapshot-interval-sec=86400
+      - --schedule-snapshot=86400
       - --snapshot-dir=/meili_data/snapshots
       - --dump-dir=/meili_data/dumps
     volumes:

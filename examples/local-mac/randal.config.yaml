@@ -45,7 +45,7 @@ gateway:
 # Memory: searchable memory with Meilisearch for fast retrieval
 memory:
   store: meilisearch
-  url: http://localhost:7700
+  url: http://localhost:7701
   apiKey: "${MEILI_MASTER_KEY}"
   index: memory-dev-agent
   embedder:

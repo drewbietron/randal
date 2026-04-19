@@ -222,6 +222,7 @@ gateway:
 		const config = JSON.parse(readFileSync(jsonPath, "utf-8")) as OpenCodeConfig;
 
 		expect(config.mcp.memory).toBeDefined();
+		expect(config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7701");
 		expect(config.mcp.scheduler).toBeDefined();
 		expect(config.mcp.video).toBeDefined();
 		expect(config.mcp["image-gen"]).toBeDefined();

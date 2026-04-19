@@ -143,6 +143,10 @@ fi
 # 12. List jobs — use -w to capture HTTP status alongside body
 JOBS_TMP=$(mktemp)
 JOBS_HTTP=$(rcurl -s -o "$JOBS_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/jobs" 2>/dev/null || true)
+if [ "$JOBS_HTTP" != "200" ] && grep -qiE "Application not found|request_id" "$JOBS_TMP" 2>/dev/null; then
+  sleep 2
+  JOBS_HTTP=$(rcurl -s -o "$JOBS_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/jobs" 2>/dev/null || true)
+fi
 LAST_BODY="HTTP $JOBS_HTTP: $(dd if="$JOBS_TMP" bs=200 count=1 2>/dev/null)"
 if [ "$JOBS_HTTP" = "200" ]; then
   jq -e 'type == "array"' "$JOBS_TMP" > /dev/null 2>&1
@@ -175,6 +179,10 @@ sleep 1
 # 16. Cron — list — accepts bare array or object wrapping one
 CRON_TMP=$(mktemp)
 CRON_HTTP=$(rcurl -s -o "$CRON_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/cron" 2>/dev/null || true)
+if [ "$CRON_HTTP" != "200" ] && grep -qiE "Application not found|request_id" "$CRON_TMP" 2>/dev/null; then
+  sleep 2
+  CRON_HTTP=$(rcurl -s -o "$CRON_TMP" -w "%{http_code}" -H "$AUTH" "$BASE_URL/cron" 2>/dev/null || true)
+fi
 LAST_BODY="HTTP $CRON_HTTP: $(dd if="$CRON_TMP" bs=200 count=1 2>/dev/null)"
 if [ "$CRON_HTTP" = "200" ]; then
   jq -e 'if type == "array" then true elif type == "object" then (.jobs // .crons // empty) | type == "array" else false end' "$CRON_TMP" > /dev/null 2>&1
