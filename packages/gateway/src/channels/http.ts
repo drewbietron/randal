@@ -551,6 +551,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	app.get("/events", (c) => {
 		return streamSSE(c, async (stream) => {
 			let eventId = 0;
+
+			// Flush an initial frame immediately so proxies keep the SSE stream open
+			// even when no runner events have fired yet.
+			await stream.writeSSE({ event: "ping", data: "" });
+
 			const unsub = eventBus.subscribe((event: RunnerEvent) => {
 				stream.writeSSE({
 					id: String(++eventId),

@@ -129,6 +129,40 @@ describe("HTTP API", () => {
 		expect(html).not.toContain('<div class="ft">powered by randal</div>');
 	});
 
+	test("GET /events opens SSE via session cookie and emits an initial ping", async () => {
+		const { app } = makeTestApp();
+		const sessionRes = await app.request("/auth/session", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(sessionRes.status).toBe(200);
+
+		const sessionCookie = sessionRes.headers.get("set-cookie");
+		expect(sessionCookie).toContain("randal_session=");
+
+		const res = await app.request("/events", {
+			headers: { Cookie: sessionCookie ?? "" },
+		});
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toContain("text/event-stream");
+		expect(res.body).toBeDefined();
+		if (!res.body) throw new Error("Expected SSE response body");
+
+		const reader = res.body.getReader();
+		const firstChunk = await Promise.race([
+			reader.read(),
+			new Promise<never>((_, reject) => {
+				setTimeout(() => reject(new Error("Timed out waiting for initial SSE frame")), 1000);
+			}),
+		]);
+
+		expect(firstChunk.done).toBe(false);
+		const payload = new TextDecoder().decode(firstChunk.value);
+		expect(payload).toContain("event: ping");
+
+		await reader.cancel();
+	});
+
 	test("GET /skills returns empty when no skill manager", async () => {
 		const { app } = makeTestApp();
 		const res = await app.request("/skills", {
