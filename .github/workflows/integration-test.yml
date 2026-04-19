@@ -6,6 +6,7 @@ on:
       - "Dockerfile"
       - "docker/**"
       - "packages/gateway/**"
+      - "packages/dashboard/**"
       - "packages/runner/**"
       - "packages/scheduler/**"
       - "packages/cli/**"
@@ -129,7 +130,9 @@ jobs:
       # Connect the service to the GitHub repo — triggers auto-deploy
       - name: Deploy via serviceConnect
         run: |
-          BRANCH="${{ github.head_ref || github.ref_name }}"
+          REPO="${{ github.event.pull_request.head.repo.full_name || github.repository }}"
+          BRANCH="${{ github.event.pull_request.head.ref || github.head_ref || github.ref_name }}"
+          echo "Connecting service to repo: $REPO"
           echo "Connecting service to repo branch: $BRANCH"
 
           CONNECT_RESULT=$(curl -s -X POST "$RAILWAY_API" \
@@ -137,7 +140,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg sid "$RAILWAY_SERVICE_ID" \
-              --arg repo "drewbietron/randal" \
+              --arg repo "$REPO" \
               --arg branch "$BRANCH" \
               '{query: "mutation($id: String!, $input: ServiceConnectInput!) { serviceConnect(id: $id, input: $input) { id } }", variables: {id: $sid, input: {repo: $repo, branch: $branch}}}')")
 

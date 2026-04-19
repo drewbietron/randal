@@ -5,6 +5,7 @@
  * Uses bun:test with happy-dom for DOM globals (registered via setup.ts preload).
  */
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { getDashboardHtml } from "../app.js";
 import {
 	_toastErrorTimestamps,
 	escapeHtml,
@@ -302,122 +303,34 @@ describe("API contract expectations", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Navigation (DOM-based tests)
+// Dashboard HTML contract
 // ---------------------------------------------------------------------------
-describe("navigation", () => {
-	// We test the navigation pattern by verifying the DOM manipulation logic
-	// that showPage would perform. Since showPage is tightly coupled to the
-	// full HTML structure, we test the core pattern here.
-
-	let pages: HTMLDivElement[];
-	let tabs: HTMLButtonElement[];
-
-	beforeEach(() => {
-		// Create minimal DOM structure matching the dashboard
-		const nav = document.createElement("nav");
-		nav.id = "nav";
-		nav.setAttribute("role", "tablist");
-
-		const pageNames = ["home", "history", "memory", "settings"];
-		tabs = [];
-		pages = [];
-
-		for (const name of pageNames) {
-			const btn = document.createElement("button");
-			btn.dataset.page = name;
-			btn.setAttribute("role", "tab");
-			btn.setAttribute("aria-selected", name === "home" ? "true" : "false");
-			btn.setAttribute("aria-controls", `page-${name}`);
-			btn.id = `tab-${name}`;
-			if (name === "home") btn.classList.add("active");
-			nav.appendChild(btn);
-			tabs.push(btn);
-
-			const page = document.createElement("div");
-			page.id = `page-${name}`;
-			page.className = `page${name === "home" ? " active" : ""}`;
-			page.setAttribute("role", "tabpanel");
-			page.setAttribute("aria-labelledby", `tab-${name}`);
-			const h2 = document.createElement("h2");
-			h2.textContent = name.charAt(0).toUpperCase() + name.slice(1);
-			page.appendChild(h2);
-			document.body.appendChild(page);
-			pages.push(page);
-		}
-		document.body.appendChild(nav);
+describe("dashboard HTML contract", () => {
+	test("keeps the public shell and inline unlock affordance", () => {
+		const html = getDashboardHtml();
+		expect(html).toContain("public overview");
+		expect(html).toContain("unlock");
+		expect(html).toContain("Unlocked overview");
+		expect(html).toContain("Running work");
+		expect(html).toContain("Posse coordination");
+		expect(html).toContain("Scheduler state");
+		expect(html).toContain("Recent events");
 	});
 
-	afterEach(() => {
-		for (const p of pages) p.remove();
-		document.getElementById("nav")?.remove();
+	test("uses session exchange instead of prompt localStorage or token query params", () => {
+		const html = getDashboardHtml();
+		expect(html).toContain('fetch("/auth/session"');
+		expect(html).toContain('new EventSource("/events")');
+		expect(html).not.toContain("localStorage");
+		expect(html).not.toContain("prompt(");
+		expect(html).not.toContain("?token=");
 	});
 
-	function simulateShowPage(name: string) {
-		// Replicate showPage logic
-		for (const p of document.querySelectorAll(".page")) {
-			p.classList.remove("active");
-		}
-		for (const b of document.querySelectorAll("nav button")) {
-			b.classList.remove("active");
-			b.setAttribute("aria-selected", "false");
-		}
-		const pageEl = document.getElementById(`page-${name}`);
-		if (pageEl) pageEl.classList.add("active");
-		const navBtn = document.querySelector(`nav button[data-page="${name}"]`) as HTMLElement;
-		if (navBtn) {
-			navBtn.classList.add("active");
-			navBtn.setAttribute("aria-selected", "true");
-		}
-	}
-
-	test("showPage sets correct page active", () => {
-		simulateShowPage("history");
-		expect(document.getElementById("page-history")?.classList.contains("active")).toBe(true);
-		expect(document.getElementById("page-home")?.classList.contains("active")).toBe(false);
-	});
-
-	test("showPage sets correct tab active", () => {
-		simulateShowPage("history");
-		const historyTab = document.querySelector('nav button[data-page="history"]') as HTMLElement;
-		const homeTab = document.querySelector('nav button[data-page="home"]') as HTMLElement;
-		expect(historyTab.classList.contains("active")).toBe(true);
-		expect(homeTab.classList.contains("active")).toBe(false);
-	});
-
-	test("showPage sets aria-selected correctly", () => {
-		simulateShowPage("memory");
-		const memoryTab = document.querySelector('nav button[data-page="memory"]') as HTMLElement;
-		const homeTab = document.querySelector('nav button[data-page="home"]') as HTMLElement;
-		expect(memoryTab.getAttribute("aria-selected")).toBe("true");
-		expect(homeTab.getAttribute("aria-selected")).toBe("false");
-	});
-
-	test("only one page is active at a time", () => {
-		simulateShowPage("settings");
-		const activePages = document.querySelectorAll(".page.active");
-		expect(activePages.length).toBe(1);
-		expect((activePages[0] as HTMLElement).id).toBe("page-settings");
-	});
-
-	test("only one tab has aria-selected=true at a time", () => {
-		simulateShowPage("settings");
-		const selectedTabs = document.querySelectorAll('nav button[aria-selected="true"]');
-		expect(selectedTabs.length).toBe(1);
-		expect((selectedTabs[0] as HTMLElement).dataset.page).toBe("settings");
-	});
-
-	test("tabpanel elements have correct aria-labelledby", () => {
-		for (const page of pages) {
-			const panelId = page.id; // "page-home", "page-history", etc.
-			const name = panelId.replace("page-", "");
-			expect(page.getAttribute("aria-labelledby")).toBe(`tab-${name}`);
-		}
-	});
-
-	test("tabs have correct aria-controls pointing to page ids", () => {
-		for (const tab of tabs) {
-			const pageName = tab.dataset.page;
-			expect(tab.getAttribute("aria-controls")).toBe(`page-${pageName}`);
-		}
+	test("fetches follow-up protected requests with same-origin credentials", () => {
+		const html = getDashboardHtml();
+		expect(html).toContain('credentials: "same-origin"');
+		expect(html).toContain('safeFetchJson("/instance")');
+		expect(html).toContain('safeFetchJson("/jobs")');
+		expect(html).toContain('safeFetchJson("/scheduler")');
 	});
 });

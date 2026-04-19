@@ -5,1146 +5,1056 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Randal Dashboard</title>
 	<style>
-		* { margin: 0; padding: 0; box-sizing: border-box; }
+		* { box-sizing: border-box; margin: 0; padding: 0; }
 		:root {
-			--bg: #0f0f0f;
-			--bg-card: #1a1a1a;
-			--border: #333;
-			--text: #e0e0e0;
-			--text-muted: #888;
-			--text-dim: #666;
-			--accent: #3b82f6;
-			--accent-hover: #2563eb;
-			--success: #4ade80;
-			--success-bg: #1a3a1a;
-			--warning: #fbbf24;
-			--warning-bg: #3a2a1a;
-			--danger: #f87171;
-			--danger-bg: #3a1a1a;
-		}
-		body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
-		.skip-link { position: absolute; left: -9999px; top: 0; z-index: 2000; padding: 8px 16px; background: var(--accent); color: #fff; font-size: 14px; border-radius: 0 0 4px 0; }
-		.skip-link:focus { left: 0; }
-		a { color: var(--accent); text-decoration: none; }
-		a:hover { text-decoration: underline; }
-
-		.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-
-		/* Header */
-		header { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
-		header h1 { font-size: 24px; color: #fff; }
-		header .meta { color: var(--text-dim); font-size: 12px; }
-		.instance-status { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-		.instance-status.idle { background: var(--success-bg); color: var(--success); }
-		.instance-status.busy { background: var(--warning-bg); color: var(--warning); }
-
-		/* Navigation */
-		nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-		nav button { padding: 8px 16px; background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; border-radius: 4px 4px 0 0; }
-		nav button:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-		nav button.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
-
-		/* Pages */
-		.page { display: none; }
-		.page.active { display: block; }
-
-		/* Section */
-		.section { margin-bottom: 30px; }
-		.section h2 { font-size: 18px; margin-bottom: 12px; color: #aaa; }
-
-		/* Job Card */
-		.job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
-		.job-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: border-color 0.2s; }
-		.job-card:hover { border-color: var(--accent); }
-		.job-card h3 { font-size: 14px; color: #fff; margin-bottom: 8px; word-break: break-word; }
-		.job-card .meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
-		.job-card .progress { margin-top: 8px; height: 4px; background: var(--border); border-radius: 2px; }
-		.job-card .progress-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
-
-		/* Badges */
-		.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-		.badge.running { background: #1e3a5f; color: #60a5fa; }
-		.badge.complete { background: var(--success-bg); color: var(--success); }
-		.badge.failed { background: var(--danger-bg); color: var(--danger); }
-		.badge.queued { background: var(--warning-bg); color: var(--warning); }
-		.badge.stopped { background: #2a2a2a; color: #aaa; }
-
-		/* Cost Badge */
-		.cost-badge { font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 3px; }
-
-		/* New Job Form */
-		.new-job { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-		.new-job textarea { width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; }
-		.new-job textarea:focus { outline: none; border-color: var(--accent); }
-		.new-job .controls { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
-		.new-job select, .new-job input[type="number"] { padding: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 13px; }
-		.btn { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
-		.btn:hover { background: var(--accent-hover); }
-		.btn.danger { background: var(--danger-bg); color: var(--danger); }
-		.btn.danger:hover { background: #4a1a1a; }
-
-		/* Tables */
-		table { width: 100%; border-collapse: collapse; }
-		th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
-		th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
-
-		/* Events Log */
-		.events-log { background: #0a0a0a; border: 1px solid var(--border); border-radius: 4px; padding: 12px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
-		.event-line { padding: 2px 0; color: var(--text-muted); }
-		.event-line .type { color: #60a5fa; }
-		.event-line .time { color: var(--text-dim); }
-
-		/* Iteration Timeline */
-		.timeline { display: flex; flex-direction: column; gap: 8px; }
-		.timeline-item { display: flex; gap: 12px; padding: 8px 12px; background: var(--bg); border-radius: 4px; font-size: 13px; }
-		.timeline-item .iter-num { color: var(--accent); font-weight: 600; min-width: 60px; }
-		.timeline-item .iter-duration { color: var(--text-muted); min-width: 50px; }
-		.timeline-item .iter-summary { flex: 1; }
-
-		/* Context Input */
-		.context-input { display: flex; gap: 8px; margin-top: 12px; }
-		.context-input input { flex: 1; padding: 8px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 13px; }
-
-		/* Spec Viewer */
-		.spec-viewer { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 16px; font-family: monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; }
-
-		/* Memory */
-		.memory-search { display: flex; gap: 8px; margin-bottom: 16px; }
-		.memory-search input { flex: 1; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }
-		.memory-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 8px; }
-		.memory-item .category { font-size: 11px; color: var(--accent); font-weight: 600; }
-		.memory-item .content { margin-top: 4px; font-size: 13px; }
-
-		/* Settings */
-		.settings-group { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-		.settings-group h3 { font-size: 14px; margin-bottom: 12px; color: #fff; }
-		.setting-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
-		.setting-row .label { color: var(--text-muted); }
-		.setting-row .value { color: var(--text); font-family: monospace; }
-		.cred-loaded { color: var(--success); }
-		.cred-missing { color: var(--danger); }
-
-		/* Annotate */
-		.annotate-form { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-		.annotate-form select, .annotate-form input { padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px; font-size: 12px; }
-		.annotate-form input { flex: 1; min-width: 120px; }
-		.btn.sm { padding: 4px 10px; font-size: 11px; }
-		.btn.annotate { background: #2d3748; color: var(--text); }
-		.btn.annotate:hover { background: #4a5568; }
-
-		/* Score Gauge */
-		.gauge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-		.gauge-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
-		.gauge-card .gauge-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
-		.gauge-card .gauge-value { font-size: 28px; font-weight: 700; color: #fff; }
-		.gauge-card .gauge-bar { margin-top: 8px; height: 6px; background: var(--border); border-radius: 3px; }
-		.gauge-card .gauge-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
-		.gauge-fill.good { background: var(--success); }
-		.gauge-fill.warn { background: var(--warning); }
-		.gauge-fill.bad { background: var(--danger); }
-
-		/* Recommendation Card */
-		.rec-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; }
-		.rec-card.critical { border-left: 3px solid var(--danger); }
-		.rec-card.warning { border-left: 3px solid var(--warning); }
-		.rec-card.info { border-left: 3px solid var(--accent); }
-		.rec-severity { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
-		.rec-severity.critical { color: var(--danger); }
-		.rec-severity.warning { color: var(--warning); }
-		.rec-severity.info { color: var(--accent); }
-		.rec-action { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-
-		/* Mesh Instance */
-		.mesh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-		.mesh-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
-		.mesh-card h4 { font-size: 14px; color: #fff; margin-bottom: 6px; }
-		.mesh-card .mesh-meta { font-size: 12px; color: var(--text-muted); }
-		.health-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
-		.health-dot.healthy { background: var(--success); }
-		.health-dot.degraded { background: var(--warning); }
-		.health-dot.unhealthy { background: var(--danger); }
-
-		/* Voice Session */
-		.voice-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; }
-		.voice-card h4 { font-size: 14px; color: #fff; margin-bottom: 6px; }
-		.voice-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 12px; }
-
-		/* Empty State */
-		.empty { text-align: center; padding: 40px; color: var(--text-dim); }
-
-		/* Hamburger Toggle */
-		.nav-toggle { display: none; background: transparent; border: 1px solid var(--border); border-radius: 4px; padding: 8px; cursor: pointer; flex-direction: column; gap: 4px; align-items: center; justify-content: center; width: 40px; height: 36px; }
-		.nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text); border-radius: 1px; transition: transform 0.2s, opacity 0.2s; }
-		.nav-toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
-		.nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
-		.nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
-
-		/* Mobile Responsive — 768px breakpoint */
-		@media (max-width: 768px) {
-			.nav-toggle { display: flex; margin-bottom: 12px; }
-			nav { display: none; flex-direction: column; gap: 2px; }
-			nav.open { display: flex; }
-			nav button { text-align: left; padding: 10px 12px; border-radius: 4px; border-bottom: none; }
-			nav button.active { border-bottom: none; background: rgba(59,130,246,0.1); }
-			.container { padding: 12px; }
-			header { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 0; }
-			header h1 { font-size: 20px; }
-			.job-grid { grid-template-columns: 1fr; }
-			.gauge-grid { grid-template-columns: 1fr; }
-			.mesh-grid { grid-template-columns: 1fr; }
-			.new-job .controls { flex-wrap: wrap; }
-			.memory-search { flex-direction: column; }
-			.context-input { flex-direction: column; }
-			table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+			color-scheme: dark;
+			--bg: #0a0a0a;
+			--panel: #111111;
+			--panel-soft: #141414;
+			--border: #232323;
+			--border-strong: #353535;
+			--text: #ededed;
+			--muted: #9d9d9d;
+			--dim: #666666;
+			--ok: #70e09b;
+			--warn: #f2ca72;
+			--error: #ef8d8d;
+			--info: #8ab4ff;
 		}
 
-		/* Extra small — 480px breakpoint */
-		@media (max-width: 480px) {
-			header h1 { font-size: 18px; }
-			.job-card { padding: 12px; }
-			.job-card h3 { font-size: 13px; }
-			.section h2 { font-size: 16px; }
-			th, td { padding: 8px 6px; font-size: 12px; }
-			.toast { max-width: calc(100vw - 24px); }
+		body {
+			background: radial-gradient(circle at top, rgba(255, 255, 255, 0.03), transparent 35%), var(--bg);
+			color: var(--text);
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			min-height: 100vh;
 		}
 
-		/* Toast Notifications */
-		.toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: var(--text); background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.4); animation: toast-in 0.25s ease-out; }
-		.toast.error { border-left: 3px solid var(--danger); }
-		.toast.success { border-left: 3px solid var(--success); }
-		.toast.info { border-left: 3px solid var(--accent); }
-		.toast .toast-msg { flex: 1; }
-		.toast .toast-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; padding: 0 2px; line-height: 1; }
-		.toast .toast-close:hover { color: var(--text); }
-		.toast.fade-out { animation: toast-out 0.3s ease-in forwards; }
-		@keyframes toast-in { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
-		@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+		a { color: inherit; }
+		button, input { font: inherit; }
+
+		.skip-link {
+			position: absolute;
+			left: -9999px;
+			top: 0;
+			padding: 10px 14px;
+			background: #1f1f1f;
+			border: 1px solid var(--border-strong);
+			color: var(--text);
+		}
+
+		.skip-link:focus { left: 12px; top: 12px; }
+
+		.page {
+			max-width: 1024px;
+			margin: 0 auto;
+			padding: 32px 20px 56px;
+		}
+
+		.hero {
+			max-width: 560px;
+			margin: 0 auto;
+			text-align: center;
+		}
+
+		.logo {
+			width: 164px;
+			height: 164px;
+			object-fit: cover;
+			border-radius: 18px;
+			margin: 0 auto 24px;
+			border: 1px solid var(--border);
+			background: #0f0f0f;
+			box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+		}
+
+		h1 {
+			font-size: clamp(1.7rem, 4vw, 2.3rem);
+			letter-spacing: -0.03em;
+			margin-bottom: 8px;
+		}
+
+		.subtitle {
+			font-size: 0.92rem;
+			color: var(--muted);
+			font-family: "SF Mono", "Fira Code", Consolas, monospace;
+			margin-bottom: 28px;
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 1px;
+			padding: 1px;
+			background: var(--border);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			overflow: hidden;
+		}
+
+		.cell {
+			background: var(--panel);
+			padding: 18px;
+			min-height: 94px;
+		}
+
+		.label {
+			font-size: 0.68rem;
+			text-transform: uppercase;
+			letter-spacing: 0.12em;
+			color: var(--dim);
+			margin-bottom: 10px;
+		}
+
+		.value {
+			font-size: 0.98rem;
+			line-height: 1.35;
+			word-break: break-word;
+			font-family: "SF Mono", "Fira Code", Consolas, monospace;
+		}
+
+		.value.loading { color: var(--dim); }
+		.value.ok { color: var(--ok); }
+		.value.warn { color: var(--warn); }
+		.value.error { color: var(--error); }
+
+		.footer-line {
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			gap: 12px;
+			flex-wrap: wrap;
+			margin-top: 20px;
+		}
+
+		.pill,
+		.inline-action,
+		.unlock-submit,
+		.unlock-cancel,
+		.overview-action {
+			border-radius: 999px;
+			border: 1px solid var(--border-strong);
+			background: rgba(255, 255, 255, 0.02);
+			color: var(--muted);
+			padding: 7px 12px;
+			font-size: 0.74rem;
+			letter-spacing: 0.02em;
+		}
+
+		.inline-action,
+		.unlock-submit,
+		.unlock-cancel,
+		.overview-action {
+			cursor: pointer;
+		}
+
+		.inline-action:hover,
+		.unlock-submit:hover,
+		.unlock-cancel:hover,
+		.overview-action:hover {
+			color: var(--text);
+			border-color: #4a4a4a;
+		}
+
+		.unlock-shell {
+			margin-top: 14px;
+			display: none;
+			justify-content: center;
+		}
+
+		.unlock-shell.open { display: flex; }
+
+		.unlock-form {
+			width: min(100%, 430px);
+			background: rgba(255, 255, 255, 0.025);
+			border: 1px solid var(--border);
+			border-radius: 14px;
+			padding: 14px;
+			text-align: left;
+		}
+
+		.unlock-label {
+			display: block;
+			font-size: 0.75rem;
+			letter-spacing: 0.08em;
+			text-transform: uppercase;
+			color: var(--dim);
+			margin-bottom: 8px;
+		}
+
+		.unlock-input {
+			width: 100%;
+			border: 1px solid var(--border-strong);
+			background: #0d0d0d;
+			color: var(--text);
+			border-radius: 10px;
+			padding: 12px 14px;
+		}
+
+		.unlock-input:focus {
+			outline: 2px solid rgba(138, 180, 255, 0.4);
+			outline-offset: 1px;
+		}
+
+		.unlock-actions {
+			display: flex;
+			gap: 10px;
+			margin-top: 12px;
+			flex-wrap: wrap;
+		}
+
+		.unlock-note,
+		.unlock-error,
+		.small-note,
+		.event-meta,
+		.item-meta,
+		.empty-copy,
+		.error-copy {
+			font-size: 0.82rem;
+			line-height: 1.45;
+		}
+
+		.unlock-note,
+		.small-note,
+		.event-meta,
+		.item-meta,
+		.empty-copy { color: var(--muted); }
+
+		.unlock-error,
+		.error-copy { color: var(--error); }
+
+		.overview {
+			margin-top: 34px;
+			display: none;
+			gap: 18px;
+		}
+
+		.overview.visible { display: grid; }
+
+		.overview-header {
+			grid-column: 1 / -1;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			gap: 14px;
+			padding: 16px 18px;
+			background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+			border: 1px solid var(--border);
+			border-radius: 16px;
+		}
+
+		.overview-title {
+			font-size: 0.95rem;
+			letter-spacing: 0.04em;
+			text-transform: uppercase;
+			color: var(--text);
+		}
+
+		.overview-subtitle {
+			margin-top: 4px;
+			font-size: 0.84rem;
+			color: var(--muted);
+		}
+
+		.overview-grid {
+			grid-column: 1 / -1;
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 18px;
+		}
+
+		.section {
+			background: var(--panel-soft);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 18px;
+			min-height: 220px;
+		}
+
+		.section-head {
+			display: flex;
+			justify-content: space-between;
+			align-items: flex-start;
+			gap: 10px;
+			margin-bottom: 14px;
+		}
+
+		.section h2 {
+			font-size: 1rem;
+			margin-bottom: 4px;
+		}
+
+		.state-chip {
+			padding: 4px 8px;
+			border-radius: 999px;
+			font-size: 0.68rem;
+			text-transform: uppercase;
+			letter-spacing: 0.09em;
+			border: 1px solid var(--border-strong);
+			color: var(--muted);
+		}
+
+		.state-chip.complete { color: var(--ok); }
+		.state-chip.partial { color: var(--warn); }
+		.state-chip.loading { color: var(--dim); }
+		.state-chip.error { color: var(--error); }
+
+		.metric-row {
+			display: grid;
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+			gap: 10px;
+			margin-bottom: 14px;
+		}
+
+		.metric {
+			padding: 12px;
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			background: rgba(255, 255, 255, 0.02);
+		}
+
+		.metric-label {
+			font-size: 0.72rem;
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+			color: var(--dim);
+			margin-bottom: 6px;
+		}
+
+		.metric-value {
+			font-size: 1.1rem;
+			font-family: "SF Mono", "Fira Code", Consolas, monospace;
+		}
+
+		.list {
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
+
+		.item {
+			padding: 12px 13px;
+			border-radius: 12px;
+			border: 1px solid var(--border);
+			background: rgba(255, 255, 255, 0.018);
+		}
+
+		.item-title {
+			font-size: 0.9rem;
+			line-height: 1.4;
+			margin-bottom: 4px;
+		}
+
+		.item-title code,
+		.item-meta code,
+		.event-title code {
+			font-family: "SF Mono", "Fira Code", Consolas, monospace;
+			font-size: 0.92em;
+		}
+
+		.event-list {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+			max-height: 360px;
+			overflow: auto;
+			padding-right: 2px;
+		}
+
+		.event {
+			padding: 10px 12px;
+			border-radius: 12px;
+			border: 1px solid var(--border);
+			background: #101010;
+		}
+
+		.event-title {
+			font-size: 0.85rem;
+			line-height: 1.45;
+		}
+
+		.status-dot {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			border-radius: 999px;
+			background: var(--dim);
+			margin-right: 8px;
+		}
+
+		.status-dot.ok { background: var(--ok); }
+		.status-dot.warn { background: var(--warn); }
+		.status-dot.error { background: var(--error); }
+
+		.assistive {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			padding: 0;
+			margin: -1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+			white-space: nowrap;
+			border: 0;
+		}
+
+		@media (max-width: 840px) {
+			.overview-grid { grid-template-columns: 1fr; }
+		}
+
+		@media (max-width: 640px) {
+			.page { padding: 22px 14px 40px; }
+			.logo { width: 132px; height: 132px; margin-bottom: 20px; }
+			.grid { grid-template-columns: 1fr; }
+			.metric-row { grid-template-columns: 1fr; }
+			.overview-header,
+			.section-head,
+			.footer-line { align-items: flex-start; }
+			.overview-header,
+			.footer-line { flex-direction: column; }
+		}
 	</style>
 </head>
 <body>
 	<a href="#main-content" class="skip-link">Skip to content</a>
-	<div class="container">
-		<header>
-			<div>
-				<h1 id="instance-name">Randal</h1>
-				<span class="meta" id="instance-meta"></span>
+	<main class="page" id="main-content">
+		<section class="hero" aria-labelledby="instance-name">
+			<img src="/assets/posse.png" alt="Randal" class="logo" onerror="this.style.display='none'">
+			<h1 id="instance-name">Randal</h1>
+			<p class="subtitle">autonomous ai agent</p>
+
+			<div class="grid" aria-label="Public status overview">
+				<div class="cell">
+					<div class="label">Status</div>
+					<div class="value loading" id="health-status">...</div>
+				</div>
+				<div class="cell">
+					<div class="label">Uptime</div>
+					<div class="value loading" id="health-uptime">...</div>
+				</div>
+				<div class="cell">
+					<div class="label">Version</div>
+					<div class="value loading" id="health-version">...</div>
+				</div>
+				<div class="cell">
+					<div class="label">Channel</div>
+					<div class="value loading" id="health-channel">...</div>
+				</div>
 			</div>
-			<span class="instance-status idle" id="instance-status">idle</span>
-		</header>
 
-		<button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-expanded="false" aria-controls="nav">
-			<span></span><span></span><span></span>
-		</button>
+			<div class="footer-line" aria-label="Dashboard meta">
+				<span class="pill" id="build-pill">public overview</span>
+				<button type="button" class="inline-action" id="unlock-toggle" aria-expanded="false" aria-controls="unlock-shell">
+					unlock
+				</button>
+				<span class="small-note" id="session-note">quiet by default</span>
+			</div>
 
-		<nav id="nav" aria-label="Main navigation" role="tablist">
-			<button class="active" data-page="home" role="tab" aria-selected="true" aria-controls="page-home" id="tab-home">Home</button>
-			<button data-page="history" role="tab" aria-selected="false" aria-controls="page-history" id="tab-history">History</button>
-			<button data-page="memory" role="tab" aria-selected="false" aria-controls="page-memory" id="tab-memory">Memory</button>
-			<button data-page="voice" role="tab" aria-selected="false" aria-controls="page-voice" id="tab-voice">Voice</button>
-			<button data-page="mesh" role="tab" aria-selected="false" aria-controls="page-mesh" id="tab-mesh">Mesh</button>
-			<button data-page="analytics" role="tab" aria-selected="false" aria-controls="page-analytics" id="tab-analytics">Analytics</button>
-			<button data-page="posse" id="nav-posse" style="display:none" role="tab" aria-selected="false" aria-controls="page-posse">Posse</button>
-			<button data-page="settings" role="tab" aria-selected="false" aria-controls="page-settings" id="tab-settings">Settings</button>
-		</nav>
-
-		<main id="main-content">
-		<!-- Home Page -->
-		<div class="page active" id="page-home" role="tabpanel" aria-labelledby="tab-home">
-			<div class="section">
-				<h2>New Job</h2>
-				<div class="new-job">
-					<textarea id="prompt-input" placeholder="Enter a prompt or paste a spec..." aria-label="Job prompt"></textarea>
-					<div class="controls">
-						<button class="btn" onclick="submitJob()">Submit Job</button>
+			<div class="unlock-shell" id="unlock-shell">
+				<form class="unlock-form" id="unlock-form">
+					<label class="unlock-label" for="unlock-token">Session token</label>
+					<input
+						class="unlock-input"
+						id="unlock-token"
+						type="password"
+						autocomplete="off"
+						spellcheck="false"
+						placeholder="Enter bearer token"
+					>
+					<p class="unlock-note">The token is exchanged once for an HttpOnly session cookie and is not kept in local storage.</p>
+					<p class="unlock-error assistive" id="unlock-feedback" aria-live="polite"></p>
+					<div class="unlock-actions">
+						<button type="submit" class="unlock-submit">open overview</button>
+						<button type="button" class="unlock-cancel" id="unlock-cancel">cancel</button>
 					</div>
-				</div>
+				</form>
 			</div>
-			<div class="section">
-				<h2>Active Jobs</h2>
-				<div class="job-grid" id="active-jobs" aria-live="polite">
-					<div class="empty">No active jobs</div>
-				</div>
-			</div>
-			<div class="section">
-				<h2>Events</h2>
-				<div class="events-log" id="events-log" aria-live="polite" aria-label="Event log"></div>
-			</div>
-		</div>
+		</section>
 
-		<!-- Job Detail Page -->
-		<div class="page" id="page-job-detail" role="tabpanel">
-			<div class="section">
-				<button class="btn" onclick="showPage('home')" style="margin-bottom: 16px;">Back</button>
-				<h2 id="job-detail-title">Job Detail</h2>
-			</div>
-			<div class="section">
-				<h2>Spec</h2>
-				<div class="spec-viewer" id="job-spec"></div>
-			</div>
-			<div class="section">
-				<h2>Plan</h2>
-				<div id="job-plan"></div>
-			</div>
-		<div class="section">
-			<h2>Delegations</h2>
-			<div id="job-delegations"></div>
-		</div>
-		<div class="section">
-			<h2>Iterations</h2>
-			<div class="timeline" id="job-timeline"></div>
-		</div>
-			<div class="section">
-				<h2>Inject Context</h2>
-				<div class="context-input">
-					<input type="text" id="context-text" placeholder="Type context to inject..." aria-label="Context to inject" />
-					<button class="btn" onclick="injectContext()">Inject</button>
+		<section class="overview" id="overview" aria-labelledby="overview-heading">
+			<div class="overview-header">
+				<div>
+					<div class="overview-title" id="overview-heading">Unlocked overview</div>
+					<p class="overview-subtitle" id="overview-subtitle">Reading live instance state...</p>
 				</div>
+				<button type="button" class="overview-action" id="overview-refresh">refresh</button>
 			</div>
-			<div class="section">
-				<button class="btn danger" onclick="stopJob()">Stop Job</button>
-			</div>
-		</div>
 
-		<!-- History Page -->
-		<div class="page" id="page-history" role="tabpanel" aria-labelledby="tab-history">
-			<div class="section">
-				<h2>Job History</h2>
-				<table id="history-table">
-					<thead>
-						<tr><th>ID</th><th>Status</th><th>Agent</th><th>Iterations</th><th>Duration</th><th>Prompt</th><th>Actions</th></tr>
-					</thead>
-					<tbody id="history-body"></tbody>
-				</table>
-			</div>
-		</div>
+			<div class="overview-grid">
+				<section class="section" aria-labelledby="work-heading">
+					<div class="section-head">
+						<div>
+							<h2 id="work-heading">Running work</h2>
+							<p class="small-note">Live jobs, active agents, and loop-state activity.</p>
+						</div>
+						<span class="state-chip loading" id="work-state">loading</span>
+					</div>
+					<div id="work-body"></div>
+				</section>
 
-		<!-- Memory Page -->
-		<div class="page" id="page-memory" role="tabpanel" aria-labelledby="tab-memory">
-			<div class="section">
-				<h2>Memory Search</h2>
-				<div class="memory-search">
-					<input type="text" id="memory-query" placeholder="Search memories..." aria-label="Search memories" />
-					<select id="memory-scope" style="display:none" aria-label="Memory search scope">
-						<option value="self" selected>Self</option>
-						<option value="shared">Shared</option>
-						<option value="all">All</option>
-					</select>
-					<button class="btn" onclick="searchMemory()">Search</button>
-				</div>
-				<div id="memory-results"></div>
-			</div>
-		</div>
+				<section class="section" aria-labelledby="posse-heading">
+					<div class="section-head">
+						<div>
+							<h2 id="posse-heading">Posse coordination</h2>
+							<p class="small-note">Peers, delegations, and mesh health when available.</p>
+						</div>
+						<span class="state-chip loading" id="posse-state">loading</span>
+					</div>
+					<div id="posse-body"></div>
+				</section>
 
-		<!-- Voice Page -->
-		<div class="page" id="page-voice" role="tabpanel" aria-labelledby="tab-voice">
-			<div class="section">
-				<h2>Active Voice Sessions</h2>
-				<div id="voice-sessions">
-					<div class="empty">Loading...</div>
-				</div>
-			</div>
-		</div>
+				<section class="section" aria-labelledby="scheduler-heading">
+					<div class="section-head">
+						<div>
+							<h2 id="scheduler-heading">Scheduler state</h2>
+							<p class="small-note">Heartbeat cadence, active window, and cron queue.</p>
+						</div>
+						<span class="state-chip loading" id="scheduler-state">loading</span>
+					</div>
+					<div id="scheduler-body"></div>
+				</section>
 
-		<!-- Mesh Page -->
-		<div class="page" id="page-mesh" role="tabpanel" aria-labelledby="tab-mesh">
-			<div class="section">
-				<h2>Mesh Instances</h2>
-				<div class="mesh-grid" id="mesh-instances">
-					<div class="empty">Loading...</div>
-				</div>
+				<section class="section" aria-labelledby="events-heading">
+					<div class="section-head">
+						<div>
+							<h2 id="events-heading">Recent events</h2>
+							<p class="small-note">Cookie-authenticated SSE, with a calm fallback when idle.</p>
+						</div>
+						<span class="state-chip loading" id="events-state">loading</span>
+					</div>
+					<div id="events-body"></div>
+				</section>
 			</div>
-			<div class="section">
-				<h2>Routing Log</h2>
-				<div class="events-log" id="mesh-routing-log"></div>
-			</div>
-		</div>
-
-		<!-- Analytics Page -->
-		<div class="page" id="page-analytics" role="tabpanel" aria-labelledby="tab-analytics">
-			<div class="section">
-				<h2>Reliability Scores</h2>
-				<div class="gauge-grid" id="analytics-scores">
-					<div class="empty">Loading...</div>
-				</div>
-			</div>
-			<div class="section">
-				<h2>Score Breakdown</h2>
-				<div id="analytics-breakdown"></div>
-			</div>
-			<div class="section">
-				<h2>Recommendations</h2>
-				<div id="analytics-recommendations">
-					<div class="empty">Loading...</div>
-				</div>
-			</div>
-			<div class="section">
-				<h2>Recent Annotations</h2>
-				<div id="analytics-annotations">
-					<div class="empty">Loading...</div>
-				</div>
-			</div>
-		</div>
-
-		<!-- Posse Page -->
-		<div class="page" id="page-posse" role="tabpanel" aria-labelledby="nav-posse">
-			<div class="section">
-				<h2>Posse Agents</h2>
-				<div id="posse-agents"></div>
-			</div>
-			<div class="section">
-				<h2>Posse Memory Search</h2>
-				<div class="memory-search">
-					<input type="text" id="posse-memory-query" placeholder="Search posse memory..." aria-label="Search posse memory" />
-					<select id="posse-scope" aria-label="Posse memory search scope">
-						<option value="all" selected>All</option>
-						<option value="self">Self</option>
-						<option value="shared">Shared</option>
-					</select>
-					<button class="btn" onclick="searchPosseMemory()">Search</button>
-				</div>
-				<div id="posse-memory-results"></div>
-			</div>
-			<div class="section">
-				<h2>Recent Activity</h2>
-				<div id="posse-recent"></div>
-			</div>
-		</div>
-
-		<!-- Settings Page -->
-		<div class="page" id="page-settings" role="tabpanel" aria-labelledby="tab-settings">
-			<div class="section">
-				<h2>Settings</h2>
-				<div id="settings-content"></div>
-			</div>
-		</div>
-		</main>
-	</div>
-
-	<div id="toast-container" aria-live="polite" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px;max-width:400px;pointer-events:none;"></div>
+		</section>
+	</main>
 
 	<script>
-		// Auth
-		var API_TOKEN = localStorage.getItem('randal_token') || prompt('Enter API token:') || '';
-		if (API_TOKEN) localStorage.setItem('randal_token', API_TOKEN);
-		var headers = { 'Authorization': 'Bearer ' + API_TOKEN, 'Content-Type': 'application/json' };
+		(function () {
+			var EVENT_TYPES = [
+				"job.queued",
+				"job.started",
+				"iteration.start",
+				"iteration.tool_use",
+				"iteration.output",
+				"iteration.end",
+				"job.plan_updated",
+				"job.delegation.started",
+				"job.delegation.completed",
+				"job.stuck",
+				"job.context_injected",
+				"job.compacted",
+				"job.complete",
+				"job.failed",
+				"job.stopped",
+				"job.resumed",
+				"heartbeat.tick",
+				"heartbeat.skip",
+				"heartbeat.error",
+				"cron.fired",
+				"cron.skipped",
+				"cron.added",
+				"cron.removed",
+				"hook.received",
+				"hook.queued",
+				"brain.notification",
+				"brain.alert",
+				"brain.progress",
+				"system.update"
+			];
+			var overviewVisible = false;
+			var unlockOpen = false;
+			var eventSource = null;
+			var eventLog = [];
+			var eventStatus = "loading";
+			var refreshTimer = null;
 
-		// HTML sanitization — prevents XSS from API data injected into innerHTML
-		// Canonical source: src/utils.ts — keep in sync
-		function escapeHtml(str) {
-			if (str == null) return '';
-			var div = document.createElement('div');
-			div.appendChild(document.createTextNode(String(str)));
-			return div.innerHTML;
-		}
+			var els = {
+				instanceName: document.getElementById("instance-name"),
+				healthStatus: document.getElementById("health-status"),
+				healthUptime: document.getElementById("health-uptime"),
+				healthVersion: document.getElementById("health-version"),
+				healthChannel: document.getElementById("health-channel"),
+				buildPill: document.getElementById("build-pill"),
+				sessionNote: document.getElementById("session-note"),
+				unlockToggle: document.getElementById("unlock-toggle"),
+				unlockShell: document.getElementById("unlock-shell"),
+				unlockForm: document.getElementById("unlock-form"),
+				unlockToken: document.getElementById("unlock-token"),
+				unlockFeedback: document.getElementById("unlock-feedback"),
+				unlockCancel: document.getElementById("unlock-cancel"),
+				overview: document.getElementById("overview"),
+				overviewSubtitle: document.getElementById("overview-subtitle"),
+				overviewRefresh: document.getElementById("overview-refresh"),
+				workState: document.getElementById("work-state"),
+				workBody: document.getElementById("work-body"),
+				posseState: document.getElementById("posse-state"),
+				posseBody: document.getElementById("posse-body"),
+				schedulerState: document.getElementById("scheduler-state"),
+				schedulerBody: document.getElementById("scheduler-body"),
+				eventsState: document.getElementById("events-state"),
+				eventsBody: document.getElementById("events-body")
+			};
 
-		// Toast notification system — canonical source: src/utils.ts
-		var _toastErrorTimestamps = {};
-		function showToast(message, type, duration) {
-			type = type || 'info';
-			duration = duration || (type === 'error' ? 8000 : 5000);
-
-			// Deduplicate: suppress repeat error toasts for the same message within 30s
-			if (type === 'error') {
-				var now = Date.now();
-				if (_toastErrorTimestamps[message] && now - _toastErrorTimestamps[message] < 30000) return;
-				_toastErrorTimestamps[message] = now;
+			function escapeHtml(value) {
+				if (value == null) return "";
+				var div = document.createElement("div");
+				div.appendChild(document.createTextNode(String(value)));
+				return div.innerHTML;
 			}
 
-			var container = document.getElementById('toast-container');
-			var toast = document.createElement('div');
-			toast.className = 'toast ' + type;
-			toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-			toast.innerHTML = '<span class="toast-msg">' + escapeHtml(message) + '</span>' +
-				'<button class="toast-close" aria-label="Dismiss notification">&times;</button>';
-
-			var closeBtn = toast.querySelector('.toast-close');
-			var timer;
-			function dismiss() {
-				clearTimeout(timer);
-				toast.classList.add('fade-out');
-				toast.addEventListener('animationend', function() { toast.remove(); });
-			}
-			closeBtn.addEventListener('click', dismiss);
-			timer = setTimeout(dismiss, duration);
-
-			container.appendChild(toast);
-		}
-
-		var currentJobId = null;
-
-		// Navigation
-		var navEl = document.getElementById('nav');
-		var navToggle = document.getElementById('nav-toggle');
-
-		navEl.addEventListener('click', function(e) {
-			if (e.target.tagName === 'BUTTON') {
-				showPage(e.target.dataset.page);
-				// Close mobile nav after selecting a page
-				navEl.classList.remove('open');
-				navToggle.setAttribute('aria-expanded', 'false');
-			}
-		});
-
-		// Mobile hamburger toggle
-		navToggle.addEventListener('click', function() {
-			var isOpen = navEl.classList.toggle('open');
-			navToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-		});
-
-		// Close mobile nav on Escape key
-		document.addEventListener('keydown', function(e) {
-			if (e.key === 'Escape' && navEl.classList.contains('open')) {
-				navEl.classList.remove('open');
-				navToggle.setAttribute('aria-expanded', 'false');
-				navToggle.focus();
-			}
-		});
-
-		var _lastFocusedJobCard = null; // for focus restoration on Back
-
-		function showPage(name) {
-			document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-			document.querySelectorAll('nav button').forEach(function(b) {
-				b.classList.remove('active');
-				b.setAttribute('aria-selected', 'false');
-			});
-			document.getElementById('page-' + name).classList.add('active');
-			var navBtn = document.querySelector('nav button[data-page="' + name + '"]');
-			if (navBtn) {
-				navBtn.classList.add('active');
-				navBtn.setAttribute('aria-selected', 'true');
+			function formatDuration(seconds) {
+				var total = Number(seconds || 0);
+				if (!Number.isFinite(total) || total < 0) return "-";
+				var hours = Math.floor(total / 3600);
+				var minutes = Math.floor((total % 3600) / 60);
+				if (hours > 0) return hours + "h " + minutes + "m";
+				if (minutes > 0) return minutes + "m";
+				return Math.floor(total) + "s";
 			}
 
-			// Focus management: move focus to the page heading
-			var page = document.getElementById('page-' + name);
-			if (page) {
-				// Restore focus to previously clicked job card when returning to home
-				if (name === 'home' && _lastFocusedJobCard) {
-					setTimeout(function() {
-						var card = document.querySelector('.job-card[data-job-id="' + _lastFocusedJobCard + '"]');
-						if (card) { card.focus(); }
-						_lastFocusedJobCard = null;
-					}, 50);
-				} else {
-					var heading = page.querySelector('h2');
-					if (heading) {
-						heading.setAttribute('tabindex', '-1');
-						heading.focus();
+			function formatRelativeTime(input) {
+				if (!input) return "just now";
+				var delta = Math.max(0, Date.now() - new Date(input).getTime());
+				var seconds = Math.floor(delta / 1000);
+				if (seconds < 60) return seconds + "s ago";
+				var minutes = Math.floor(seconds / 60);
+				if (minutes < 60) return minutes + "m ago";
+				var hours = Math.floor(minutes / 60);
+				if (hours < 24) return hours + "h ago";
+				return Math.floor(hours / 24) + "d ago";
+			}
+
+			function sentenceCase(value) {
+				var text = String(value || "unknown").replace(/[-_]+/g, " ");
+				return text.charAt(0).toUpperCase() + text.slice(1);
+			}
+
+			function setValue(el, value, tone) {
+				if (!el) return;
+				el.textContent = value;
+				el.className = "value" + (tone ? " " + tone : "");
+			}
+
+			function setSectionState(el, state) {
+				if (!el) return;
+				el.textContent = state;
+				el.className = "state-chip " + state;
+			}
+
+			function renderEmpty(message) {
+				return '<p class="empty-copy">' + escapeHtml(message) + '</p>';
+			}
+
+			function renderError(message) {
+				return '<p class="error-copy">' + escapeHtml(message) + '</p>';
+			}
+
+			function metric(label, value) {
+				return '<div class="metric"><div class="metric-label">' + escapeHtml(label) + '</div><div class="metric-value">' + escapeHtml(value) + '</div></div>';
+			}
+
+			function item(title, meta) {
+				return '<div class="item"><div class="item-title">' + title + '</div><div class="item-meta">' + meta + '</div></div>';
+			}
+
+			function safeFetchJson(path, options) {
+				return fetch(path, Object.assign({ credentials: "same-origin" }, options || {})).then(function (response) {
+					if (!response.ok) {
+						var error = new Error("HTTP " + response.status);
+						error.status = response.status;
+						throw error;
 					}
-				}
-			}
-
-			if (name === 'history') loadHistory();
-			if (name === 'settings') loadSettings();
-			if (name === 'voice') loadVoiceSessions();
-			if (name === 'mesh') loadMeshStatus();
-			if (name === 'analytics') { loadAnalyticsScores(); loadAnalyticsRecommendations(); loadAnalyticsAnnotations(); }
-			if (name === 'posse') { loadPosseAgents(); loadPosseRecent(); }
-		}
-
-		function showJobDetail(id) {
-			_lastFocusedJobCard = id; // store for focus restoration
-			currentJobId = id;
-			showPage('job-detail');
-			loadJobDetail(id);
-		}
-
-		// Instance info
-		async function loadInstance() {
-			try {
-				var res = await fetch('/instance', { headers: headers });
-				var data = await res.json();
-				document.getElementById('instance-name').textContent = data.name;
-				document.getElementById('instance-meta').textContent = (data.posse ? 'posse: ' + data.posse + ' | ' : '') + 'v' + data.version;
-				var statusEl = document.getElementById('instance-status');
-				statusEl.textContent = data.status;
-				statusEl.className = 'instance-status ' + data.status;
-				checkPosse(data);
-			} catch(e) { showToast('Failed to load instance info', 'error'); }
-		}
-
-		// Submit job
-		async function submitJob() {
-			var prompt = document.getElementById('prompt-input').value;
-			if (!prompt) return;
-			try {
-				await fetch('/job', { method: 'POST', headers: headers, body: JSON.stringify({ prompt: prompt }) });
-				document.getElementById('prompt-input').value = '';
-				showToast('Job submitted', 'success');
-				refreshJobs();
-			} catch(e) { showToast('Failed to submit job', 'error'); }
-		}
-
-		// Refresh active jobs
-		async function refreshJobs() {
-			try {
-				var res = await fetch('/jobs', { headers: headers });
-				var jobs = await res.json();
-				var container = document.getElementById('active-jobs');
-				var active = jobs.filter(function(j) { return j.status === 'running' || j.status === 'queued'; });
-				if (active.length === 0) {
-					container.innerHTML = '<div class="empty">No active jobs</div>';
-					return;
-				}
-				container.innerHTML = active.map(function(j) {
-					var pct = (j.iterations.current / j.maxIterations) * 100;
-					var preview = escapeHtml(j.prompt.slice(0, 80) + (j.prompt.length > 80 ? '...' : ''));
-					var planInfo = '';
-					if (j.plan && j.plan.length > 0) {
-						var completed = j.plan.filter(function(t) { return t.status === 'completed'; }).length;
-						planInfo = '<span class="cost-badge">' + completed + '/' + j.plan.length + ' tasks</span>';
-					}
-					return '<div class="job-card" tabindex="0" role="link" data-job-id="' + escapeHtml(j.id) + '" aria-label="Job: ' + preview + ' — ' + escapeHtml(j.status) + '">' +
-						'<h3>' + preview + '</h3>' +
-						'<div class="meta"><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span>' +
-						'<span>' + escapeHtml(j.agent) + ' | iter ' + j.iterations.current + '/' + j.maxIterations + '</span>' +
-						planInfo +
-						'<span class="cost-badge">$' + (j.cost.estimatedCost || 0).toFixed(4) + '</span></div>' +
-						'<div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div></div>';
-				}).join('');
-				loadInstance();
-			} catch(e) { showToast('Failed to refresh jobs', 'error'); }
-		}
-
-		// Delegated click/keyboard handler for job cards
-		(function() {
-			function handleJobCardActivation(e) {
-				var card = e.target.closest('.job-card[data-job-id]');
-				if (card) showJobDetail(card.dataset.jobId);
-			}
-			var jobGrid = document.getElementById('active-jobs');
-			jobGrid.addEventListener('click', handleJobCardActivation);
-			jobGrid.addEventListener('keydown', function(e) {
-				if (e.key === 'Enter' || e.key === ' ') {
-					var card = e.target.closest('.job-card[data-job-id]');
-					if (card) { e.preventDefault(); showJobDetail(card.dataset.jobId); }
-				}
-			});
-		})();
-
-		// Load job detail
-		async function loadJobDetail(id) {
-			try {
-				var res = await fetch('/job/' + id, { headers: headers });
-				var job = await res.json();
-				document.getElementById('job-detail-title').innerHTML = '<span class="badge ' + escapeHtml(job.status) + '">' + escapeHtml(job.status) + '</span> Job ' + escapeHtml(job.id);
-				document.getElementById('job-spec').textContent = job.spec ? job.spec.content || job.prompt : job.prompt;
-
-				// Plan
-				var planHtml;
-				if (job.plan && job.plan.length > 0) {
-					var completedCount = job.plan.filter(function(p) { return p.status === 'completed'; }).length;
-					planHtml = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-muted)">' + completedCount + '/' + job.plan.length + ' tasks complete</div>';
-					planHtml += '<table><thead><tr><th>Task</th><th>Status</th><th>Iteration</th></tr></thead><tbody>';
-					planHtml += job.plan.map(function(p) {
-						var icon = p.status === 'completed' ? '&#x2713;' : p.status === 'in_progress' ? '&#x25B6;' : p.status === 'failed' ? '&#x2717;' : '&#x25CB;';
-						var iterInfo = p.iterationNumber ? '#' + p.iterationNumber : '-';
-						return '<tr><td>' + icon + ' ' + escapeHtml(p.task) + '</td><td><span class="badge ' + escapeHtml(p.status) + '">' + escapeHtml(p.status) + '</span></td><td>' + iterInfo + '</td></tr>';
-					}).join('');
-					planHtml += '</tbody></table>';
-				} else {
-					planHtml = '<div class="empty">No plan extracted</div>';
-				}
-				document.getElementById('job-plan').innerHTML = planHtml;
-
-				// Delegations
-				var delegationsEl = document.getElementById('job-delegations');
-				if (delegationsEl) {
-					if (job.delegations && job.delegations.length > 0) {
-						var delHtml = '<table><thead><tr><th>Task</th><th>Status</th><th>Job ID</th><th>Duration</th></tr></thead><tbody>';
-						delHtml += job.delegations.map(function(d) {
-							return '<tr><td>' + escapeHtml(d.task) + '</td><td><span class="badge ' + escapeHtml(d.status) + '">' + escapeHtml(d.status) + '</span></td>' +
-								'<td>' + escapeHtml(d.jobId) + '</td><td>' + d.duration + 's</td></tr>';
-						}).join('');
-						delHtml += '</tbody></table>';
-						delegationsEl.innerHTML = delHtml;
-					} else {
-						delegationsEl.innerHTML = '<div class="empty">No delegations</div>';
-					}
-				}
-
-				// Timeline
-				var timelineHtml = job.iterations.history.length > 0 ?
-					job.iterations.history.map(function(h) {
-						return '<div class="timeline-item"><span class="iter-num">Iter ' + h.number + '</span>' +
-							'<span class="iter-duration">' + h.duration + 's</span>' +
-							'<span class="iter-summary">' + escapeHtml(h.summary || 'No summary') + '</span></div>';
-					}).join('') : '<div class="empty">No iterations yet</div>';
-				document.getElementById('job-timeline').innerHTML = timelineHtml;
-			} catch(e) { showToast('Failed to load job details', 'error'); }
-		}
-
-		// Inject context
-		async function injectContext() {
-			if (!currentJobId) return;
-			var text = document.getElementById('context-text').value;
-			if (!text) return;
-			try {
-				await fetch('/job/' + currentJobId + '/context', {
-					method: 'POST', headers: headers, body: JSON.stringify({ text: text })
+					return response.json();
 				});
-				document.getElementById('context-text').value = '';
-				showToast('Context injected', 'success');
-			} catch(e) { showToast('Failed to inject context', 'error'); }
-		}
-
-		// Stop job
-		async function stopJob() {
-			if (!currentJobId) return;
-			if (!confirm('Stop this job?')) return;
-			try {
-				await fetch('/job/' + currentJobId, { method: 'DELETE', headers: headers });
-				showToast('Job stopped', 'success');
-				showPage('home');
-				refreshJobs();
-			} catch(e) { showToast('Failed to stop job', 'error'); }
-		}
-
-		// History
-		async function loadHistory() {
-			try {
-				var res = await fetch('/jobs', { headers: headers });
-				var jobs = await res.json();
-				var body = document.getElementById('history-body');
-				body.innerHTML = jobs.map(function(j) {
-					var actions = '';
-					if (j.status === 'complete' || j.status === 'failed') {
-						actions = '<button class="btn sm annotate" onclick="event.stopPropagation(); showAnnotateForm(\'' + escapeHtml(j.id) + '\')">Annotate</button>' +
-							'<div id="annotate-form-' + escapeHtml(j.id) + '" style="display:none"></div>';
-					}
-					return '<tr tabindex="0" data-job-id="' + escapeHtml(j.id) + '" style="cursor:pointer">' +
-						'<td>' + escapeHtml(j.id) + '</td>' +
-						'<td><span class="badge ' + escapeHtml(j.status) + '">' + escapeHtml(j.status) + '</span></td>' +
-						'<td>' + escapeHtml(j.agent) + '</td>' +
-						'<td>' + j.iterations.current + '/' + j.maxIterations + '</td>' +
-						'<td>' + (j.duration || '-') + 's</td>' +
-						'<td>' + escapeHtml(j.prompt.slice(0, 50)) + '</td>' +
-						'<td>' + actions + '</td></tr>';
-				}).join('');
-			} catch(e) { showToast('Failed to load history', 'error'); }
-		}
-
-		// Delegated click/keyboard handler for history rows
-		(function() {
-			var histBody = document.getElementById('history-body');
-			function handleHistoryRowActivation(e) {
-				if (e.target.closest('button')) return; // don't intercept Annotate button clicks
-				var row = e.target.closest('tr[data-job-id]');
-				if (row) showJobDetail(row.dataset.jobId);
 			}
-			histBody.addEventListener('click', handleHistoryRowActivation);
-			histBody.addEventListener('keydown', function(e) {
-				if (e.key === 'Enter' || e.key === ' ') {
-					if (e.target.closest('button')) return;
-					var row = e.target.closest('tr[data-job-id]');
-					if (row) { e.preventDefault(); showJobDetail(row.dataset.jobId); }
-				}
-			});
-		})();
 
-		// Annotate form
-		function showAnnotateForm(jobId) {
-			var el = document.getElementById('annotate-form-' + jobId);
-			if (!el) return;
-			if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-			el.style.display = 'block';
-			el.innerHTML = '<div class="annotate-form">' +
-				'<select id="annotate-verdict-' + jobId + '">' +
-				'<option value="correct">Correct</option>' +
-				'<option value="partial">Partial</option>' +
-				'<option value="incorrect">Incorrect</option>' +
-				'<option value="unsure">Unsure</option></select>' +
-				'<input type="text" id="annotate-feedback-' + jobId + '" placeholder="Feedback (optional)" />' +
-				'<button class="btn sm" onclick="submitAnnotation(\'' + jobId + '\')">Submit</button></div>';
-		}
+			function updateUnlockFeedback(message, isError) {
+				els.unlockFeedback.textContent = message || "";
+				els.unlockFeedback.className = (message ? (isError ? "unlock-error" : "unlock-note") : "unlock-error assistive");
+			}
 
-		async function submitAnnotation(jobId) {
-			var verdict = document.getElementById('annotate-verdict-' + jobId).value;
-			var feedback = document.getElementById('annotate-feedback-' + jobId).value;
-			var body = { verdict: verdict };
-			if (feedback) body.feedback = feedback;
-			try {
-				var res = await fetch('/job/' + jobId + '/annotate', {
-					method: 'POST', headers: headers, body: JSON.stringify(body)
-				});
-				if (res.ok) {
-					var el = document.getElementById('annotate-form-' + jobId);
-					el.innerHTML = '<span style="color:var(--success);font-size:12px">Annotated!</span>';
+			function setUnlockOpen(open) {
+				unlockOpen = open;
+				els.unlockShell.classList.toggle("open", open);
+				els.unlockToggle.setAttribute("aria-expanded", open ? "true" : "false");
+				if (open) {
+					updateUnlockFeedback("", false);
+					setTimeout(function () { els.unlockToken.focus(); }, 0);
 				} else {
-					var err = await res.json();
-					alert('Annotation failed: ' + (err.error || 'Unknown error'));
+					els.unlockToken.value = "";
+					updateUnlockFeedback("", false);
 				}
-			} catch(e) { showToast('Failed to submit annotation', 'error'); }
-		}
+			}
 
-		// Memory
-		async function searchMemory() {
-			var q = document.getElementById('memory-query').value;
-			if (!q) return;
-			try {
-				var scope = document.getElementById('memory-scope').value;
-				var url = (isPosseMember && scope !== 'self') ? '/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope : '/memory/search?q=' + encodeURIComponent(q);
-				var res = await fetch(url, { headers: headers });
-				var docs = await res.json();
-				var container = document.getElementById('memory-results');
-				if (docs.length === 0) {
-					container.innerHTML = '<div class="empty">No results</div>';
+			function setOverviewVisible(visible) {
+				overviewVisible = visible;
+				els.overview.classList.toggle("visible", visible);
+				els.buildPill.textContent = visible ? "session active" : "public overview";
+				els.sessionNote.textContent = visible ? "cookie-backed follow-up requests enabled" : "quiet by default";
+				if (!visible && eventSource) {
+					eventSource.close();
+					eventSource = null;
+				}
+			}
+
+			function renderHealth(data) {
+				setValue(els.healthStatus, data.status || "unknown", data.status === "ok" ? "ok" : "error");
+				setValue(els.healthUptime, formatDuration(data.uptime), "");
+				setValue(els.healthVersion, data.version || "-", "");
+				setValue(els.healthChannel, data.updateChannel || "-", "");
+			}
+
+			function renderWork(data) {
+				if (data.error) {
+					setSectionState(els.workState, "error");
+					els.workBody.innerHTML = renderError(data.error);
 					return;
 				}
-				container.innerHTML = docs.map(function(d) {
-					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' +
-						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
-				}).join('');
-			} catch(e) { showToast('Memory search failed', 'error'); }
-		}
 
-		// Settings
-		async function loadSettings() {
-			try {
-				var res = await fetch('/config', { headers: headers });
-				var cfg = await res.json();
-				var html = '<div class="settings-group"><h3>Instance</h3>' +
-					'<div class="setting-row"><span class="label">Name</span><span class="value">' + escapeHtml(cfg.name) + '</span></div>' +
-					'<div class="setting-row"><span class="label">Version</span><span class="value">' + escapeHtml(cfg.version) + '</span></div>' +
-					'<div class="setting-row"><span class="label">Posse</span><span class="value">' + escapeHtml(cfg.posse || '-') + '</span></div></div>';
+				var instance = data.instance || {};
+				var jobs = Array.isArray(data.jobs) ? data.jobs : [];
+				var activeJobs = jobs.filter(function (job) {
+					return ["running", "queued", "delegated"].indexOf(job.status) !== -1;
+				});
+				var loopState = instance.loopState && instance.loopState.builds ? instance.loopState.builds : {};
+				var buildEntries = Object.keys(loopState).map(function (key) { return loopState[key]; });
+				var runningBuilds = buildEntries.filter(function (build) {
+					return build && ["active", "paused", "errored"].indexOf(build.status) !== -1;
+				});
 
-				html += '<div class="settings-group"><h3>Runner</h3>' +
-					'<div class="setting-row"><span class="label">Agent</span><span class="value">' + escapeHtml(cfg.runner.defaultAgent) + '</span></div>' +
-					'<div class="setting-row"><span class="label">Model</span><span class="value">' + escapeHtml(cfg.runner.defaultModel) + '</span></div>' +
-					'<div class="setting-row"><span class="label">Max Iterations</span><span class="value">' + cfg.runner.defaultMaxIterations + '</span></div>' +
-					'<div class="setting-row"><span class="label">Workdir</span><span class="value">' + escapeHtml(cfg.runner.workdir) + '</span></div></div>';
+				var state = "complete";
+				if (activeJobs.length === 0 && runningBuilds.length === 0) state = "empty";
+				setSectionState(els.workState, state === "empty" ? "complete" : state);
 
-				html += '<div class="settings-group"><h3>Memory</h3>' +
-					'<div class="setting-row"><span class="label">Store</span><span class="value">' + escapeHtml(cfg.memory.store) + '</span></div>' +
-					'<div class="setting-row"><span class="label">Index</span><span class="value">' + escapeHtml(cfg.memory.index || '-') + '</span></div></div>';
+				var summary = '<div class="metric-row">' +
+					metric("Status", sentenceCase(instance.status || "idle")) +
+					metric("Active jobs", String(instance.jobs && instance.jobs.active || 0)) +
+					metric("Tracked builds", String(runningBuilds.length)) +
+					'</div>';
 
-				html += '<div class="settings-group"><h3>Credentials</h3>';
-				if (cfg.credentials.loaded) {
-					cfg.credentials.loaded.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value cred-loaded">loaded</span></div>';
+				var jobItems = activeJobs.slice(0, 4).map(function (job) {
+					var title = '<span class="status-dot ' + (job.status === "running" ? "ok" : "warn") + '"></span>' + escapeHtml(job.prompt || job.id || "job");
+					var meta = escapeHtml(sentenceCase(job.status || "unknown")) + ' · ' + escapeHtml(job.agent || "agent") + ' · ' + escapeHtml(job.id || "-");
+					return item(title, meta);
+				}).join("");
+
+				var buildItems = runningBuilds.slice(0, 4).map(function (build) {
+					var name = build.label || build.planSlug || build.id || "build";
+					var current = build.currentStep || 0;
+					var total = build.totalSteps || 0;
+					return item(escapeHtml(name), escapeHtml(sentenceCase(build.status || "unknown")) + ' · step ' + escapeHtml(String(current)) + '/' + escapeHtml(String(total)));
+				}).join("");
+
+				var body = summary;
+				if (jobItems) {
+					body += '<div class="list">' + jobItems + '</div>';
+				} else if (buildItems) {
+					body += '<div class="list">' + buildItems + '</div>';
+				} else {
+					body += renderEmpty("No running jobs or tracked builds right now.");
+				}
+
+				els.workBody.innerHTML = body;
+			}
+
+			function renderPosse(data) {
+				if (data.unavailable) {
+					setSectionState(els.posseState, "complete");
+					els.posseBody.innerHTML = renderEmpty("Solo instance. No posse coordination is configured.");
+					return;
+				}
+				if (data.error) {
+					setSectionState(els.posseState, "error");
+					els.posseBody.innerHTML = renderError(data.error);
+					return;
+				}
+
+				var posse = data.posse || {};
+				var delegated = data.posseJobs && Array.isArray(data.posseJobs.jobs) ? data.posseJobs.jobs : [];
+				var meshInstances = data.mesh && Array.isArray(data.mesh.instances) ? data.mesh.instances : [];
+				var agents = Array.isArray(posse.agents) ? posse.agents : [];
+				var state = meshInstances.length > 0 ? "complete" : "partial";
+				setSectionState(els.posseState, state);
+
+				var summary = '<div class="metric-row">' +
+					metric("Peers", String(agents.length)) +
+					metric("Delegations", String(posse.totalDelegations || 0)) +
+					metric("Live trackers", String(data.posseJobs ? data.posseJobs.activeTrackers || 0 : 0)) +
+					'</div>';
+
+				var meshByName = {};
+				meshInstances.forEach(function (instance) {
+					meshByName[instance.name] = instance;
+				});
+
+				var delegatedItems = delegated.slice(0, 4).map(function (job) {
+					var mesh = meshByName[job.remoteAgent];
+					var tone = mesh && mesh.health === "healthy" ? "ok" : "warn";
+					var title = '<span class="status-dot ' + tone + '"></span>' + escapeHtml(job.remoteAgent || "remote agent");
+					var meta = escapeHtml(sentenceCase(job.status || "unknown")) + ' · score ' + escapeHtml(job.routingScore == null ? "-" : job.routingScore.toFixed(2)) + ' · ' + escapeHtml(formatRelativeTime(job.createdAt));
+					return item(title, meta);
+				}).join("");
+
+				var peerItems = agents.slice(0, 4).map(function (agent) {
+					var mesh = meshByName[agent.name] || meshByName[agent.instanceName || ""];
+					var tone = mesh && mesh.health === "healthy" ? "ok" : (mesh && mesh.health === "unhealthy" ? "error" : "warn");
+					var meta = (mesh ? escapeHtml(sentenceCase(mesh.health)) + ' · load ' + escapeHtml(String(mesh.load)) : 'registry only') + ' · ' + escapeHtml(agent.endpoint || agent.url || "no endpoint");
+					return item('<span class="status-dot ' + tone + '"></span>' + escapeHtml(agent.name || agent.instanceName || "peer"), meta);
+				}).join("");
+
+				var body = summary;
+				if (delegatedItems) {
+					body += '<div class="list">' + delegatedItems + '</div>';
+				} else if (peerItems) {
+					body += '<div class="list">' + peerItems + '</div>';
+				} else {
+					body += renderEmpty("Posse is configured, but no peer or delegation data is active yet.");
+				}
+
+				els.posseBody.innerHTML = body;
+			}
+
+			function renderScheduler(data) {
+				if (data.error) {
+					setSectionState(els.schedulerState, "error");
+					els.schedulerBody.innerHTML = renderError(data.error);
+					return;
+				}
+
+				var scheduler = data.scheduler || {};
+				var heartbeat = scheduler.heartbeat || {};
+				var crons = Array.isArray(scheduler.crons) ? scheduler.crons : (Array.isArray(scheduler.jobs) ? scheduler.jobs : []);
+				var state = crons.length > 0 ? "complete" : "partial";
+				setSectionState(els.schedulerState, state);
+
+				var summary = '<div class="metric-row">' +
+					metric("Heartbeat", heartbeat.interval || scheduler.interval || "idle") +
+					metric("Pending wake", String(heartbeat.pendingWakeItems || 0)) +
+					metric("Cron jobs", String(crons.length)) +
+					'</div>';
+
+				var items = crons.slice(0, 4).map(function (job) {
+					var when = job.nextRun || job.next || job.schedule || "scheduled";
+					return item(escapeHtml(job.name || "cron job"), escapeHtml(String(when)));
+				}).join("");
+
+				els.schedulerBody.innerHTML = summary + (items ? '<div class="list">' + items + '</div>' : renderEmpty("Scheduler is available, with no cron jobs queued."));
+			}
+
+			function describeEvent(event) {
+				var data = event.data || {};
+				var parts = [sentenceCase(event.type || "event")];
+				if (data.jobId || event.jobId) parts.push("job " + (data.jobId || event.jobId));
+				if (data.message) parts.push(String(data.message));
+				else if (data.summary) parts.push(String(data.summary));
+				else if (data.status) parts.push(String(data.status));
+				return parts.join(" · ");
+			}
+
+			function renderEvents() {
+				setSectionState(els.eventsState, eventStatus);
+				if (eventStatus === "error") {
+					els.eventsBody.innerHTML = renderError("Live event stream is unavailable. Refresh after the session is established.");
+					return;
+				}
+				if (eventLog.length === 0) {
+					els.eventsBody.innerHTML = renderEmpty(eventStatus === "loading" ? "Connecting to the event stream..." : "Waiting for the next event.");
+					return;
+				}
+				els.eventsBody.innerHTML = '<div class="event-list">' + eventLog.map(function (event) {
+					return '<div class="event"><div class="event-title">' + escapeHtml(describeEvent(event)) + '</div><div class="event-meta">' + escapeHtml(formatRelativeTime(event.at)) + '</div></div>';
+				}).join("") + '</div>';
+			}
+
+			function pushEvent(eventType, payload) {
+				eventLog.unshift({ type: eventType || "message", data: payload || {}, at: new Date().toISOString() });
+				eventLog = eventLog.slice(0, 12);
+				eventStatus = "complete";
+				renderEvents();
+			}
+
+			function connectEvents() {
+				if (eventSource) return;
+				eventStatus = "loading";
+				renderEvents();
+				try {
+					eventSource = new EventSource("/events");
+					eventSource.onopen = function () {
+						eventStatus = eventLog.length > 0 ? "complete" : "partial";
+						renderEvents();
+					};
+					eventSource.onmessage = function (message) {
+						var parsed = {};
+						try {
+							parsed = JSON.parse(message.data || "{}");
+						} catch (_error) {
+							parsed = { raw: message.data };
+						}
+						pushEvent(message.type || "message", parsed);
+					};
+					EVENT_TYPES.forEach(function (type) {
+						eventSource.addEventListener(type, function (message) {
+							var parsed = {};
+							try {
+								parsed = JSON.parse(message.data || "{}");
+							} catch (_error) {
+								parsed = { raw: message.data };
+							}
+							pushEvent(type, parsed);
+						});
 					});
+					eventSource.onerror = function () {
+						eventStatus = eventLog.length > 0 ? "partial" : "error";
+						renderEvents();
+					};
+				} catch (_error) {
+					eventStatus = "error";
+					renderEvents();
 				}
-				if (cfg.credentials.missing) {
-					cfg.credentials.missing.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value cred-missing">missing</span></div>';
+			}
+
+			function loadUnlockedOverview() {
+				setOverviewVisible(true);
+				els.overviewSubtitle.textContent = "Refreshing running work, posse, scheduler, and events.";
+				setSectionState(els.workState, "loading");
+				setSectionState(els.posseState, "loading");
+				setSectionState(els.schedulerState, "loading");
+				els.workBody.innerHTML = renderEmpty("Loading running work...");
+				els.posseBody.innerHTML = renderEmpty("Loading posse state...");
+				els.schedulerBody.innerHTML = renderEmpty("Loading scheduler state...");
+
+				Promise.allSettled([
+					safeFetchJson("/instance"),
+					safeFetchJson("/jobs"),
+					safeFetchJson("/posse").catch(function (error) {
+						if (error && error.status === 404) return { unavailable: true };
+						throw error;
+					}),
+					safeFetchJson("/posse/jobs").catch(function (error) {
+						if (error && error.status === 404) return { unavailable: true };
+						throw error;
+					}),
+					safeFetchJson("/mesh/status").catch(function () { return { instances: [] }; }),
+					safeFetchJson("/scheduler")
+				]).then(function (results) {
+					var instanceResult = results[0];
+					var jobsResult = results[1];
+					var posseResult = results[2];
+					var posseJobsResult = results[3];
+					var meshResult = results[4];
+					var schedulerResult = results[5];
+
+					if (instanceResult.status === "rejected" && instanceResult.reason && instanceResult.reason.status === 401) {
+						setOverviewVisible(false);
+						els.sessionNote.textContent = "unlock to view live coordination state";
+						return;
+					}
+
+					var instance = instanceResult.status === "fulfilled" ? instanceResult.value : null;
+					if (instance && instance.name) els.instanceName.textContent = instance.name;
+
+					renderWork({
+						instance: instance || {},
+						jobs: jobsResult.status === "fulfilled" ? jobsResult.value : [],
+						error: instance ? null : "Unable to read instance state."
 					});
-				}
-				if (cfg.credentials.inherited) {
-					cfg.credentials.inherited.forEach(function(k) {
-						html += '<div class="setting-row"><span class="label">' + escapeHtml(k) + '</span><span class="value">inherited</span></div>';
+
+					var posseUnavailable = posseResult.status === "fulfilled" && posseResult.value && posseResult.value.unavailable;
+					renderPosse(posseUnavailable ? { unavailable: true } : {
+						posse: posseResult.status === "fulfilled" ? posseResult.value : null,
+						posseJobs: posseJobsResult.status === "fulfilled" ? posseJobsResult.value : null,
+						mesh: meshResult.status === "fulfilled" ? meshResult.value : { instances: [] },
+						error: posseResult.status === "rejected" ? "Unable to load posse state." : null
 					});
-				}
-				html += '</div>';
 
-				if (cfg.tools && cfg.tools.length > 0) {
-					html += '<div class="settings-group"><h3>Tools</h3>';
-					cfg.tools.forEach(function(t) {
-						html += '<div class="setting-row"><span class="label">' + escapeHtml(t.name) + '</span><span class="value">' + escapeHtml(t.binary) + '</span></div>';
+					renderScheduler({
+						scheduler: schedulerResult.status === "fulfilled" ? schedulerResult.value : (instance && instance.scheduler ? instance.scheduler : null),
+						error: schedulerResult.status === "rejected" && !(instance && instance.scheduler) ? "Unable to load scheduler state." : null
 					});
-					html += '</div>';
-				}
 
-				document.getElementById('settings-content').innerHTML = html;
-			} catch(e) { showToast('Failed to load settings', 'error'); }
-		}
-
-		// Polling state machine — canonical source: src/utils.ts
-		var sseConnected = false;
-		var pollInterval = null;
-
-		function startPolling() {
-			if (pollInterval) return;
-			pollInterval = setInterval(refreshJobs, 10000);
-		}
-
-		function stopPolling() {
-			if (pollInterval) {
-				clearInterval(pollInterval);
-				pollInterval = null;
+					els.overviewSubtitle.textContent = instance && instance.posse
+						? "Authenticated view unlocked for " + instance.name + " in posse " + instance.posse + "."
+						: "Authenticated view unlocked for " + (instance && instance.name ? instance.name : "this instance") + ".";
+					connectEvents();
+				}).catch(function () {
+					renderWork({ error: "Unable to read running work." });
+					renderPosse({ error: "Unable to read posse coordination." });
+					renderScheduler({ error: "Unable to read scheduler state." });
+					eventStatus = "error";
+					renderEvents();
+				});
 			}
-		}
 
-		// Pause polling when tab is hidden, resume when visible (if SSE not connected)
-		document.addEventListener('visibilitychange', function() {
-			if (document.hidden) {
-				stopPolling();
-			} else if (!sseConnected) {
-				startPolling();
-				refreshJobs(); // immediate refresh on tab focus
+			function ensureRefreshTimer() {
+				if (refreshTimer) return;
+				refreshTimer = setInterval(function () {
+					if (overviewVisible) loadUnlockedOverview();
+				}, 30000);
 			}
-		});
 
-		// SSE (EventSource can't send Authorization headers, so pass token as query param)
-		var evtSource = new EventSource('/events?token=' + encodeURIComponent(API_TOKEN));
-		var eventsLog = document.getElementById('events-log');
-
-		function addEvent(type, data) {
-			var line = document.createElement('div');
-			line.className = 'event-line';
-			line.innerHTML = '<span class="time">' + new Date().toLocaleTimeString() + '</span> <span class="type">' + escapeHtml(type) + '</span> ' + escapeHtml(data);
-			eventsLog.prepend(line);
-			if (eventsLog.children.length > 100) eventsLog.lastChild.remove();
-			refreshJobs();
-		}
-
-		['job.started', 'job.complete', 'job.failed', 'job.stopped', 'iteration.end', 'job.stuck', 'job.context_injected', 'job.plan_updated', 'job.delegation.started', 'job.delegation.completed'].forEach(function(type) {
-			evtSource.addEventListener(type, function(e) {
-				// SSE is delivering events — stop redundant polling
-				if (!sseConnected) { sseConnected = true; stopPolling(); }
-				addEvent(type, e.data);
-				if (currentJobId) loadJobDetail(currentJobId);
-			});
-		});
-
-		evtSource.onopen = function() {
-			sseConnected = true;
-			stopPolling();
-		};
-
-		evtSource.onerror = function() {
-			sseConnected = false;
-			startPolling(); // fallback to polling when SSE drops
-			addEvent('system', 'SSE connection lost — reconnecting...');
-		};
-
-		// Voice functions
-		async function loadVoiceSessions() {
-			try {
-				var res = await fetch('/voice/status', { headers: headers });
-				var data = await res.json();
-				var container = document.getElementById('voice-sessions');
-				if (!data.enabled) {
-					container.innerHTML = '<div class="empty">Voice channel is not enabled</div>';
-					return;
-				}
-				if (!data.sessions || data.sessions.length === 0) {
-					container.innerHTML = '<div class="empty">No active voice sessions</div>';
-					return;
-				}
-				container.innerHTML = data.sessions.map(function(s) {
-					var mins = Math.floor(s.duration / 60);
-					var secs = Math.round(s.duration % 60);
-					return '<div class="voice-card"><h4>Session ' + escapeHtml(s.id.slice(0, 8)) + '</h4>' +
-						'<div class="voice-meta">' +
-						'<span>Call: ' + escapeHtml(s.callId) + '</span>' +
-						'<span class="badge ' + (s.status === 'active' ? 'running' : 'complete') + '">' + s.status + '</span>' +
-						'<span>Duration: ' + mins + 'm ' + secs + 's</span>' +
-						'<span>Transcript: ' + s.transcriptLength + ' chars</span>' +
-						'</div>' +
-						'<div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Started: ' + new Date(s.startedAt).toLocaleString() + '</div></div>';
-				}).join('');
-			} catch(e) {
-				document.getElementById('voice-sessions').innerHTML = '<div class="empty">Failed to load voice sessions</div>';
+			function openSession(token) {
+				return fetch("/auth/session", {
+					method: "POST",
+					credentials: "same-origin",
+					headers: {
+						"Authorization": "Bearer " + token
+					}
+				}).then(function (response) {
+					if (!response.ok) throw new Error(response.status === 401 ? "Unauthorized" : "Session exchange failed");
+					return response.json();
+				});
 			}
-		}
 
-		// Mesh functions
-		async function loadMeshStatus() {
-			try {
-				var res = await fetch('/mesh/status', { headers: headers });
-				var data = await res.json();
-				var container = document.getElementById('mesh-instances');
-				if (!data.instances || data.instances.length === 0) {
-					container.innerHTML = '<div class="empty">No mesh instances found</div>';
-					return;
-				}
-				container.innerHTML = data.instances.map(function(inst) {
-					var healthClass = inst.health === 'healthy' ? 'healthy' : inst.health === 'degraded' ? 'degraded' : 'unhealthy';
-					var loadPct = Math.round(inst.load * 100);
-					var loadColor = loadPct < 50 ? 'var(--success)' : loadPct < 80 ? 'var(--warning)' : 'var(--danger)';
-					return '<div class="mesh-card"><h4><span class="health-dot ' + healthClass + '" aria-label="Health: ' + escapeHtml(inst.health) + '"></span>' + escapeHtml(inst.name) + '</h4>' +
-						'<div class="mesh-meta">' +
-						'<div>Status: <span class="badge ' + (inst.status === 'idle' ? 'complete' : inst.status === 'busy' ? 'running' : 'stopped') + '">' + escapeHtml(inst.status) + '</span></div>' +
-						'<div style="margin-top:4px">Load: <span style="color:' + loadColor + '">' + loadPct + '%</span></div>' +
-						'<div style="margin-top:4px">Specialization: ' + escapeHtml(inst.specialization || '-') + '</div>' +
-						'<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Last seen: ' + escapeHtml(inst.lastSeen) + '</div>' +
-						'</div></div>';
-				}).join('');
-			} catch(e) {
-				document.getElementById('mesh-instances').innerHTML = '<div class="empty">Failed to load mesh status</div>';
+			function boot() {
+				safeFetchJson("/health").then(renderHealth).catch(function () {
+					setValue(els.healthStatus, "offline", "error");
+					setValue(els.healthUptime, "-", "");
+					setValue(els.healthVersion, "-", "");
+					setValue(els.healthChannel, "-", "");
+				});
+
+				safeFetchJson("/instance").then(function (instance) {
+					if (instance && instance.name) els.instanceName.textContent = instance.name;
+					loadUnlockedOverview();
+				}).catch(function () {
+					setOverviewVisible(false);
+				});
+
+				els.unlockToggle.addEventListener("click", function () {
+					setUnlockOpen(!unlockOpen);
+				});
+
+				els.unlockCancel.addEventListener("click", function () {
+					setUnlockOpen(false);
+				});
+
+				els.unlockForm.addEventListener("submit", function (event) {
+					event.preventDefault();
+					var token = els.unlockToken.value.trim();
+					if (!token) {
+						updateUnlockFeedback("Enter a token to unlock the live overview.", true);
+						return;
+					}
+					updateUnlockFeedback("Exchanging token for a session cookie...", false);
+					openSession(token).then(function () {
+						els.unlockToken.value = "";
+						setUnlockOpen(false);
+						loadUnlockedOverview();
+					}).catch(function () {
+						els.unlockToken.value = "";
+						updateUnlockFeedback("Token was rejected. The public view stays available.", true);
+					});
+				});
+
+				els.overviewRefresh.addEventListener("click", function () {
+					loadUnlockedOverview();
+				});
+
+				ensureRefreshTimer();
+				renderEvents();
 			}
-		}
 
-		// Analytics functions
-		async function loadAnalyticsScores() {
-			try {
-				var res = await fetch('/analytics/scores', { headers: headers });
-				var data = await res.json();
-				var scoresEl = document.getElementById('analytics-scores');
-				var breakdownEl = document.getElementById('analytics-breakdown');
-
-				if (data.status === 'insufficient_data') {
-					scoresEl.innerHTML = '<div class="empty">Insufficient data — complete more jobs to generate analytics</div>';
-					breakdownEl.innerHTML = '';
-					return;
-				}
-
-				// Overall score gauge
-				var overallPct = Math.round((data.overall || 0) * 100);
-				var overallClass = overallPct >= 80 ? 'good' : overallPct >= 50 ? 'warn' : 'bad';
-				var html = '<div class="gauge-card"><div class="gauge-label">Overall Reliability</div>' +
-					'<div class="gauge-value">' + overallPct + '%</div>' +
-					'<div class="gauge-bar"><div class="gauge-fill ' + overallClass + '" style="width:' + overallPct + '%"></div></div></div>';
-
-				scoresEl.innerHTML = html;
-
-				// Breakdown tables
-				var breakdownHtml = '';
-				if (data.byAgent && Object.keys(data.byAgent).length > 0) {
-					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Agent</h3>';
-					breakdownHtml += renderScoreTable(data.byAgent);
-				}
-				if (data.byModel && Object.keys(data.byModel).length > 0) {
-					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Model</h3>';
-					breakdownHtml += renderScoreTable(data.byModel);
-				}
-				if (data.byDomain && Object.keys(data.byDomain).length > 0) {
-					breakdownHtml += '<h3 style="margin:16px 0 8px;font-size:14px;color:#aaa">By Domain</h3>';
-					breakdownHtml += renderScoreTable(data.byDomain);
-				}
-				breakdownEl.innerHTML = breakdownHtml;
-			} catch(e) {
-				document.getElementById('analytics-scores').innerHTML = '<div class="empty">Failed to load analytics</div>';
-			}
-		}
-
-		function renderScoreTable(scores) {
-			var html = '<div class="gauge-grid">';
-			for (var key in scores) {
-				var pct = Math.round(scores[key] * 100);
-				var cls = pct >= 80 ? 'good' : pct >= 50 ? 'warn' : 'bad';
-				html += '<div class="gauge-card"><div class="gauge-label">' + escapeHtml(key) + '</div>' +
-					'<div class="gauge-value">' + pct + '%</div>' +
-					'<div class="gauge-bar"><div class="gauge-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
-			}
-			html += '</div>';
-			return html;
-		}
-
-		async function loadAnalyticsRecommendations() {
-			try {
-				var res = await fetch('/analytics/recommendations', { headers: headers });
-				var data = await res.json();
-				var container = document.getElementById('analytics-recommendations');
-				if (!data.recommendations || data.recommendations.length === 0) {
-					container.innerHTML = '<div class="empty">No recommendations at this time</div>';
-					return;
-				}
-				container.innerHTML = data.recommendations.map(function(rec) {
-					return '<div class="rec-card ' + escapeHtml(rec.severity) + '">' +
-						'<div class="rec-severity ' + escapeHtml(rec.severity) + '">' + escapeHtml(rec.severity) + '</div>' +
-						'<div style="font-size:13px">' + escapeHtml(rec.message) + '</div>' +
-						(rec.action ? '<div class="rec-action">Action: ' + escapeHtml(rec.action) + '</div>' : '') +
-						'</div>';
-				}).join('');
-			} catch(e) {
-				document.getElementById('analytics-recommendations').innerHTML = '<div class="empty">Failed to load recommendations</div>';
-			}
-		}
-
-		async function loadAnalyticsAnnotations() {
-			try {
-				var res = await fetch('/analytics/annotations', { headers: headers });
-				var data = await res.json();
-				var container = document.getElementById('analytics-annotations');
-				if (!data.annotations || data.annotations.length === 0) {
-					container.innerHTML = '<div class="empty">No annotations yet</div>';
-					return;
-				}
-				var html = '<table><thead><tr><th>Job</th><th>Verdict</th><th>Feedback</th><th>Time</th></tr></thead><tbody>';
-				html += data.annotations.slice(0, 50).map(function(a) {
-					var verdictClass = a.verdict === 'correct' ? 'complete' : a.verdict === 'incorrect' ? 'failed' : 'queued';
-					return '<tr><td>' + escapeHtml(a.jobId || '-') + '</td>' +
-						'<td><span class="badge ' + verdictClass + '">' + escapeHtml(a.verdict) + '</span></td>' +
-						'<td>' + escapeHtml(a.feedback || '-') + '</td>' +
-						'<td>' + (a.timestamp ? new Date(a.timestamp).toLocaleString() : '-') + '</td></tr>';
-				}).join('');
-				html += '</tbody></table>';
-				container.innerHTML = html;
-			} catch(e) {
-				document.getElementById('analytics-annotations').innerHTML = '<div class="empty">Failed to load annotations</div>';
-			}
-		}
-
-		// Posse functions
-		var isPosseMember = false;
-
-		async function checkPosse(data) {
-			if (data && data.posse) {
-				isPosseMember = true;
-				document.getElementById('nav-posse').style.display = '';
-				document.getElementById('memory-scope').style.display = '';
-			}
-		}
-
-		async function loadPosseAgents() {
-			if (!isPosseMember) return;
-			try {
-				var res = await fetch('/posse', { headers: headers });
-				if (!res.ok) return;
-				var data = await res.json();
-				var container = document.getElementById('posse-agents');
-				if (!data.agents || data.agents.length === 0) {
-					container.innerHTML = '<div class="empty">No agents registered</div>';
-					return;
-				}
-				container.innerHTML = data.agents.map(function(a) {
-					var statusClass = a.status === 'busy' ? 'warning' : a.status === 'stale' ? 'danger' : 'success';
-					var heartbeat = a.lastHeartbeat ? new Date(a.lastHeartbeat).toLocaleString() : '-';
-					return '<div class="job-card"><h3>' + escapeHtml(a.name) + (a.name === data.self ? ' (self)' : '') + '</h3>' +
-						'<div class="meta"><span class="badge ' + (a.status === 'idle' ? 'complete' : a.status === 'busy' ? 'running' : 'stopped') + '">' + escapeHtml(a.status) + '</span>' +
-						'<span>' + escapeHtml(a.agent) + '</span>' +
-						'<span>v' + escapeHtml(a.version) + '</span></div>' +
-						'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Last heartbeat: ' + heartbeat + '</div></div>';
-				}).join('');
-			} catch(e) { showToast('Failed to load posse agents', 'error'); }
-		}
-
-		async function searchPosseMemory() {
-			var q = document.getElementById('posse-memory-query').value;
-			if (!q) return;
-			var scope = document.getElementById('posse-scope').value;
-			try {
-				var res = await fetch('/posse/memory/search?q=' + encodeURIComponent(q) + '&scope=' + scope, { headers: headers });
-				var docs = await res.json();
-				var container = document.getElementById('posse-memory-results');
-				if (docs.length === 0) {
-					container.innerHTML = '<div class="empty">No results</div>';
-					return;
-				}
-				container.innerHTML = docs.map(function(d) {
-					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + escapeHtml(d.source) + ')</span>' : '';
-					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' + sourceTag +
-						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
-				}).join('');
-			} catch(e) { showToast('Posse memory search failed', 'error'); }
-		}
-
-		async function loadPosseRecent() {
-			if (!isPosseMember) return;
-			try {
-				var res = await fetch('/posse/memory/recent?scope=all&limit=10', { headers: headers });
-				if (!res.ok) return;
-				var docs = await res.json();
-				var container = document.getElementById('posse-recent');
-				if (docs.length === 0) {
-					container.innerHTML = '<div class="empty">No recent activity</div>';
-					return;
-				}
-				container.innerHTML = docs.map(function(d) {
-					var sourceTag = d.source && d.source !== 'self' ? ' <span style="color:var(--accent);font-size:11px">(' + escapeHtml(d.source) + ')</span>' : '';
-					var time = d.timestamp ? new Date(d.timestamp).toLocaleString() : '';
-					return '<div class="memory-item"><span class="category">[' + escapeHtml(d.category) + ']</span>' + sourceTag +
-						'<div style="font-size:11px;color:var(--text-dim)">' + time + '</div>' +
-						'<div class="content">' + escapeHtml(d.content) + '</div></div>';
-				}).join('');
-			} catch(e) { showToast('Failed to load posse activity', 'error'); }
-		}
-
-		// Init
-		loadInstance();
-		refreshJobs();
-		startPolling(); // SSE will disable this once connected
+			boot();
+		})();
 	</script>
 </body>
 </html>
