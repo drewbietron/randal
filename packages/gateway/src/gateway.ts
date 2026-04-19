@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MeilisearchAnnotationStore } from "@randal/analytics";
@@ -438,18 +439,20 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 				startedAt: session.startedAt,
 			})),
 		issueBrowserToken: async (options: { participantName: string; roomName?: string }) => {
+			const sessionId = `browser-session-${randomUUID()}`;
 			const roomName = options.roomName ?? `browser-${Date.now()}`;
 			const access = createVoiceSessionAccess({
 				accessClass: "admin",
 				source: {
 					transport: "browser",
 					direction: "inbound",
-					sessionId: roomName,
+					sessionId,
 				},
 			});
 
 			return {
 				token: await voiceEngine.generateRoomToken(roomName, options.participantName),
+				sessionId,
 				roomName,
 				participantName: options.participantName,
 				access: serializeVoiceSessionAccess(access),

@@ -138,6 +138,7 @@ export interface HttpChannelOptions {
 			roomName?: string;
 		}): Promise<{
 			token: string;
+			sessionId: string;
 			roomName: string;
 			participantName: string;
 			access: string;
@@ -1424,6 +1425,9 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	app.post("/api/voice/token", async (c) => {
 		if (!voiceManager) {
 			return c.json({ error: "Voice is not enabled" }, 400);
+		}
+		if (!voiceManager.isEnabled()) {
+			return c.json({ error: "Voice is disabled" }, 400);
 		}
 		if (!voiceManager.isBrowserVoiceReady()) {
 			return c.json(

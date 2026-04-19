@@ -198,10 +198,11 @@ describe("HTTP API", () => {
 				],
 				issueBrowserToken: async () => ({
 					token: "browser-token",
+					sessionId: "browser-session-1",
 					roomName: "browser-room",
 					participantName: "browser-user",
 					access:
-						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-room"}}',
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-session-1"}}',
 				}),
 			},
 		});
@@ -234,11 +235,12 @@ describe("HTTP API", () => {
 				isPstnVoiceReady: () => false,
 				getSessions: () => [],
 				issueBrowserToken: async ({ participantName, roomName }) => ({
-					token: "browser-token",
+					token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkta2V5Iiwic3ViIjoiYnJvd3Nlci11c2VyIiwidmlkZW8iOnsicm9vbSI6ImJyb3dzZXItcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.signature",
+					sessionId: "browser-session-2",
 					roomName: roomName ?? "browser-room",
 					participantName,
 					access:
-						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-room"}}',
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-session-2"}}',
 				}),
 			},
 		});
@@ -249,10 +251,34 @@ describe("HTTP API", () => {
 		});
 		expect(res.status).toBe(200);
 		const data = await res.json();
-		expect(data.token).toBe("browser-token");
+		expect(data.token.split(".")).toHaveLength(3);
+		expect(data.sessionId).toBe("browser-session-2");
 		expect(data.roomName).toBe("browser-room");
 		expect(data.participantName).toBe("browser-user");
 		expect(data.access).toContain('"accessClass":"admin"');
+		expect(data.access).toContain('"sessionId":"browser-session-2"');
+		expect(data.access).not.toContain('"sessionId":"browser-room"');
+	});
+
+	test("POST /api/voice/token rejects when voice is disabled", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => false,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async () => {
+					throw new Error("should not be called");
+				},
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(400);
+		expect(await res.json()).toEqual({ error: "Voice is disabled" });
 	});
 
 	test("POST /api/voice/token rejects when browser voice is not configured", async () => {

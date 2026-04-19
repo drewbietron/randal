@@ -3,10 +3,15 @@
  * R2.1, R2.2: Core voice/video functionality.
  */
 
+import { createHmac, randomUUID } from "node:crypto";
 import type { RandalConfig } from "@randal/core";
 import { createLogger } from "@randal/core";
 
 const logger = createLogger({ context: { component: "voice-engine" } });
+
+function base64UrlEncode(input: string): string {
+	return Buffer.from(input).toString("base64url");
+}
 
 export interface VoiceSession {
 	id: string;
@@ -243,9 +248,32 @@ export class VoiceEngine {
 			);
 		}
 
-		// In production, this would use livekit-server-sdk-js to generate a JWT token
-		// For now, return a placeholder that real implementations would replace
 		logger.debug("Generating room token", { roomName, participantName });
-		return `token-${roomName}-${participantName}-${Date.now()}`;
+
+		const now = Math.floor(Date.now() / 1000);
+		const header = { alg: "HS256", typ: "JWT" };
+		const payload = {
+			iss: this.config.voice.livekit.apiKey,
+			sub: participantName,
+			nbf: now,
+			iat: now,
+			exp: now + 60 * 60,
+			jti: randomUUID(),
+			video: {
+				room: roomName,
+				roomJoin: true,
+				canPublish: true,
+				canSubscribe: true,
+			},
+		};
+
+		const encodedHeader = base64UrlEncode(JSON.stringify(header));
+		const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+		const signingInput = `${encodedHeader}.${encodedPayload}`;
+		const signature = createHmac("sha256", this.config.voice.livekit.apiSecret)
+			.update(signingInput)
+			.digest("base64url");
+
+		return `${signingInput}.${signature}`;
 	}
 }

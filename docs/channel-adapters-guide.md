@@ -62,6 +62,10 @@ under `/_internal/*` are not public and require the normal HTTP auth token.
 If `gateway.channels[http].auth` is unset, protected routes fail closed with a
 configuration error instead of silently becoming public.
 
+Browser voice trust boundary uses this same admin HTTP auth surface. `POST /api/voice/token`
+does not create a separate end-user auth system; it mints browser voice access
+for an already authenticated admin gateway client.
+
 ### Security
 
 - **Always set `auth`** to a strong, random token

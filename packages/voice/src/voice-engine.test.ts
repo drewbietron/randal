@@ -320,13 +320,23 @@ describe("VoiceEngine", () => {
 	});
 
 	describe("generateRoomToken", () => {
-		test("works for browser-only voice config", async () => {
+		test("generates a real LiveKit-style JWT for browser-only voice config", async () => {
 			const config = makeConfig(browserOnlyYaml);
 			const engine = new VoiceEngine({ config });
 			await engine.start();
 
 			const token = await engine.generateRoomToken("browser-room", "browser-user");
-			expect(token).toContain("browser-room");
+			const parts = token.split(".");
+			expect(parts).toHaveLength(3);
+			const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8")) as {
+				iss: string;
+				sub: string;
+				video: { room: string; roomJoin: boolean };
+			};
+			expect(payload.iss).toBe("test-api-key");
+			expect(payload.sub).toBe("browser-user");
+			expect(payload.video.room).toBe("browser-room");
+			expect(payload.video.roomJoin).toBe(true);
 		});
 
 		test("fails clearly without browser/media config", async () => {

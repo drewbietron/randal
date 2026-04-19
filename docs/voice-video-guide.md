@@ -189,6 +189,15 @@ The gateway now exposes an authenticated browser token route:
 If HTTP auth is not configured on the gateway, these protected routes fail
 closed instead of becoming publicly reachable.
 
+Trust boundary:
+
+- Browser voice here inherits the existing gateway admin auth model.
+- In practice that means the same bearer token or gateway session cookie that
+  already protects the admin HTTP surface can mint browser voice tokens.
+- This is not a separate end-user identity system.
+- If you need end-user browser voice with different trust, run a separate
+  external-facing instance and keep the admin/browser instance private.
+
 Example:
 
 ```bash
