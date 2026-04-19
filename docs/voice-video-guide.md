@@ -175,25 +175,20 @@ voice:
 
 ## Browser voice widget integration
 
-Randal ships a lightweight voice widget that connects to a LiveKit room from
-the browser. To enable it:
+The current gateway codebase does not expose a browser voice token-issuance
+route yet. In particular, `POST /api/voice/token` is not implemented in this
+repo today.
 
-1. Make sure the `voice` channel is in your gateway config:
+Current voice-related HTTP surface:
 
-```yaml
-gateway:
-  channels:
-    - type: voice
-```
+- `GET /voice/status`: requires the normal gateway HTTP bearer token and returns
+  whether voice is enabled plus any active sessions.
+- No public Twilio voice webhook endpoint is currently mounted by the gateway.
+- No `POST /api/voice/call` route is currently implemented by the gateway.
 
-2. The dashboard (served by `@randal/dashboard`) automatically renders a
-   microphone button when voice is enabled.
-3. Clicking the button requests a LiveKit participant token from the gateway,
-   joins the room, and streams audio.
-
-For custom UIs, use the
-[LiveKit JavaScript SDK](https://docs.livekit.io/reference/js/) and request a
-token from `POST /api/voice/token`.
+The dashboard may still render voice UI based on local capability checks, but a
+browser voice session cannot rely on a gateway-issued participant token until a
+real token endpoint is added.
 
 ---
 
@@ -235,25 +230,10 @@ voice:
 
 ## Outbound calling
 
-Randal can place outbound phone calls via Twilio:
-
-```bash
-randal call +15559876543 --prompt "Check in with the client about delivery"
-```
-
-Or programmatically through the gateway API:
-
-```bash
-curl -X POST http://localhost:7600/api/voice/call \
-  -H "Authorization: Bearer $AUTH_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"to": "+15559876543", "prompt": "Check in about delivery"}'
-```
-
-The call flow:
-1. Twilio places the outbound call.
-2. When answered, audio is bridged into a LiveKit room.
-3. The STT/Runner/TTS pipeline handles the conversation.
+The gateway docs previously described `POST /api/voice/call`, but that route is
+not implemented in this repo today. Treat outbound PSTN calling as not exposed
+over the current HTTP gateway until a concrete route and Twilio request
+validation path land in source.
 
 ---
 

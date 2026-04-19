@@ -307,9 +307,14 @@ async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown
 	}
 
 	try {
+		const headers: Record<string, string> = { "Content-Type": "application/json" };
+		if (RANDAL_GATEWAY_AUTH) {
+			headers.Authorization = `Bearer ${RANDAL_GATEWAY_AUTH}`;
+		}
+
 		const resp = await fetch(`${RANDAL_GATEWAY_URL}/_internal/events`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers,
 			body: JSON.stringify({
 				type,
 				jobId: RANDAL_JOB_ID,

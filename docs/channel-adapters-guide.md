@@ -54,7 +54,9 @@ gateway:
 | `GET` | `/health` | Health check |
 | `GET` | `/` | Web dashboard |
 
-All requests require `Authorization: Bearer <token>` or `?token=<token>` query parameter.
+Authenticated API routes require `Authorization: Bearer <token>` or `?token=<token>`.
+Only `/`, `/health`, and `/assets/*` are intentionally public. Internal routes
+under `/_internal/*` are not public and require the normal HTTP auth token.
 
 ### Security
 
