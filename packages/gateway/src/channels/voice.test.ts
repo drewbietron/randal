@@ -199,4 +199,33 @@ describe("VoiceChannel", () => {
 		expect(access?.source.direction).toBe("outbound");
 		expect(access?.capabilities.grants).toEqual(["events", "scheduler"]);
 	});
+
+	test("outbound sessions default to external access when no request is provided", async () => {
+		const submitMock = mock(() => ({ jobId: "job-voice-4", done: Promise.resolve() }));
+		const deps = makeMockDeps({
+			runner: {
+				submit: submitMock,
+				getJob: mock(() => null),
+				getActiveJobs: mock(() => []),
+				stop: mock(() => true),
+			} as unknown as ChannelDeps["runner"],
+		});
+		const channel = new VoiceChannel(
+			makeVoiceConfig({ access: { defaultExternalGrants: ["memory"] } }) as never,
+			deps,
+		);
+		const ttsCallback = mock(() => {});
+
+		channel.registerSessionWithAccess("session-out-default", "+15554444444", ttsCallback, {
+			direction: "outbound",
+		});
+		await channel.handleSttInput("session-out-default", "run: check status");
+
+		const submitArg = (submitMock.mock.calls as unknown[][])[0][0] as {
+			metadata?: Record<string, string>;
+		};
+		const access = parseVoiceSessionAccess(submitArg.metadata?.RANDAL_VOICE_ACCESS);
+		expect(access?.accessClass).toBe("external");
+		expect(access?.capabilities.grants).toEqual(["memory"]);
+	});
 });

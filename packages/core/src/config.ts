@@ -110,7 +110,7 @@ const voiceChannelSchema = z.object({
 	access: z
 		.object({
 			trustedCallers: z.array(z.string()).default([]),
-			unknownInbound: z.enum(["deny", "external", "admin-only"]).default("deny"),
+			unknownInbound: z.enum(["deny", "external"]).default("deny"),
 			defaultExternalGrants: z.array(z.string()).default([]),
 		})
 		.default({}),

@@ -1329,6 +1329,10 @@ async function handleMemoryRecent(params: Record<string, unknown>): Promise<unkn
 // ---------------------------------------------------------------------------
 
 async function handleChatSearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { results: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const { query, limit = 10, scope } = validateParams(params, ChatSearchParamsSchema);
 
 	if (!(await ensureMessages())) {
@@ -1379,6 +1383,10 @@ async function handleChatSearch(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatThread(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { messages: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const { threadId, limit = 50 } = validateParams(params, ChatThreadParamsSchema);
 
 	if (!(await ensureMessages())) {
@@ -1407,6 +1415,10 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatRecent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { results: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const { limit = 10 } = validateParams(params, ChatRecentParamsSchema);
 
 	if (!(await ensureMessages())) {
@@ -1436,6 +1448,10 @@ async function handleChatRecent(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatLog(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { logged: false, message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const validated = validateParams(params, ChatLogParamsSchema);
 	const content = validated.content;
 	const speaker = validated.speaker || "randal";
@@ -1477,6 +1493,10 @@ async function handleChatLog(params: Record<string, unknown>): Promise<unknown> 
 // ---------------------------------------------------------------------------
 
 async function handleStruggleCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	const validated = validateParams(params, StruggleCheckParamsSchema);
 	return checkStruggle({
 		iterations_without_progress: validated.iterations_without_progress,
@@ -1487,6 +1507,14 @@ async function handleStruggleCheck(params: Record<string, unknown>): Promise<unk
 }
 
 async function handleContextCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return {
+			hasContext: false,
+			content: null,
+			message: "Voice session is not allowed to inspect session state",
+		};
+	}
+
 	const { workdir = process.cwd() } = validateParams(params, ContextCheckParamsSchema);
 	const contextPath = join(workdir, "context.md");
 
@@ -1527,6 +1555,15 @@ async function getAnnotationsAndScores(agingHalfLife?: number) {
 }
 
 async function handleReliabilityScores(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return {
+			scores: [],
+			trends: { sevenDay: null, thirtyDay: null },
+			insufficientData: true,
+			message: "Voice session is not allowed to use analytics tools",
+		};
+	}
+
 	if (!ANALYTICS_ENABLED) {
 		return {
 			message: "Analytics not enabled",
@@ -1573,6 +1610,10 @@ async function handleReliabilityScores(params: Record<string, unknown>): Promise
 }
 
 async function handleRecommendations(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { recommendations: [], message: "Voice session is not allowed to use analytics tools" };
+	}
+
 	if (!ANALYTICS_ENABLED) {
 		return { message: "Analytics not enabled", recommendations: [] };
 	}
@@ -1593,6 +1634,10 @@ async function handleRecommendations(_params: Record<string, unknown>): Promise<
 }
 
 async function handleGetFeedback(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { feedback: "", message: "Voice session is not allowed to use analytics tools" };
+	}
+
 	const { domain } = validateParams(params, GetFeedbackParamsSchema);
 
 	if (!ANALYTICS_ENABLED) {
@@ -1615,6 +1660,10 @@ async function handleGetFeedback(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleAnnotate(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("analytics")) {
+		return { success: false, message: "Voice session is not allowed to use analytics tools" };
+	}
+
 	const validated = validateParams(params, AnnotateParamsSchema);
 
 	if (!ANALYTICS_ENABLED) {
@@ -1961,6 +2010,10 @@ async function handlePosseMemorySearch(params: Record<string, unknown>): Promise
 // ---------------------------------------------------------------------------
 
 async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	return {
 		jobId: RANDAL_JOB_ID || null,
 		channel: RANDAL_CHANNEL || null,

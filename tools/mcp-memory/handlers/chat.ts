@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
 import { ensureMessages, getMessagesError, messageManager } from "../init.js";
-import { MEILI_HINT, defaultScope } from "../types.js";
+import { MEILI_HINT, defaultScope, sessionHasGrant } from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -112,6 +112,10 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
 // ---------------------------------------------------------------------------
 
 async function handleChatSearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { results: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const query = params.query as string;
 	if (!query) {
 		throw new ToolError("Missing required parameter: query");
@@ -168,6 +172,10 @@ async function handleChatSearch(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatThread(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { messages: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const threadId = params.threadId as string;
 	if (!threadId) {
 		throw new ToolError("Missing required parameter: threadId");
@@ -201,6 +209,10 @@ async function handleChatThread(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatRecent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { results: [], message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const limit = typeof params.limit === "number" ? params.limit : 10;
 
 	if (!(await ensureMessages())) {
@@ -230,6 +242,10 @@ async function handleChatRecent(params: Record<string, unknown>): Promise<unknow
 }
 
 async function handleChatLog(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("chat")) {
+		return { logged: false, message: "Voice session is not allowed to use chat tools" };
+	}
+
 	const content = params.content as string;
 	if (!content) {
 		throw new ToolError("Missing required parameter: content");

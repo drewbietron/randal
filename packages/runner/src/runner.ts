@@ -20,6 +20,7 @@ import type {
 	RunnerEvent,
 	RunnerEventType,
 	SkillDeployment,
+	VoiceSessionAccess,
 } from "@randal/core";
 import {
 	applyVoiceSessionAccessToOpenCodeConfig,
@@ -74,6 +75,7 @@ function buildVoiceScopedOpenCodeHome(options: {
 	config: RandalConfig;
 	configBasePath?: string;
 	job: Job;
+	voiceAccess: VoiceSessionAccess;
 }): string {
 	const sourceHome = options.env.HOME ?? process.env.HOME ?? "";
 	const scopedHome = mkdtempSync(join(tmpdir(), "randal-opencode-home-"));
@@ -97,8 +99,7 @@ function buildVoiceScopedOpenCodeHome(options: {
 		repoRoot: getRepoRoot(),
 		toolsDir: join(getRepoRoot(), "tools"),
 	}).config;
-	const voiceAccess = parseVoiceSessionAccess(options.job.metadata?.RANDAL_VOICE_ACCESS);
-	const scopedConfig = applyVoiceSessionAccessToOpenCodeConfig(compiled, voiceAccess);
+	const scopedConfig = applyVoiceSessionAccessToOpenCodeConfig(compiled, options.voiceAccess);
 	writeFileSync(
 		join(targetConfigDir, "opencode.json"),
 		`${JSON.stringify(scopedConfig, null, "\t")}\n`,
@@ -114,7 +115,7 @@ function applyVoiceSessionPolicy(options: {
 	job: Job;
 	agentName: string;
 }): string | null {
-	const access = parseVoiceSessionAccess(options.job.metadata?.RANDAL_VOICE_ACCESS);
+	const access = requireVoiceSessionAccess(options.job);
 	if (!access) return null;
 
 	options.env.RANDAL_VOICE_ACCESS = JSON.stringify(access);
@@ -133,9 +134,17 @@ function applyVoiceSessionPolicy(options: {
 		return null;
 	}
 
-	const scopedHome = buildVoiceScopedOpenCodeHome(options);
+	const scopedHome = buildVoiceScopedOpenCodeHome({ ...options, voiceAccess: access });
 	options.env.HOME = scopedHome;
 	return scopedHome;
+}
+
+function requireVoiceSessionAccess(job: Job): VoiceSessionAccess | null {
+	if (job.origin?.channel !== "voice") {
+		return null;
+	}
+
+	return parseVoiceSessionAccess(job.metadata?.RANDAL_VOICE_ACCESS);
 }
 
 export type EventHandler = (event: RunnerEvent) => void;
@@ -565,6 +574,18 @@ export class Runner {
 			for (const [key, value] of Object.entries(job.metadata)) {
 				env[key] = value;
 			}
+		}
+
+		if (job.origin?.channel === "voice" && !requireVoiceSessionAccess(job)) {
+			job.status = "failed";
+			job.error = "Voice session access metadata is missing or invalid";
+			job.exitCode = null;
+			job.completedAt = new Date().toISOString();
+			job.duration = 0;
+			syncJobToLoopState(job);
+			this.emit("job.failed", job, { error: job.error });
+			await this.autoAnnotate(job);
+			return job;
 		}
 
 		const voiceScopedHome = applyVoiceSessionPolicy({

@@ -40,7 +40,7 @@ export function resolveVoiceSessionAccess(
 	const trustedCaller = normalizedPhone ? trustedCallers.has(normalizedPhone) : false;
 
 	if (request.direction === "outbound") {
-		const requestedClass = request.requestedAccess?.accessClass ?? "admin";
+		const requestedClass = request.requestedAccess?.accessClass ?? "external";
 		if (requestedClass === "admin") {
 			return {
 				allowed: true,

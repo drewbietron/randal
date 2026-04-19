@@ -243,4 +243,39 @@ describe("Trigger env vars", () => {
 			}
 		}
 	});
+
+	test("voice-originated jobs fail closed when voice access metadata is missing", async () => {
+		const workdir = makeTmpDir();
+		const config = makeConfig(workdir);
+		const outputPath = join(workdir, "env-output.json");
+		const scriptPath = makeEnvDumpScript(workdir, outputPath);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({
+			prompt: scriptPath,
+			origin: { channel: "voice", replyTo: "session-3", from: "+15553333333" },
+		});
+
+		expect(job.status).toBe("failed");
+		expect(job.error).toContain("Voice session access metadata is missing or invalid");
+		expect(existsSync(outputPath)).toBe(false);
+	});
+
+	test("voice-originated jobs fail closed when voice access metadata is malformed", async () => {
+		const workdir = makeTmpDir();
+		const config = makeConfig(workdir);
+		const outputPath = join(workdir, "env-output.json");
+		const scriptPath = makeEnvDumpScript(workdir, outputPath);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({
+			prompt: scriptPath,
+			origin: { channel: "voice", replyTo: "session-4", from: "+15554444444" },
+			metadata: { RANDAL_VOICE_ACCESS: "{not-json" },
+		});
+
+		expect(job.status).toBe("failed");
+		expect(job.error).toContain("Voice session access metadata is missing or invalid");
+		expect(existsSync(outputPath)).toBe(false);
+	});
 });

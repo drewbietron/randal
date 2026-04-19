@@ -210,6 +210,24 @@ describe("configSchema", () => {
 		]);
 	});
 
+	test("rejects unsupported voice unknownInbound mode", () => {
+		expect(() =>
+			configSchema.parse({
+				...minimalConfig,
+				gateway: {
+					channels: [
+						{
+							type: "voice" as const,
+							access: {
+								unknownInbound: "admin-only",
+							},
+						},
+					],
+				},
+			}),
+		).toThrow();
+	});
+
 	test("validates embedder variants", () => {
 		const configs = [
 			{ type: "builtin" as const },

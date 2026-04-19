@@ -505,6 +505,26 @@ describe("voice access restrictions", () => {
 		expect(result.message).toContain("not allowed to use channel tools");
 	});
 
+	test("denies ungranted chat tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "chat_recent", {});
+		const result = parseToolResult(resp) as { results: unknown[]; message: string };
+		expect(result.results).toEqual([]);
+		expect(result.message).toContain("not allowed to use chat tools");
+	});
+
+	test("denies ungranted session tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "job_info", {});
+		const result = parseToolResult(resp) as { message: string };
+		expect(result.message).toContain("not allowed to inspect session state");
+	});
+
+	test("denies ungranted analytics tools for external voice sessions", async () => {
+		const resp = await callTool(proc, "recommendations", {});
+		const result = parseToolResult(resp) as { recommendations: unknown[]; message: string };
+		expect(result.recommendations).toEqual([]);
+		expect(result.message).toContain("not allowed to use analytics tools");
+	});
+
 	test("allows explicitly granted memory tools for external voice sessions", async () => {
 		const resp = await callTool(proc, "memory_recent", {});
 		const result = parseToolResult(resp) as { results: unknown[]; message?: string };

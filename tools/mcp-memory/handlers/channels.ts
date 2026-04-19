@@ -189,6 +189,10 @@ async function gatewayFetch(path: string, options?: RequestInit): Promise<unknow
 // ---------------------------------------------------------------------------
 
 async function handleStruggleCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	return checkStruggle({
 		iterations_without_progress: (params.iterations_without_progress as number) ?? 0,
 		recent_errors: (params.recent_errors as number) ?? 0,
@@ -198,6 +202,14 @@ async function handleStruggleCheck(params: Record<string, unknown>): Promise<unk
 }
 
 async function handleContextCheck(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return {
+			hasContext: false,
+			content: null,
+			message: "Voice session is not allowed to inspect session state",
+		};
+	}
+
 	const workdir = (params.workdir as string) || process.cwd();
 	const contextPath = join(workdir, "context.md");
 
@@ -225,6 +237,10 @@ async function handleContextCheck(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("session")) {
+		return { message: "Voice session is not allowed to inspect session state" };
+	}
+
 	return {
 		jobId: RANDAL_JOB_ID || null,
 		channel: RANDAL_CHANNEL || null,

@@ -177,6 +177,11 @@ export function sessionHasGrant(grant: string): boolean {
 		.includes(grant);
 }
 
+export function denyUnlessGranted<T>(grant: string, denied: T): T | null {
+	if (sessionHasGrant(grant)) return null;
+	return denied;
+}
+
 /**
  * Resolve the scope for a store operation.
  * - If explicit scope is provided, use it.
