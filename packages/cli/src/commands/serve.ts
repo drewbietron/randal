@@ -2,6 +2,22 @@ import { type RandalConfig, loadConfig } from "@randal/core";
 import { type CliContext, requireConfig } from "../cli.js";
 import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
+const DEFAULT_LOCAL_MEILI_URL = "http://localhost:7701";
+const LOCAL_MEILI_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function getLocalMeilisearchTarget(url: string): URL | null {
+	try {
+		const parsed = new URL(url);
+		if ((parsed.protocol === "http:" || parsed.protocol === "https:") && LOCAL_MEILI_HOSTS.has(parsed.hostname)) {
+			return parsed;
+		}
+	} catch {
+		// Invalid URL — let downstream consumers surface config issues.
+	}
+
+	return null;
+}
+
 /**
  * Auto-start Meilisearch if the config uses it and it's not already running.
  * Generates MEILI_MASTER_KEY in .env if missing.
@@ -13,11 +29,27 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	// Skip if explicitly disabled (e.g., Railway agent connecting to external Meilisearch)
 	if (process.env.RANDAL_SKIP_MEILISEARCH === "true") return false;
 
-	const url = config.memory.url || "http://localhost:7700";
+	const url = config.memory.url || DEFAULT_LOCAL_MEILI_URL;
+	const localTarget = getLocalMeilisearchTarget(url);
+	if (!localTarget) return false;
+
 	let envModified = false;
 
-	// Resolve master key: check env, generate if missing
-	let masterKey = process.env.MEILI_MASTER_KEY;
+	// Check if already running
+	try {
+		const res = await fetch(`${url}/health`);
+		if (res.ok) return envModified;
+	} catch {
+		// Not running — start it
+	}
+
+	const { mkdirSync } = await import("node:fs");
+	const { resolve } = await import("node:path");
+	const dbPath = resolve(process.env.HOME ?? ".", ".randal/meili-data");
+	mkdirSync(dbPath, { recursive: true });
+
+	// Resolve master key only when we are about to start a local instance.
+	let masterKey = process.env.MEILI_MASTER_KEY || config.memory.apiKey;
 	if (!masterKey) {
 		const { randomBytes } = await import("node:crypto");
 		masterKey = randomBytes(16).toString("hex");
@@ -48,19 +80,6 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 		console.log("  + Generated MEILI_MASTER_KEY in .env");
 	}
 
-	// Check if already running
-	try {
-		const res = await fetch(`${url}/health`);
-		if (res.ok) return envModified;
-	} catch {
-		// Not running — start it
-	}
-
-	const { mkdirSync } = await import("node:fs");
-	const { resolve } = await import("node:path");
-	const dbPath = resolve(process.env.HOME ?? ".", ".randal/meili-data");
-	mkdirSync(dbPath, { recursive: true });
-
 	// Try native binary first
 	let which = Bun.spawnSync(["which", "meilisearch"]);
 
@@ -82,11 +101,14 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	if (which.exitCode === 0) {
 		const binary = which.stdout.toString().trim();
 		console.log("  Starting Meilisearch...");
-		const proc = Bun.spawn([binary, "--db-path", dbPath, "--master-key", masterKey], {
+		const proc = Bun.spawn(
+			[binary, "--db-path", dbPath, "--master-key", masterKey, "--http-addr", localTarget.host],
+			{
 			stdout: "ignore",
 			stderr: "ignore",
 			stdin: "ignore",
-		});
+			},
+		);
 		proc.unref();
 
 		// Wait for it to be ready (up to 5s)
@@ -123,7 +145,7 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 			"--restart",
 			"unless-stopped",
 			"-p",
-			"7700:7700",
+			`${localTarget.port || "7701"}:7700`,
 			"-v",
 			`${dbPath}:/meili_data`,
 			"-e",

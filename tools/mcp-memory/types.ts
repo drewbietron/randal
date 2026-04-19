@@ -11,7 +11,7 @@ import { execSync } from "node:child_process";
 // Meilisearch configuration
 // ---------------------------------------------------------------------------
 
-export const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
+export const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
 export const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
 export const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
 export const MEILI_DUMP_INTERVAL_MS = Number.parseInt(

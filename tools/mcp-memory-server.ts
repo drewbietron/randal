@@ -24,7 +24,7 @@
  * Communication: newline-delimited JSON-RPC 2.0 over stdin/stdout.
  *
  * Environment variables:
- *   MEILI_URL            — Meilisearch URL (default: http://localhost:7700)
+ *   MEILI_URL            — Meilisearch URL (default: http://localhost:7701)
  *   MEILI_MASTER_KEY     — optional Meilisearch API key
  *   MEILI_INDEX          — index name (default: memory-randal)
  *   OPENROUTER_API_KEY   — OpenRouter API key for semantic embeddings (optional)
@@ -74,7 +74,7 @@ import { z } from "zod";
 // Configuration from environment
 // ---------------------------------------------------------------------------
 
-const MEILI_URL = process.env.MEILI_URL || "http://localhost:7700";
+const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
 const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
 const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
 

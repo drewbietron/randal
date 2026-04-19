@@ -75,7 +75,7 @@ function detectAgentCLIs(): { name: string; found: boolean }[] {
 
 async function detectMeilisearch(): Promise<boolean> {
 	try {
-		const res = await fetch("http://localhost:7700/health", {
+		const res = await fetch("http://localhost:7701/health", {
 			signal: AbortSignal.timeout(2000),
 		});
 		return res.ok;
@@ -186,7 +186,7 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 		"--restart",
 		"unless-stopped",
 		"-p",
-		"7700:7700",
+		"7701:7700",
 		"-v",
 		`${dataDir}:/meili_data`,
 		"-e",
@@ -337,7 +337,7 @@ function buildConfigYaml(opts: {
 	lines.push(
 		"memory:",
 		"  store: meilisearch",
-		"  url: http://localhost:7700",
+		"  url: http://localhost:7701",
 		'  apiKey: "${MEILI_MASTER_KEY}"',
 		`  index: memory-${opts.name}`,
 		"  embedder:",
