@@ -286,6 +286,42 @@ jobs:
             VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.ELEVENLABS_API_KEY }}" '. + {ELEVENLABS_API_KEY: $value}')
           fi
 
+          if [[ -n "${{ secrets.ELEVENLABS_VOICE_ID }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.ELEVENLABS_VOICE_ID }}" '. + {ELEVENLABS_VOICE_ID: $value}')
+          fi
+
+          if [[ -n "${{ secrets.RANDAL_VOICE_PUBLIC_URL }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.RANDAL_VOICE_PUBLIC_URL }}" '. + {RANDAL_VOICE_PUBLIC_URL: $value}')
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_URL }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.LIVEKIT_URL }}" '. + {LIVEKIT_URL: $value}')
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_API_KEY }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.LIVEKIT_API_KEY }}" '. + {LIVEKIT_API_KEY: $value}')
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_API_SECRET }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.LIVEKIT_API_SECRET }}" '. + {LIVEKIT_API_SECRET: $value}')
+          fi
+
+          if [[ -n "${{ secrets.DEEPGRAM_API_KEY }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.DEEPGRAM_API_KEY }}" '. + {DEEPGRAM_API_KEY: $value}')
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_ACCOUNT_SID }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.TWILIO_ACCOUNT_SID }}" '. + {TWILIO_ACCOUNT_SID: $value}')
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_AUTH_TOKEN }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.TWILIO_AUTH_TOKEN }}" '. + {TWILIO_AUTH_TOKEN: $value}')
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_PHONE_NUMBER }}" ]]; then
+            VARIABLES=$(echo "$VARIABLES" | jq --arg value "${{ secrets.TWILIO_PHONE_NUMBER }}" '. + {TWILIO_PHONE_NUMBER: $value}')
+          fi
+
           PAYLOAD=$(jq -cn \
             --arg projectId "$RAILWAY_PROJECT_ID" \
             --arg serviceId "$RAILWAY_SERVICE_ID" \

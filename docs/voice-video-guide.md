@@ -1,9 +1,51 @@
 # Voice & Video Guide
 
-Randal can participate in voice calls, video meetings, and outbound phone calls.
-The `@randal/voice` package wires LiveKit rooms, Twilio SIP trunks, and
-STT/TTS providers into the runner loop so Randal can listen, think, and speak
-in real time.
+Randal's voice support is optional. A normal text-only setup does not need any of
+this. Enable voice only if you want browser microphone sessions, LiveKit rooms,
+or Twilio phone calls.
+
+When enabled, the `@randal/voice` package wires LiveKit rooms, Twilio SIP
+trunks, and STT/TTS providers into the runner loop so Randal can listen, think,
+and speak in real time.
+
+---
+
+## Before you start
+
+Choose the parts you actually need:
+
+| Use case | Required services/accounts |
+|----------|----------------------------|
+| Browser voice in the dashboard or your own UI | LiveKit + one STT provider + one TTS provider |
+| Outbound/inbound phone calls | LiveKit + one STT provider + one TTS provider + Twilio |
+| Video meeting participation | Same as voice, plus the meeting platform's SIP/dial-in support |
+
+Required accounts and services for the common path in this repo:
+
+1. LiveKit Cloud account or your own LiveKit server
+2. Deepgram account for STT
+3. ElevenLabs account for TTS
+4. Twilio account only if you want PSTN phone calls
+5. A public HTTPS/WSS URL that reaches the Randal gateway when voice traffic comes from outside your machine
+
+Required environment variables:
+
+```bash
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=APIxxxxxxxx
+LIVEKIT_API_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
+DEEPGRAM_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ELEVENLABS_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ELEVENLABS_VOICE_ID=pNInz6obpgDQGcFmaJgB   # optional, falls back to a default voice
+RANDAL_VOICE_PUBLIC_URL=https://voice.example.com
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx   # phone calls only
+TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx      # phone calls only
+TWILIO_PHONE_NUMBER=+15551234567                        # phone calls only
+```
+
+`RANDAL_VOICE_PUBLIC_URL` must be the public base URL for the gateway voice
+routes. It is not the LiveKit URL. Twilio and remote browsers need this URL to
+reach Randal's own `/voice/...` endpoints.
 
 ---
 
@@ -23,6 +65,14 @@ Caller ──► Twilio SIP ──► LiveKit Room ──► Randal Voice Engine
 3. Transcribed text is fed into the runner as a normal message.
 4. The runner's response text is sent to the TTS provider.
 5. Synthesised audio is published back into the LiveKit room.
+
+What runs where:
+
+- `randal serve` runs the Randal gateway and the voice HTTP/WebSocket routes.
+- `docker-compose.voice.yml` starts local media infrastructure only: Redis,
+  LiveKit server, and the LiveKit SIP bridge.
+- Twilio talks to the public gateway voice routes, not directly to your local
+  `randal serve` process unless you expose it with a tunnel or reverse proxy.
 
 ---
 
@@ -54,10 +104,67 @@ For production, see the [LiveKit deployment docs](https://docs.livekit.io/home/s
 The default dev server uses `APIxxxxxxxx` / `xxxxxxxxxxxxxxxxxxxxxxxx` as
 key/secret.
 
+For the full phone/media development stack in this repo, run:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+```
+
+This starts:
+
+- Redis
+- LiveKit server
+- LiveKit SIP bridge
+
+Use `docker/voice/livekit.yaml` and `docker/voice/sip.yaml` as the local reference configs.
+This compose file does **not** start the Randal gateway; run `randal serve` separately.
+
+## Local development flow
+
+For a beginner-friendly local setup, do the steps in this order:
+
+1. Copy `.env.example` to `.env` and fill in the voice env vars you need.
+2. Start the media side:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+```
+
+3. Start the gateway separately:
+
+```bash
+randal serve
+```
+
+4. Enable the `voice` channel and `voice.enabled: true` in your config.
+5. For browser voice on your own machine, you can usually test with local
+   LiveKit plus the local dashboard.
+6. For Twilio webhooks or any remote client, expose the gateway with a public
+   HTTPS tunnel and set `RANDAL_VOICE_PUBLIC_URL` to that public URL.
+
+Example tunnel flow:
+
+```bash
+# Example with ngrok
+ngrok http 7600
+
+# Then set
+RANDAL_VOICE_PUBLIC_URL=https://<your-ngrok-subdomain>.ngrok.app
+```
+
+If Twilio is part of the flow, the following must be publicly reachable:
+
+- `POST /voice/twiml/inbound`
+- `POST /voice/twiml/outbound/:sessionId`
+- `POST /voice/twilio/status/:sessionId`
+- `POST /voice/twilio/stream-status/:sessionId`
+- `GET /voice/media-stream/:sessionId`
+
 ---
 
 ## Twilio SIP trunk configuration
 
+Twilio is optional. You only need it for inbound or outbound phone calls.
 Twilio connects PSTN phone numbers to LiveKit rooms via SIP.
 
 1. **Buy a phone number** in the Twilio console.
@@ -72,7 +179,9 @@ TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_PHONE_NUMBER=+15551234567
 ```
 
-5. Reference them in your config:
+5. Set `RANDAL_VOICE_PUBLIC_URL` to the public HTTPS/WSS hostname that Twilio
+   can reach for Randal's voice routes.
+6. Reference the Twilio credentials in your config:
 
 ```yaml
 voice:
@@ -82,6 +191,11 @@ voice:
     authToken: ${TWILIO_AUTH_TOKEN}
     phoneNumber: ${TWILIO_PHONE_NUMBER}
 ```
+
+For a Railway deployment, keep the gateway/runner on Railway and point
+`RANDAL_VOICE_PUBLIC_URL` at a public host that forwards to that gateway.
+Do not assume `docker-compose.voice.yml` handles that part. See
+`docs/voice-deployment-split.md`.
 
 ---
 
@@ -186,9 +300,12 @@ gateway:
     - type: voice
 ```
 
-2. The dashboard (served by `@randal/dashboard`) automatically renders a
+2. Make sure the `voice` block is enabled and has working LiveKit/STT/TTS
+   credentials.
+3. Start `randal serve`.
+4. The dashboard (served by `@randal/dashboard`) automatically renders a
    microphone button when voice is enabled.
-3. Clicking the button requests a LiveKit participant token from the gateway,
+5. Clicking the button requests a LiveKit participant token from the gateway,
    joins the room, and streams audio.
 
 For custom UIs, use the
@@ -314,6 +431,9 @@ gateway:
       port: 7600
       auth: ${API_TOKEN}
 ```
+
+If you do not want voice, remove `- type: voice` and the entire `voice:` block.
+The rest of Randal works normally without any voice-specific credentials.
 
 ---
 

@@ -22,7 +22,7 @@ Randal wraps [OpenCode](https://github.com/opencode-ai/opencode) (or any agent C
 - 🔐 **Credentials** — Scoped env-var filtering with explicit allowlists and sandbox enforcement
 - 📡 **Dashboard** — Real-time web UI with SSE streaming, job tracking, cost monitoring, and analytics
 - 🤝 **Posse Mode** — Multiple agents with shared memory and coordinated teamwork
-- 🎙️ **Voice & Video** *(experimental)* — Session management framework for LiveKit + Twilio integration (STT/TTS/SIP scaffolding in place)
+- 🎙️ **Voice** *(optional, experimental)* — LiveKit + Twilio + STT/TTS integration for browser voice sessions and phone calls when you configure the required media services
 - 🌐 **Multi-Instance Mesh** — Distributed orchestration with specialization-based routing across machines
 - 📊 **Self-Learning Analytics** — Human annotation feedback loops, reliability scoring, and prompt tuning
 - 💬 **Discord Integration** — Threaded conversations, slash commands, interactive buttons, progress tracking, per-server config
@@ -56,6 +56,58 @@ randal serve
 ```
 
 Dashboard at [`http://localhost:7600`](http://localhost:7600). Your agent is live.
+
+### Optional: Enable Voice
+
+Voice is off until you configure it. To enable browser voice sessions or phone calls, you need:
+
+1. A LiveKit project or self-hosted LiveKit server
+2. An STT provider key such as `DEEPGRAM_API_KEY`
+3. A TTS provider key such as `ELEVENLABS_API_KEY`
+4. Twilio credentials only if you want PSTN phone calls
+5. A public HTTPS/WebSocket base URL for the gateway voice routes if Twilio or remote clients must reach them
+
+Minimum env vars:
+
+```bash
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+DEEPGRAM_API_KEY=...
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=...                # optional, falls back to a default voice
+RANDAL_VOICE_PUBLIC_URL=https://voice.example.com
+TWILIO_ACCOUNT_SID=...                 # only for phone calls
+TWILIO_AUTH_TOKEN=...                  # only for phone calls
+TWILIO_PHONE_NUMBER=+15551234567       # only for phone calls
+```
+
+Then add the optional voice channel and config block:
+
+```yaml
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: "${RANDAL_API_TOKEN}"
+    - type: voice
+
+voice:
+  enabled: true
+  livekit:
+    url: "${LIVEKIT_URL}"
+    apiKey: "${LIVEKIT_API_KEY}"
+    apiSecret: "${LIVEKIT_API_SECRET}"
+  stt:
+    provider: deepgram
+    apiKey: "${DEEPGRAM_API_KEY}"
+  tts:
+    provider: elevenlabs
+    apiKey: "${ELEVENLABS_API_KEY}"
+    voice: "${ELEVENLABS_VOICE_ID}"
+```
+
+Use `docs/voice-video-guide.md` for the full setup flow and `docs/voice-deployment-split.md` for the production hosting split.
 
 ---
 
@@ -307,6 +359,16 @@ One command. Meilisearch is bundled in the image. Mount your config:
 # Just create randal.config.yaml and .env, then:
 docker compose up --build
 ```
+
+For the optional phone/media voice stack, start the dedicated overlay:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+```
+
+This launches Redis, LiveKit, and the LiveKit SIP bridge for local voice testing.
+It does not start the Randal gateway itself. Run `randal serve` separately so the
+HTTP/WebSocket voice routes exist before you point Twilio or a public tunnel at them.
 
 </details>
 

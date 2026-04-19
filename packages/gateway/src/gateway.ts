@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { MeilisearchAnnotationStore } from "@randal/analytics";
 import type { MeshInstance, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
-import { createLogger } from "@randal/core";
+import { createLogger, getVoiceCapability } from "@randal/core";
 import { EmbeddingService } from "@randal/memory";
 import {
 	MemoryManager,
@@ -21,6 +21,7 @@ import {
 } from "@randal/mesh";
 import { Runner } from "@randal/runner";
 import { Scheduler } from "@randal/scheduler";
+import { websocket as bunWebsocketHandler } from "hono/bun";
 import { MeiliSearch } from "meilisearch";
 import { AnalyticsEngineFacade } from "./analytics-facade.js";
 import type { ChannelAdapter, ChannelDeps } from "./channels/channel.js";
@@ -29,6 +30,118 @@ import { activeDelegationTrackers, createHttpApp } from "./channels/http.js";
 import { DelegatedJobTracker } from "./delegation.js";
 import { EventBus } from "./events.js";
 import { listJobs, saveJob, updateJob } from "./jobs.js";
+
+interface VoiceService {
+	initiateCall(options: {
+		to: string;
+		reason?: string;
+		script?: string;
+		maxDuration?: number;
+	}): Promise<{
+		id: string;
+		callSid?: string;
+		roomName: string;
+		status: string;
+		callDirection?: "inbound" | "outbound";
+		phoneNumber?: string;
+	}>;
+	bootstrapInboundCall(options: { callSid: string; from?: string }): Promise<{
+		id: string;
+		callSid?: string;
+		roomName: string;
+		status: string;
+		callDirection?: "inbound" | "outbound";
+		phoneNumber?: string;
+	}>;
+	buildOutboundTwiml(sessionId: string): string;
+	buildInboundTwiml(sessionId: string): string;
+	getSession(sessionId: string):
+		| {
+				phoneNumber?: string;
+		  }
+		| undefined;
+	validateTwilioRequest(signature: string, url: string, params: Record<string, string>): boolean;
+	startTwilioMediaStream(options: {
+		sessionId: string;
+		streamSid: string;
+		callSid?: string;
+		sendMessage: (message: Record<string, unknown>) => void;
+		onFinalTranscript: (text: string) => Promise<void>;
+	}): void;
+	handleTwilioMediaChunk(sessionId: string, payloadBase64: string): void;
+	stopTwilioMediaStream(sessionId: string): void;
+	speakToSession(sessionId: string, text: string): Promise<void>;
+	handleTwilioStatusCallback(
+		sessionId: string,
+		payload: { CallSid?: string; CallStatus?: string },
+	): Promise<unknown>;
+	handleTwilioStreamStatus(sessionId: string, payload: { StreamEvent?: string }): Promise<unknown>;
+	getActiveSessions(): Array<{
+		id: string;
+		startedAt: string;
+		duration: number;
+		status: string;
+		callSid?: string;
+		transcript: string[];
+	}>;
+	stop(): Promise<void>;
+}
+
+interface VoiceStatusSession {
+	id: string;
+	callId: string;
+	status: string;
+	duration: number;
+	transcriptLength: number;
+	startedAt: string;
+}
+
+interface VoiceRuntimeAdapter extends ChannelAdapter {
+	getActiveSessions(): Array<{
+		sessionId: string;
+		startedAt: number;
+	}>;
+}
+
+function isVoiceRuntimeAdapter(adapter: ChannelAdapter): adapter is VoiceRuntimeAdapter {
+	return adapter.name === "voice" && "getActiveSessions" in adapter;
+}
+
+function createVoiceManager(channelAdapters: ChannelAdapter[], voiceService?: VoiceService) {
+	return {
+		isEnabled(): boolean {
+			return channelAdapters.some(isVoiceRuntimeAdapter) || Boolean(voiceService);
+		},
+		getSessions(): VoiceStatusSession[] {
+			const adapterSessions =
+				channelAdapters
+					.find(isVoiceRuntimeAdapter)
+					?.getActiveSessions()
+					.map((session) => ({
+						id: session.sessionId,
+						callId: session.sessionId,
+						status: "active",
+						duration: Math.max(0, Math.round((Date.now() - session.startedAt) / 1000)),
+						transcriptLength: 0,
+						startedAt: new Date(session.startedAt).toISOString(),
+					})) ?? [];
+
+			const voiceServiceSessions =
+				voiceService?.getActiveSessions().map((session) => ({
+					id: session.id,
+					callId: session.callSid ?? session.id,
+					status: session.status,
+					duration: session.duration,
+					transcriptLength: session.transcript.length,
+					startedAt: session.startedAt,
+				})) ?? [];
+
+			return [...adapterSessions, ...voiceServiceSessions];
+		},
+		initiateCall: voiceService?.initiateCall.bind(voiceService),
+		buildOutboundTwiml: voiceService?.buildOutboundTwiml.bind(voiceService),
+	};
+}
 
 export interface GatewayOptions {
 	config: RandalConfig;
@@ -422,6 +535,21 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 
 	// Mutable adapter registry — populated after channel start, accessed at request time
 	const channelAdapters: ChannelAdapter[] = [];
+	let voiceService: VoiceService | undefined;
+	const voiceCapability = getVoiceCapability(config);
+	if (voiceCapability.available) {
+		try {
+			const { VoiceEngine } = await import("@randal/voice");
+			voiceService = new VoiceEngine({ config });
+			await voiceService.start();
+			logger.info("Voice runtime initialized");
+		} catch (err) {
+			logger.error("Voice runtime failed to initialize", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+	const voiceManager = createVoiceManager(channelAdapters, voiceService);
 
 	// Create HTTP app — pass scheduler, skillManager, messageManager, and posseClient
 	const app = createHttpApp({
@@ -436,6 +564,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 		analyticsEngine,
 		channelAdapters,
 		meshCoordinator,
+		voiceManager,
+		voiceService,
 	});
 
 	// Mount hooks router if enabled
@@ -460,6 +590,17 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	};
 	for (const channelConfig of config.gateway.channels) {
 		if (channelConfig.type === "http") continue; // Handled by createHttpApp above
+
+		if (channelConfig.type === "voice") {
+			const capability = getVoiceCapability(config);
+			if (!capability.available) {
+				logger.info("Voice channel skipped", {
+					reason: capability.reason,
+					missing: capability.missing,
+				});
+				continue;
+			}
+		}
 
 		try {
 			const { adapter, webhookRouter } = await createChannel(channelConfig, channelDeps);
@@ -497,6 +638,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 	const server = Bun.serve({
 		port,
 		fetch: app.fetch,
+		websocket: bunWebsocketHandler,
 	});
 
 	// Ensure config.mesh.endpoint is set so the posse registry doc includes
@@ -714,6 +856,11 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
 					/* already stopping */
 				}
 			}
+			void voiceService?.stop().catch((err) => {
+				logger.warn("Voice runtime stop failed", {
+					error: err instanceof Error ? err.message : String(err),
+				});
+			});
 			skillWatcher?.stop();
 			scheduler.stop();
 			server.stop();
