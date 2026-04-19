@@ -14,7 +14,13 @@ import { MeiliSearch } from "meilisearch";
 import { ToolError, log } from "../../lib/mcp-transport.js";
 import type { ToolDefinition, ToolHandler } from "../../lib/mcp-transport.js";
 import { buildPosseConfigStub, embeddingService, ensurePosse } from "../init.js";
-import { MEILI_MASTER_KEY, MEILI_URL, RANDAL_PEER_AUTH_TOKEN, RANDAL_SELF_NAME } from "../types.js";
+import {
+	MEILI_MASTER_KEY,
+	MEILI_URL,
+	RANDAL_PEER_AUTH_TOKEN,
+	RANDAL_SELF_NAME,
+	sessionHasGrant,
+} from "../types.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,6 +122,10 @@ function createPosseClient(): RegistryClient {
 // ---------------------------------------------------------------------------
 
 async function handlePosseMembers(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { members: [], message: "Voice session is not allowed to use posse tools" };
+	}
+
 	if (!ensurePosse()) {
 		return { members: [], message: POSSE_NOT_CONFIGURED };
 	}
@@ -148,6 +158,10 @@ async function handlePosseMembers(_params: Record<string, unknown>): Promise<unk
 }
 
 async function handleDelegateTask(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { delegated: false, message: "Voice session is not allowed to use posse tools" };
+	}
+
 	const task = params.task as string;
 	if (!task) {
 		throw new ToolError("Missing required parameter: task");
@@ -379,6 +393,10 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handlePosseMemorySearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { results: [], message: "Voice session is not allowed to use posse tools" };
+	}
+
 	const query = params.query as string;
 	if (!query) {
 		throw new ToolError("Missing required parameter: query");

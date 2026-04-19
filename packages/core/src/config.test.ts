@@ -181,6 +181,35 @@ describe("configSchema", () => {
 		expect(result.gateway.channels[0].type).toBe("imessage");
 	});
 
+	test("validates voice access defaults and overrides", () => {
+		const config = {
+			...minimalConfig,
+			gateway: {
+				channels: [
+					{
+						type: "voice" as const,
+						allowFrom: ["+15551111111"],
+						access: {
+							trustedCallers: ["+15552222222"],
+							unknownInbound: "external" as const,
+							defaultExternalGrants: ["memory", "scheduler"],
+						},
+					},
+				],
+			},
+		};
+		const result = configSchema.parse(config);
+		expect(result.gateway.channels[0].type).toBe("voice");
+		if (result.gateway.channels[0].type !== "voice") {
+			throw new Error("expected voice channel");
+		}
+		expect(result.gateway.channels[0].access.unknownInbound).toBe("external");
+		expect(result.gateway.channels[0].access.defaultExternalGrants).toEqual([
+			"memory",
+			"scheduler",
+		]);
+	});
+
 	test("validates embedder variants", () => {
 		const configs = [
 			{ type: "builtin" as const },

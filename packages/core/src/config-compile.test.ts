@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { compileOpenCodeConfig } from "./config-compile.js";
+import {
+	applyVoiceSessionAccessToOpenCodeConfig,
+	compileOpenCodeConfig,
+} from "./config-compile.js";
 import { configSchema } from "./config.js";
 import type { CompileOptions, RandalConfig } from "./index.js";
+import { createVoiceSessionAccess } from "./voice-access.js";
 
 // ---- Helpers ----
 
@@ -112,6 +116,60 @@ describe("edge cases", () => {
 		});
 		const result = compileOpenCodeConfig(config, defaultOptions());
 		expect(result.config.mcp.scheduler).toBeDefined();
+	});
+
+	test("external voice access strips ungranted optional MCP capabilities", () => {
+		const compiled = compileOpenCodeConfig(
+			minimalConfig({
+				capabilities: ["video", "image-gen", "search"],
+				heartbeat: { enabled: true },
+				gateway: { channels: [{ type: "http", port: 7600, auth: "token" }] },
+			}),
+			defaultOptions(),
+		).config;
+
+		const narrowed = applyVoiceSessionAccessToOpenCodeConfig(
+			compiled,
+			createVoiceSessionAccess({
+				accessClass: "external",
+				grants: ["memory"],
+				source: { transport: "phone", direction: "inbound" },
+			}),
+		);
+
+		expect(narrowed.mcp.memory).toBeDefined();
+		expect(narrowed.mcp.scheduler).toBeUndefined();
+		expect(narrowed.mcp.tavily).toBeUndefined();
+		expect(narrowed.mcp.video).toBeUndefined();
+		expect(narrowed.mcp["image-gen"]).toBeUndefined();
+		expect(narrowed.tools["video_*"]).toBeUndefined();
+		expect(narrowed.tools["image-gen_*"]).toBeUndefined();
+	});
+
+	test("admin voice access preserves optional MCP capabilities", () => {
+		const compiled = compileOpenCodeConfig(
+			minimalConfig({
+				capabilities: ["video", "image-gen", "search"],
+				heartbeat: { enabled: true },
+				gateway: { channels: [{ type: "http", port: 7600, auth: "token" }] },
+			}),
+			defaultOptions(),
+		).config;
+
+		const narrowed = applyVoiceSessionAccessToOpenCodeConfig(
+			compiled,
+			createVoiceSessionAccess({
+				accessClass: "admin",
+				source: { transport: "phone", direction: "inbound", trustedCaller: true },
+			}),
+		);
+
+		expect(narrowed.mcp.scheduler).toBeDefined();
+		expect(narrowed.mcp.tavily).toBeDefined();
+		expect(narrowed.mcp.video).toBeDefined();
+		expect(narrowed.mcp["image-gen"]).toBeDefined();
+		expect(narrowed.tools["video_*"]).toBe(true);
+		expect(narrowed.tools["image-gen_*"]).toBe(true);
 	});
 
 	test("capability 'video' adds video MCP and video_* tool permission", () => {

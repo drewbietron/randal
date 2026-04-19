@@ -107,6 +107,13 @@ const signalChannelSchema = z.object({
 const voiceChannelSchema = z.object({
 	type: z.literal("voice"),
 	allowFrom: z.array(z.string()).optional(),
+	access: z
+		.object({
+			trustedCallers: z.array(z.string()).default([]),
+			unknownInbound: z.enum(["deny", "external", "admin-only"]).default("deny"),
+			defaultExternalGrants: z.array(z.string()).default([]),
+		})
+		.default({}),
 });
 
 const channelSchema = z.discriminatedUnion("type", [

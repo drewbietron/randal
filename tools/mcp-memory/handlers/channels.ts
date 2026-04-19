@@ -19,6 +19,7 @@ import {
 	RANDAL_JOB_ID,
 	RANDAL_REPLY_TO,
 	RANDAL_TRIGGER,
+	sessionHasGrant,
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -237,6 +238,10 @@ async function handleJobInfo(_params: Record<string, unknown>): Promise<unknown>
 }
 
 async function handleChannelList(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { channels: [], message: "Voice session is not allowed to use channel tools" };
+	}
+
 	if (!RANDAL_GATEWAY_URL) {
 		return { channels: [], message: "No gateway connection (interactive mode)" };
 	}
@@ -251,6 +256,10 @@ async function handleChannelList(_params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { sent: false, message: "Voice session is not allowed to use channel tools" };
+	}
+
 	const channel = params.channel as string;
 	const target = params.target as string;
 	const message = params.message as string;
@@ -278,6 +287,10 @@ async function handleChannelSend(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("events")) {
+		return { emitted: false, message: "Voice session is not allowed to emit events" };
+	}
+
 	const type = params.type as string;
 	const message = params.message as string;
 	const severity = params.severity as string | undefined;

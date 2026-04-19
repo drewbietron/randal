@@ -1,6 +1,7 @@
 import type { RandalConfig } from "./config.js";
 import baseTemplate from "./opencode-base.json";
 import { interpolateTemplate } from "./resolve-prompt.js";
+import type { VoiceSessionAccess } from "./voice-access.js";
 
 // ---- Types ----
 
@@ -337,4 +338,33 @@ function buildToolsSection(config: RandalConfig): Record<string, boolean> {
 	}
 
 	return tools;
+}
+
+export function applyVoiceSessionAccessToOpenCodeConfig(
+	config: OpenCodeConfig,
+	access: VoiceSessionAccess | null,
+): OpenCodeConfig {
+	if (!access || access.accessClass === "admin") {
+		return structuredClone(config);
+	}
+
+	const grants = new Set(access.capabilities.grants);
+	const next = structuredClone(config);
+
+	if (!grants.has("scheduler")) {
+		delete next.mcp.scheduler;
+	}
+	if (!grants.has("search")) {
+		delete next.mcp.tavily;
+	}
+	if (!grants.has("video")) {
+		delete next.mcp.video;
+		delete next.tools["video_*"];
+	}
+	if (!grants.has("image-gen")) {
+		delete next.mcp["image-gen"];
+		delete next.tools["image-gen_*"];
+	}
+
+	return next;
 }

@@ -25,6 +25,18 @@ import type { ToolDefinition, ToolHandler } from "./lib/mcp-transport.js";
 
 const GATEWAY_URL = process.env.RANDAL_GATEWAY_URL || "http://localhost:7600";
 const GATEWAY_TOKEN = process.env.RANDAL_GATEWAY_AUTH || process.env.RANDAL_GATEWAY_TOKEN || "";
+const SESSION_ACCESS_CLASS = process.env.RANDAL_SESSION_ACCESS_CLASS || "";
+const SESSION_ALLOWED_GRANTS = new Set(
+	(process.env.RANDAL_SESSION_ALLOWED_GRANTS || "")
+		.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean),
+);
+
+function sessionHasGrant(grant: string): boolean {
+	if (SESSION_ACCESS_CLASS !== "external") return true;
+	return SESSION_ALLOWED_GRANTS.has(grant);
+}
 
 // ---------------------------------------------------------------------------
 // MCP tool schema definitions
@@ -148,11 +160,19 @@ async function gatewayFetch(
 // ---------------------------------------------------------------------------
 
 async function handleScheduleInfo(): Promise<unknown> {
+	if (!sessionHasGrant("scheduler")) {
+		return { message: "Voice session is not allowed to use scheduler tools" };
+	}
+
 	const { data } = await gatewayFetch("/scheduler");
 	return data;
 }
 
 async function handleScheduleCron(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("scheduler")) {
+		return { ok: false, message: "Voice session is not allowed to use scheduler tools" };
+	}
+
 	const action = params.action as string;
 
 	if (!action || !["list", "add", "remove"].includes(action)) {
@@ -241,6 +261,10 @@ async function handleScheduleCron(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleWakeHeartbeat(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("scheduler")) {
+		return { ok: false, message: "Voice session is not allowed to use scheduler tools" };
+	}
+
 	const text = params.text as string | undefined;
 	if (!text) {
 		throw new ToolError("text is required");

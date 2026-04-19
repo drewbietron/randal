@@ -39,6 +39,7 @@ export async function handleCommand(
 	text: string,
 	deps: ChannelDeps,
 	origin: JobOrigin,
+	options: { metadata?: Record<string, string> } = {},
 ): Promise<string> {
 	const parsed = parseCommand(text);
 
@@ -52,6 +53,7 @@ export async function handleCommand(
 			const { jobId, done } = deps.runner.submit({
 				prompt: args,
 				origin,
+				metadata: options.metadata,
 			});
 			// Let job finish in background
 			done.catch(() => {});

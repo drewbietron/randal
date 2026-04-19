@@ -100,6 +100,13 @@ const RANDAL_REPLY_TO = process.env.RANDAL_REPLY_TO || "";
 const RANDAL_TRIGGER = process.env.RANDAL_TRIGGER || "";
 const RANDAL_BRAIN_SESSION = process.env.RANDAL_BRAIN_SESSION || "";
 const RANDAL_GATEWAY_AUTH = process.env.RANDAL_GATEWAY_AUTH || "";
+const RANDAL_SESSION_ACCESS_CLASS = process.env.RANDAL_SESSION_ACCESS_CLASS || "";
+const RANDAL_SESSION_ALLOWED_GRANTS = new Set(
+	(process.env.RANDAL_SESSION_ALLOWED_GRANTS || "")
+		.split(",")
+		.map((value) => value.trim())
+		.filter(Boolean),
+);
 
 // Posse configuration — enables cross-instance delegation tools
 const RANDAL_POSSE_NAME = process.env.RANDAL_POSSE_NAME || "";
@@ -107,6 +114,11 @@ const RANDAL_SELF_NAME = process.env.RANDAL_SELF_NAME || "";
 const RANDAL_GATEWAY_URL = process.env.RANDAL_GATEWAY_URL || "";
 const RANDAL_CROSS_AGENT_READ_FROM = process.env.RANDAL_CROSS_AGENT_READ_FROM || "";
 const RANDAL_PEER_AUTH_TOKEN = process.env.RANDAL_PEER_AUTH_TOKEN || "";
+
+function sessionHasGrant(grant: string): boolean {
+	if (RANDAL_SESSION_ACCESS_CLASS !== "external") return true;
+	return RANDAL_SESSION_ALLOWED_GRANTS.has(grant);
+}
 
 // ---------------------------------------------------------------------------
 // Project scope auto-detection
@@ -1173,6 +1185,10 @@ function resolveStoreScope(category: string, explicitScope: string | undefined):
 }
 
 async function handleMemorySearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { results: [], message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const {
 		query,
 		limit = 10,
@@ -1206,6 +1222,10 @@ async function handleMemorySearch(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleMemoryStore(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { stored: false, message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const {
 		content,
 		category,
@@ -1273,6 +1293,10 @@ async function handleMemoryStore(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleMemoryRecent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("memory")) {
+		return { results: [], message: "Voice session is not allowed to use memory tools" };
+	}
+
 	const { limit = 10 } = validateParams(params, MemoryRecentParamsSchema);
 
 	if (!(await ensureStore())) {
@@ -1644,6 +1668,10 @@ const POSSE_NOT_CONFIGURED =
 	"Posse not configured. Set RANDAL_POSSE_NAME and RANDAL_SELF_NAME environment variables to enable posse tools.";
 
 async function handlePosseMembers(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { members: [], message: "Voice session is not allowed to use posse tools" };
+	}
+
 	if (!ensurePosse()) {
 		return { members: [], message: POSSE_NOT_CONFIGURED };
 	}
@@ -1681,6 +1709,10 @@ const DELEGATE_POLL_INTERVAL_MS = 3000;
 const DELEGATE_HTTP_TIMEOUT_MS = 30_000;
 
 async function handleDelegateTask(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { delegated: false, message: "Voice session is not allowed to use posse tools" };
+	}
+
 	const validated = validateParams(params, DelegateTaskParamsSchema);
 	const { task, target, domain, model } = validated;
 	const isAsync = validated.async === true;
@@ -1884,6 +1916,10 @@ async function handleDelegateTask(params: Record<string, unknown>): Promise<unkn
 }
 
 async function handlePosseMemorySearch(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("posse")) {
+		return { results: [], message: "Voice session is not allowed to use posse tools" };
+	}
+
 	const { query, limit = 5 } = validateParams(params, PosseMemorySearchParamsSchema);
 
 	if (!ensurePosse()) {
@@ -1962,6 +1998,10 @@ async function gatewayFetch(path: string, options?: RequestInit): Promise<unknow
 }
 
 async function handleChannelList(_params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { channels: [], message: "Voice session is not allowed to use channel tools" };
+	}
+
 	if (!RANDAL_GATEWAY_URL) {
 		return { channels: [], message: "No gateway connection (interactive mode)" };
 	}
@@ -1976,6 +2016,10 @@ async function handleChannelList(_params: Record<string, unknown>): Promise<unkn
 }
 
 async function handleChannelSend(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("channel")) {
+		return { sent: false, message: "Voice session is not allowed to use channel tools" };
+	}
+
 	const { channel, target, message } = validateParams(params, ChannelSendParamsSchema);
 
 	if (!RANDAL_GATEWAY_URL) {
@@ -1997,6 +2041,10 @@ async function handleChannelSend(params: Record<string, unknown>): Promise<unkno
 }
 
 async function handleEmitEvent(params: Record<string, unknown>): Promise<unknown> {
+	if (!sessionHasGrant("events")) {
+		return { emitted: false, message: "Voice session is not allowed to emit events" };
+	}
+
 	const { type, message, severity, channel } = validateParams(params, EmitEventParamsSchema);
 
 	if (!RANDAL_JOB_ID) {
