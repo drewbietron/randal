@@ -175,23 +175,30 @@ voice:
 
 ## Browser voice widget integration
 
-The current gateway codebase does not expose a browser voice token-issuance
-route yet. In particular, `POST /api/voice/token` is not implemented in this
-repo today.
+The gateway now exposes an authenticated browser token route:
 
-Current voice-related HTTP surface:
-
-- `GET /voice/status`: requires the normal gateway HTTP bearer token and returns
-  whether voice is enabled plus any active sessions.
+- `POST /api/voice/token`: authenticated-only. Issues a LiveKit room token and
+  returns a serialized `VoiceSessionAccess` envelope for the browser session.
+  Browser-authenticated voice resolves to `admin` for v1.
+- `GET /voice/status`: authenticated-only. Returns whether voice is enabled,
+  whether browser/media voice is ready, whether PSTN voice is ready, and active
+  sessions.
 - No public Twilio voice webhook endpoint is currently mounted by the gateway.
 - No `POST /api/voice/call` route is currently implemented by the gateway.
 
-If HTTP auth is not configured on the gateway, `GET /voice/status` fails closed
-instead of becoming publicly reachable.
+If HTTP auth is not configured on the gateway, these protected routes fail
+closed instead of becoming publicly reachable.
 
-The dashboard may still render voice UI based on local capability checks, but a
-browser voice session cannot rely on a gateway-issued participant token until a
-real token endpoint is added.
+Example:
+
+```bash
+curl -X POST http://localhost:7600/api/voice/token \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"participantName":"browser-user","roomName":"browser-room"}'
+```
+
+Anonymous browser clients do not get an implicit admin voice session.
 
 ---
 
@@ -237,6 +244,9 @@ The gateway docs previously described `POST /api/voice/call`, but that route is
 not implemented in this repo today. Treat outbound PSTN calling as not exposed
 over the current HTTP gateway until a concrete route and Twilio request
 validation path land in source.
+
+PSTN-specific operations still require Twilio credentials even when browser
+voice is otherwise configured and working.
 
 ---
 
@@ -293,10 +303,31 @@ voice:
 gateway:
   channels:
     - type: voice
+      access:
+        trustedCallers:
+          - ${ADMIN_CALLER_E164}
+        unknownInbound: external
+        defaultExternalGrants: [memory]
     - type: http
       port: 7600
       auth: ${API_TOKEN}
 ```
+
+## Shared vs Split Deployments
+
+Shared admin + external voice on one instance is supported, but it still has a
+larger blast radius because one publicly reachable gateway fronts the whole
+instance.
+
+Recommended production posture:
+
+1. Run a private or tightly restricted admin/browser voice instance.
+2. Run a separate public-facing external/PSTN voice instance with a narrower
+   grant envelope.
+3. Share only the minimum data paths those instances actually need.
+
+Use a single shared instance only when the operational simplicity is worth the
+residual risk.
 
 ---
 

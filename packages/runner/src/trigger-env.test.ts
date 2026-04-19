@@ -278,4 +278,25 @@ describe("Trigger env vars", () => {
 		expect(job.error).toContain("Voice session access metadata is missing or invalid");
 		expect(existsSync(outputPath)).toBe(false);
 	});
+
+	test("voice-originated jobs fail closed when voice access metadata is semantically invalid", async () => {
+		const workdir = makeTmpDir();
+		const config = makeConfig(workdir);
+		const outputPath = join(workdir, "env-output.json");
+		const scriptPath = makeEnvDumpScript(workdir, outputPath);
+
+		const runner = new Runner({ config });
+		const job = await runner.execute({
+			prompt: scriptPath,
+			origin: { channel: "voice", replyTo: "session-5", from: "+15555555555" },
+			metadata: {
+				RANDAL_VOICE_ACCESS:
+					'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"invalid","direction":"inbound"}}',
+			},
+		});
+
+		expect(job.status).toBe("failed");
+		expect(job.error).toContain("Voice session access metadata is missing or invalid");
+		expect(existsSync(outputPath)).toBe(false);
+	});
 });

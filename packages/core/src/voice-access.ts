@@ -53,8 +53,16 @@ export function parseVoiceSessionAccess(raw: string | undefined): VoiceSessionAc
 			(parsed?.accessClass !== "admin" && parsed?.accessClass !== "external") ||
 			parsed?.capabilities?.defaultPolicy !== "deny" ||
 			!Array.isArray(parsed?.capabilities?.grants) ||
-			typeof parsed?.source?.transport !== "string" ||
-			typeof parsed?.source?.direction !== "string"
+			!parsed.capabilities.grants.every(
+				(grant) => typeof grant === "string" && grant.trim().length > 0,
+			) ||
+			(parsed?.source?.transport !== "phone" && parsed?.source?.transport !== "browser") ||
+			(parsed?.source?.direction !== "inbound" && parsed?.source?.direction !== "outbound") ||
+			(parsed.source.sessionId !== undefined && typeof parsed.source.sessionId !== "string") ||
+			(parsed.source.phoneNumber !== undefined && typeof parsed.source.phoneNumber !== "string") ||
+			(parsed.source.trustedCaller !== undefined &&
+				typeof parsed.source.trustedCaller !== "boolean") ||
+			(parsed.source.transport === "browser" && parsed.source.phoneNumber !== undefined)
 		) {
 			return null;
 		}

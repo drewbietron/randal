@@ -47,15 +47,33 @@ export class VoiceEngine {
 		return this.config.voice.enabled;
 	}
 
+	isBrowserVoiceReady(): boolean {
+		return Boolean(
+			this.config.voice.livekit.url &&
+				this.config.voice.livekit.apiKey &&
+				this.config.voice.livekit.apiSecret &&
+				this.config.voice.stt.apiKey &&
+				(this.config.voice.tts.provider === "edge" || this.config.voice.tts.apiKey),
+		);
+	}
+
+	isPstnVoiceReady(): boolean {
+		return Boolean(
+			this.isBrowserVoiceReady() &&
+				this.config.voice.twilio.accountSid &&
+				this.config.voice.twilio.authToken &&
+				this.config.voice.twilio.phoneNumber,
+		);
+	}
+
 	async start(): Promise<void> {
 		if (!this.enabled) {
 			logger.debug("Voice engine disabled, skipping start");
 			return;
 		}
 
-		// Validate required config
-		if (!this.config.voice.livekit.url || !this.config.voice.livekit.apiKey) {
-			logger.warn("Voice enabled but LiveKit config incomplete, skipping start");
+		if (!this.isBrowserVoiceReady()) {
+			logger.warn("Voice enabled but browser/media config incomplete, skipping start");
 			return;
 		}
 
@@ -169,6 +187,12 @@ export class VoiceEngine {
 		passcode?: string;
 		displayName?: string;
 	}): Promise<VoiceSession> {
+		if (!this.isBrowserVoiceReady()) {
+			throw new Error(
+				"Browser/media voice requires LiveKit, STT, and TTS configuration before joining calls",
+			);
+		}
+
 		logger.info("Joining video call", {
 			platform: options.platform,
 			meetingId: options.meetingId,
@@ -190,6 +214,12 @@ export class VoiceEngine {
 		script?: string;
 		maxDuration?: number;
 	}): Promise<VoiceSession> {
+		if (!this.isPstnVoiceReady()) {
+			throw new Error(
+				"PSTN voice requires Twilio accountSid, authToken, and phoneNumber plus browser/media voice configuration",
+			);
+		}
+
 		logger.info("Initiating outbound call", {
 			to: options.to,
 			reason: options.reason,
@@ -207,6 +237,12 @@ export class VoiceEngine {
 	 * R2.6: Browser WebRTC voice.
 	 */
 	async generateRoomToken(roomName: string, participantName: string): Promise<string> {
+		if (!this.isBrowserVoiceReady()) {
+			throw new Error(
+				"Browser/media voice requires LiveKit, STT, and TTS configuration before generating room tokens",
+			);
+		}
+
 		// In production, this would use livekit-server-sdk-js to generate a JWT token
 		// For now, return a placeholder that real implementations would replace
 		logger.debug("Generating room token", { roomName, participantName });

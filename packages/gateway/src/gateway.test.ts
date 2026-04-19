@@ -184,6 +184,8 @@ describe("HTTP API", () => {
 		const { app } = makeTestApp({
 			voiceManager: {
 				isEnabled: () => true,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
 				getSessions: () => [
 					{
 						id: "session-1",
@@ -194,6 +196,13 @@ describe("HTTP API", () => {
 						startedAt: "2026-04-19T16:00:00.000Z",
 					},
 				],
+				issueBrowserToken: async () => ({
+					token: "browser-token",
+					roomName: "browser-room",
+					participantName: "browser-user",
+					access:
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-room"}}',
+				}),
 			},
 		});
 		const res = await app.request("/voice/status", {
@@ -202,7 +211,71 @@ describe("HTTP API", () => {
 		expect(res.status).toBe(200);
 		const data = await res.json();
 		expect(data.enabled).toBe(true);
+		expect(data.browserReady).toBe(true);
+		expect(data.pstnReady).toBe(false);
 		expect(data.sessions).toHaveLength(1);
+	});
+
+	test("POST /api/voice/token requires authentication", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test("POST /api/voice/token returns authenticated browser admin token", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => true,
+				isBrowserVoiceReady: () => true,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async ({ participantName, roomName }) => ({
+					token: "browser-token",
+					roomName: roomName ?? "browser-room",
+					participantName,
+					access:
+						'{"version":1,"accessClass":"admin","capabilities":{"defaultPolicy":"deny","grants":[]},"source":{"transport":"browser","direction":"inbound","sessionId":"browser-room"}}',
+				}),
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user", roomName: "browser-room" }),
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.token).toBe("browser-token");
+		expect(data.roomName).toBe("browser-room");
+		expect(data.participantName).toBe("browser-user");
+		expect(data.access).toContain('"accessClass":"admin"');
+	});
+
+	test("POST /api/voice/token rejects when browser voice is not configured", async () => {
+		const { app } = makeTestApp({
+			voiceManager: {
+				isEnabled: () => true,
+				isBrowserVoiceReady: () => false,
+				isPstnVoiceReady: () => false,
+				getSessions: () => [],
+				issueBrowserToken: async () => {
+					throw new Error("should not be called");
+				},
+			},
+		});
+		const res = await app.request("/api/voice/token", {
+			method: "POST",
+			headers: { ...authHeaders, "Content-Type": "application/json" },
+			body: JSON.stringify({ participantName: "browser-user" }),
+		});
+		expect(res.status).toBe(400);
+		expect(await res.json()).toEqual({
+			error: "Browser/media voice requires LiveKit, STT, and TTS configuration",
+		});
 	});
 
 	test("missing HTTP auth leaves only the intentional public surface reachable", async () => {

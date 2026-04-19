@@ -12,6 +12,7 @@ export interface VoiceAccessRequest {
 	sessionId: string;
 	phoneNumber?: string;
 	direction: "inbound" | "outbound";
+	trustedSource?: boolean;
 	requestedAccess?: {
 		accessClass?: VoiceAccessClass;
 		grants?: string[];
@@ -41,7 +42,7 @@ export function resolveVoiceSessionAccess(
 
 	if (request.direction === "outbound") {
 		const requestedClass = request.requestedAccess?.accessClass ?? "external";
-		if (requestedClass === "admin") {
+		if (requestedClass === "admin" && request.trustedSource) {
 			return {
 				allowed: true,
 				access: createVoiceSessionAccess({

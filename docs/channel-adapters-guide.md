@@ -53,6 +53,8 @@ gateway:
 | `GET` | `/events` | SSE event stream |
 | `GET` | `/health` | Health check |
 | `GET` | `/` | Web dashboard |
+| `GET` | `/voice/status` | Authenticated voice readiness + active session status |
+| `POST` | `/api/voice/token` | Authenticated browser voice token issuance |
 
 Authenticated API routes require `Authorization: Bearer <token>` or `?token=<token>`.
 Only `/`, `/health`, and `/assets/*` are intentionally public. Internal routes
@@ -94,6 +96,21 @@ gateway:
 
 ---
 
+## 🎙️ Voice Channel
+
+Voice is wired into the gateway startup loop and supports both phone-oriented
+session bridging and authenticated browser token issuance.
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `type` | `"voice"` | — | Channel type discriminator |
+| `allowFrom` | string[] | `[]` | Legacy trusted admin caller list |
+| `access.trustedCallers` | string[] | `[]` | Additional trusted admin caller E.164 numbers |
+| `access.unknownInbound` | `"deny" \| "external"` | `"deny"` | Unknown inbound caller handling |
+| `access.defaultExternalGrants` | string[] | `[]` | Default explicit grants for external sessions |
+
+---
+
 ## 🧩 Community Channels
 
 The gateway codebase includes adapter implementations for additional platforms.
@@ -108,7 +125,6 @@ wired into the gateway startup loop and may need additional work for production 
 | Email | `packages/gateway/src/channels/email.ts` | IMAP + SMTP |
 | WhatsApp | `packages/gateway/src/channels/whatsapp.ts` | Via Twilio |
 | Signal | `packages/gateway/src/channels/signal.ts` | Via signal-cli |
-| Voice | `packages/gateway/src/channels/voice.ts` | STT/TTS session bridge |
 
 To enable a community channel, you'll need to wire it into the gateway's channel
 startup loop in `packages/gateway/src/gateway.ts`. See [Creating a Custom Channel](#-creating-a-custom-channel)

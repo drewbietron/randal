@@ -123,6 +123,8 @@ export interface HttpChannelOptions {
 	/** Voice channel manager instance (optional). */
 	voiceManager?: {
 		isEnabled(): boolean;
+		isBrowserVoiceReady(): boolean;
+		isPstnVoiceReady(): boolean;
 		getSessions(): Array<{
 			id: string;
 			callId: string;
@@ -130,6 +132,15 @@ export interface HttpChannelOptions {
 			duration: number;
 			transcriptLength: number;
 			startedAt: string;
+		}>;
+		issueBrowserToken(options: {
+			participantName: string;
+			roomName?: string;
+		}): Promise<{
+			token: string;
+			roomName: string;
+			participantName: string;
+			access: string;
 		}>;
 	};
 	/** Channel adapter registry for internal API dispatch. */
@@ -1399,13 +1410,35 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	// Voice session status
 	app.get("/voice/status", (c) => {
 		if (!voiceManager) {
-			return c.json({ enabled: false, sessions: [] });
+			return c.json({ enabled: false, browserReady: false, pstnReady: false, sessions: [] });
 		}
 
 		return c.json({
 			enabled: voiceManager.isEnabled(),
+			browserReady: voiceManager.isBrowserVoiceReady(),
+			pstnReady: voiceManager.isPstnVoiceReady(),
 			sessions: voiceManager.getSessions(),
 		});
+	});
+
+	app.post("/api/voice/token", async (c) => {
+		if (!voiceManager) {
+			return c.json({ error: "Voice is not enabled" }, 400);
+		}
+		if (!voiceManager.isBrowserVoiceReady()) {
+			return c.json(
+				{ error: "Browser/media voice requires LiveKit, STT, and TTS configuration" },
+				400,
+			);
+		}
+
+		const body = await c.req
+			.json<{ participantName?: string; roomName?: string }>()
+			.catch(() => ({}));
+		const participantName = body.participantName?.trim() || "browser-user";
+		const roomName = body.roomName?.trim() || undefined;
+		const token = await voiceManager.issueBrowserToken({ participantName, roomName });
+		return c.json(token);
 	});
 
 	// Config (sanitized, read-only)

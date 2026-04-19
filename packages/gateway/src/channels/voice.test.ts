@@ -228,4 +228,30 @@ describe("VoiceChannel", () => {
 		expect(access?.accessClass).toBe("external");
 		expect(access?.capabilities.grants).toEqual(["memory"]);
 	});
+
+	test("outbound admin request is ignored unless the source is trusted", async () => {
+		const submitMock = mock(() => ({ jobId: "job-voice-5", done: Promise.resolve() }));
+		const deps = makeMockDeps({
+			runner: {
+				submit: submitMock,
+				getJob: mock(() => null),
+				getActiveJobs: mock(() => []),
+				stop: mock(() => true),
+			} as unknown as ChannelDeps["runner"],
+		});
+		const channel = new VoiceChannel(makeVoiceConfig() as never, deps);
+		const ttsCallback = mock(() => {});
+
+		channel.registerSessionWithAccess("session-out-admin", "+15555555555", ttsCallback, {
+			direction: "outbound",
+			requestedAccess: { accessClass: "admin" },
+		});
+		await channel.handleSttInput("session-out-admin", "run: test outbound access");
+
+		const submitArg = (submitMock.mock.calls as unknown[][])[0][0] as {
+			metadata?: Record<string, string>;
+		};
+		const access = parseVoiceSessionAccess(submitArg.metadata?.RANDAL_VOICE_ACCESS);
+		expect(access?.accessClass).toBe("external");
+	});
 });

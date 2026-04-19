@@ -64,6 +64,7 @@ export class VoiceChannel implements ChannelAdapter {
 		ttsCallback: TtsCallback,
 		options: {
 			direction?: "inbound" | "outbound";
+			trustedSource?: boolean;
 			requestedAccess?: { accessClass?: VoiceAccessClass; grants?: string[] };
 		},
 	): void {
@@ -71,6 +72,7 @@ export class VoiceChannel implements ChannelAdapter {
 			sessionId,
 			phoneNumber,
 			direction: options.direction ?? "inbound",
+			trustedSource: options.trustedSource,
 			requestedAccess: options.requestedAccess,
 		});
 		if (!resolution.allowed) {
