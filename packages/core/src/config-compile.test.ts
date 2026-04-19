@@ -47,12 +47,17 @@ describe("edge cases", () => {
 	test("config with no capabilities but memory.store set includes memory MCP", () => {
 		const config = minimalConfig({
 			capabilities: [],
-			memory: { store: "meilisearch", url: "http://localhost:7700" },
+			memory: { store: "meilisearch", url: "http://localhost:7701" },
 		});
 		const result = compileOpenCodeConfig(config, defaultOptions());
 		expect(result.config.mcp.memory).toBeDefined();
 		expect(result.config.mcp.memory.type).toBe("local");
-		expect(result.config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7700");
+		expect(result.config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7701");
+	});
+
+	test("minimal config compiles the canonical local Meilisearch URL", () => {
+		const result = compileOpenCodeConfig(minimalConfig(), defaultOptions());
+		expect(result.config.mcp.memory.environment?.MEILI_URL).toBe("http://localhost:7701");
 	});
 
 	test("empty tools array does not produce tool permissions", () => {

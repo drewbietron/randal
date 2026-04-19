@@ -2,10 +2,10 @@ import { type RandalConfig, loadConfig } from "@randal/core";
 import { type CliContext, requireConfig } from "../cli.js";
 import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
-const DEFAULT_LOCAL_MEILI_URL = "http://localhost:7701";
+export const DEFAULT_LOCAL_MEILI_URL = "http://localhost:7701";
 const LOCAL_MEILI_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
-function getLocalMeilisearchTarget(url: string): URL | null {
+export function getLocalMeilisearchTarget(url: string): URL | null {
 	try {
 		const parsed = new URL(url);
 		if ((parsed.protocol === "http:" || parsed.protocol === "https:") && LOCAL_MEILI_HOSTS.has(parsed.hostname)) {
@@ -16,6 +16,12 @@ function getLocalMeilisearchTarget(url: string): URL | null {
 	}
 
 	return null;
+}
+
+export function getLocalMeilisearchDockerPortBinding(url: string): string | null {
+	const localTarget = getLocalMeilisearchTarget(url);
+	if (!localTarget) return null;
+	return `${localTarget.port || "7701"}:7700`;
 }
 
 /**
@@ -32,6 +38,8 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 	const url = config.memory.url || DEFAULT_LOCAL_MEILI_URL;
 	const localTarget = getLocalMeilisearchTarget(url);
 	if (!localTarget) return false;
+	const dockerPortBinding = getLocalMeilisearchDockerPortBinding(url);
+	if (!dockerPortBinding) return false;
 
 	let envModified = false;
 
@@ -145,7 +153,7 @@ async function ensureMeilisearch(config: RandalConfig, configPath?: string): Pro
 			"--restart",
 			"unless-stopped",
 			"-p",
-			`${localTarget.port || "7701"}:7700`,
+			dockerPortBinding,
 			"-v",
 			`${dbPath}:/meili_data`,
 			"-e",
