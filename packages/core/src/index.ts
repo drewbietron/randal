@@ -24,6 +24,9 @@ export type {
 export { createLogger } from "./logger.js";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger.js";
 
+export { getVoiceCapability } from "./voice-capability.js";
+export type { VoiceCapability } from "./voice-capability.js";
+
 export { resolvePromptValue, resolvePromptArray, interpolateTemplate } from "./resolve-prompt.js";
 export type { PromptContext } from "./resolve-prompt.js";
 

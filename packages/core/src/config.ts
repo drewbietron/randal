@@ -109,6 +109,12 @@ const voiceChannelSchema = z.object({
 	allowFrom: z.array(z.string()).optional(),
 });
 
+const optionalTrimmedStringSchema = z.preprocess((value) => {
+	if (typeof value !== "string") return value;
+	const trimmed = value.trim();
+	return trimmed === "" ? undefined : trimmed;
+}, z.string().optional());
+
 const channelSchema = z.discriminatedUnion("type", [
 	httpChannelSchema,
 	discordChannelSchema,
@@ -457,7 +463,7 @@ export const configSchema = z.object({
 			tts: z
 				.object({
 					provider: z.enum(["elevenlabs", "cartesia", "openai", "edge"]).default("elevenlabs"),
-					voice: z.string().optional(),
+					voice: optionalTrimmedStringSchema,
 					apiKey: z.string().default(""),
 				})
 				.default({}),

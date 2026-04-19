@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { RandalConfig } from "@randal/core";
 import { parseConfig } from "@randal/core";
+import type { VoiceRuntime } from "./runtime.js";
 import { VoiceEngine } from "./voice-engine.js";
 import type { VoiceSession } from "./voice-engine.js";
 
@@ -16,6 +17,9 @@ const enabledNoLivekitYaml = `
 name: test-agent
 runner:
   workdir: /tmp/test
+gateway:
+  channels:
+    - type: voice
 voice:
   enabled: true
 `;
@@ -24,16 +28,66 @@ const fullyEnabledYaml = `
 name: test-agent
 runner:
   workdir: /tmp/test
+gateway:
+  channels:
+    - type: voice
 voice:
   enabled: true
   livekit:
     url: wss://livekit.example.com
     apiKey: test-api-key
     apiSecret: test-api-secret
+  twilio:
+    accountSid: ACtestaccountsid1234567890
+    authToken: test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: test-deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: test-elevenlabs-key
 `;
 
 function makeConfig(yaml: string): RandalConfig {
 	return parseConfig(yaml);
+}
+
+function makeRuntime(overrides: Partial<VoiceRuntime> = {}): VoiceRuntime {
+	const listeners = new Map<string, (payload: unknown) => void>();
+	return {
+		publicBaseUrl: "https://voice.example.com",
+		livekit: {
+			ensureRoom: mock(async () => {}),
+			generateParticipantToken: mock(async () => "token-123"),
+			roomService: {} as VoiceRuntime["livekit"]["roomService"],
+		} as VoiceRuntime["livekit"],
+		twilio: {
+			client: {} as VoiceRuntime["twilio"]["client"],
+			createOutboundCall: mock(async () => ({ callSid: "CA123", status: "queued" })),
+			buildMediaStreamTwiml: mock(() => "<Response></Response>"),
+			validateRequest: mock(() => true),
+		} as VoiceRuntime["twilio"],
+		deepgram: {
+			client: {} as VoiceRuntime["deepgram"]["client"],
+			createTranscriptionStream: mock(() => ({
+				on: (event: string, listener: (payload: unknown) => void) => {
+					listeners.set(event, listener);
+				},
+				send: mock(() => {}),
+				requestClose: mock(() => {}),
+			})),
+		} as VoiceRuntime["deepgram"],
+		elevenlabs: {
+			client: {} as VoiceRuntime["elevenlabs"]["client"],
+			resolveVoiceId: mock(() => "voice-123"),
+			streamSpeech: mock(async () => new ReadableStream<Uint8Array>()),
+		} as VoiceRuntime["elevenlabs"],
+		vad: {
+			createDetector: mock(async () => ({})),
+		} as VoiceRuntime["vad"],
+		...overrides,
+	};
 }
 
 describe("VoiceEngine", () => {
@@ -60,6 +114,27 @@ describe("VoiceEngine", () => {
 			expect(sessions).toEqual([]);
 		});
 
+		test("start with missing Twilio, Deepgram, and ElevenLabs config is a no-op", async () => {
+			const config = makeConfig(`
+name: test-agent
+runner:
+  workdir: /tmp/test
+gateway:
+  channels:
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+`);
+			const engine = new VoiceEngine({ config });
+
+			await engine.start();
+			expect(engine.getActiveSessions()).toEqual([]);
+		});
+
 		test("start with full config succeeds", async () => {
 			const config = makeConfig(fullyEnabledYaml);
 			const engine = new VoiceEngine({ config });
@@ -74,7 +149,8 @@ describe("VoiceEngine", () => {
 	describe("createSession", () => {
 		test("creates a session with correct fields", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config, runtime });
 			await engine.start();
 
 			const session = await engine.createSession({
@@ -93,7 +169,7 @@ describe("VoiceEngine", () => {
 
 		test("session is retrievable via getSession", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const session = await engine.createSession({
@@ -110,7 +186,7 @@ describe("VoiceEngine", () => {
 	describe("addTranscript", () => {
 		test("adds text to session transcript", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const session = await engine.createSession({
@@ -131,6 +207,7 @@ describe("VoiceEngine", () => {
 
 			const engine = new VoiceEngine({
 				config,
+				runtime: makeRuntime(),
 				onTranscript: (sessionId, text) => {
 					transcriptCalls.push({ sessionId, text });
 				},
@@ -152,7 +229,7 @@ describe("VoiceEngine", () => {
 	describe("endSession", () => {
 		test("marks session as ended and calculates duration", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const session = await engine.createSession({
@@ -171,7 +248,7 @@ describe("VoiceEngine", () => {
 
 		test("returns null for nonexistent session", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const result = await engine.endSession("nonexistent-id");
@@ -184,6 +261,7 @@ describe("VoiceEngine", () => {
 
 			const engine = new VoiceEngine({
 				config,
+				runtime: makeRuntime(),
 				onSessionEnd: (session) => {
 					endedSessions.push(session);
 				},
@@ -205,7 +283,7 @@ describe("VoiceEngine", () => {
 	describe("getActiveSessions", () => {
 		test("returns only active sessions", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const s1 = await engine.createSession({
@@ -233,7 +311,8 @@ describe("VoiceEngine", () => {
 	describe("initiateCall", () => {
 		test("creates outbound session with phone number", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config, runtime });
 			await engine.start();
 
 			const session = await engine.initiateCall({
@@ -244,14 +323,315 @@ describe("VoiceEngine", () => {
 			expect(session.status).toBe("active");
 			expect(session.callDirection).toBe("outbound");
 			expect(session.phoneNumber).toBe("+15551234567");
+			expect(session.callSid).toBe("CA123");
 			expect(session.roomName.startsWith("call-")).toBe(true);
+		});
+
+		test("does not orphan an active session when Twilio call creation fails", async () => {
+			const config = makeConfig(fullyEnabledYaml);
+			const runtime = makeRuntime({
+				twilio: {
+					client: {} as VoiceRuntime["twilio"]["client"],
+					createOutboundCall: mock(async () => {
+						throw new Error("twilio unavailable");
+					}),
+					buildMediaStreamTwiml: mock(() => "<Response></Response>"),
+				} as VoiceRuntime["twilio"],
+			});
+			const engine = new VoiceEngine({ config, runtime });
+			await engine.start();
+
+			await expect(
+				engine.initiateCall({
+					to: "+15551234567",
+					reason: "Test call",
+				}),
+			).rejects.toThrow("twilio unavailable");
+			expect(engine.getActiveSessions()).toHaveLength(0);
+		});
+	});
+
+	describe("bootstrapInboundCall", () => {
+		test("creates inbound session from Twilio call metadata", async () => {
+			const engine = new VoiceEngine({
+				config: makeConfig(fullyEnabledYaml),
+				runtime: makeRuntime(),
+			});
+			await engine.start();
+
+			const session = await engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+
+			expect(session.callDirection).toBe("inbound");
+			expect(session.callSid).toBe("CAINBOUND");
+			expect(session.phoneNumber).toBe("+15557654321");
+			expect(session.roomName).toBe("inbound-CAINBOUND");
+		});
+
+		test("reuses the same session when Twilio retries the inbound webhook", async () => {
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+
+			const first = await engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+			const second = await engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+
+			expect(second.id).toBe(first.id);
+			expect(runtime.livekit.ensureRoom).toHaveBeenCalledTimes(1);
+		});
+
+		test("collapses concurrent inbound retries for the same CallSid", async () => {
+			let releaseEnsureRoom: (() => void) | undefined;
+			const runtime = makeRuntime({
+				livekit: {
+					ensureRoom: mock(
+						() =>
+							new Promise<void>((resolve) => {
+								releaseEnsureRoom = resolve;
+							}),
+					),
+					generateParticipantToken: mock(async () => "token-123"),
+					roomService: {} as VoiceRuntime["livekit"]["roomService"],
+				} as VoiceRuntime["livekit"],
+			});
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+
+			const first = engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+			const second = engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+
+			expect(runtime.livekit.ensureRoom).toHaveBeenCalledTimes(1);
+			releaseEnsureRoom?.();
+
+			const [firstSession, secondSession] = await Promise.all([first, second]);
+			expect(firstSession.id).toBe(secondSession.id);
+			expect(runtime.livekit.ensureRoom).toHaveBeenCalledTimes(1);
+		});
+
+		test("buildInboundTwiml reuses the media-stream TwiML path", async () => {
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+
+			const xml = engine.buildInboundTwiml("session-inbound-1");
+			expect(xml).toBe("<Response></Response>");
+			expect(runtime.twilio.buildMediaStreamTwiml).toHaveBeenCalledTimes(1);
+		});
+
+		test("inbound sessions end cleanly through the shared Twilio status callback", async () => {
+			const engine = new VoiceEngine({
+				config: makeConfig(fullyEnabledYaml),
+				runtime: makeRuntime(),
+			});
+			await engine.start();
+			const session = await engine.bootstrapInboundCall({
+				callSid: "CAINBOUND",
+				from: "+15557654321",
+			});
+
+			await engine.handleTwilioStatusCallback(session.id, {
+				CallSid: "CAINBOUND",
+				CallStatus: "completed",
+			});
+
+			expect(engine.getSession(session.id)?.status).toBe("ended");
+		});
+	});
+
+	describe("generateRoomToken", () => {
+		test("delegates to runtime LiveKit token generation", async () => {
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+
+			const token = await engine.generateRoomToken("room-1", "participant-1");
+			expect(token).toBe("token-123");
+			expect(runtime.livekit.generateParticipantToken).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("buildOutboundTwiml", () => {
+		test("uses runtime TwiML builder with media stream endpoints", async () => {
+			const runtime = makeRuntime();
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+
+			const xml = engine.buildOutboundTwiml("session-1");
+			expect(xml).toBe("<Response></Response>");
+			expect(runtime.twilio.buildMediaStreamTwiml).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("Twilio media loop", () => {
+		test("forwards final Deepgram transcripts into the session transcript handler", async () => {
+			let transcriptHandler: ((payload: unknown) => void) | undefined;
+			const deepgramStream = {
+				on: (event: string, listener: (payload: unknown) => void) => {
+					if (event === "Results") transcriptHandler = listener;
+				},
+				send: mock(() => {}),
+				requestClose: mock(() => {}),
+			};
+			const runtime = makeRuntime({
+				deepgram: {
+					client: {} as VoiceRuntime["deepgram"]["client"],
+					createTranscriptionStream: mock(() => deepgramStream),
+				} as VoiceRuntime["deepgram"],
+			});
+			const transcripts: string[] = [];
+			const engine = new VoiceEngine({
+				config: makeConfig(fullyEnabledYaml),
+				runtime,
+				onTranscript: (_sessionId, text) => transcripts.push(text),
+			});
+			await engine.start();
+			const session = await engine.createSession({ roomName: "room-1", direction: "inbound" });
+
+			const finalTurns: string[] = [];
+			engine.startTwilioMediaStream({
+				sessionId: session.id,
+				streamSid: "MZ123",
+				sendMessage: mock(() => {}),
+				onFinalTranscript: async (text) => {
+					finalTurns.push(text);
+				},
+			});
+
+			transcriptHandler?.({
+				channel: { alternatives: [{ transcript: "hello from caller" }] },
+				is_final: true,
+			});
+
+			await Promise.resolve();
+			expect(finalTurns).toEqual(["hello from caller"]);
+			expect(transcripts).toEqual(["hello from caller"]);
+			expect(engine.getSession(session.id)?.transcript).toEqual(["hello from caller"]);
+		});
+
+		test("sends ElevenLabs audio back to Twilio media stream", async () => {
+			const outboundMessages: Array<Record<string, unknown>> = [];
+			const runtime = makeRuntime({
+				elevenlabs: {
+					client: {} as VoiceRuntime["elevenlabs"]["client"],
+					resolveVoiceId: mock(() => "voice-123"),
+					streamSpeech: mock(
+						async () =>
+							new ReadableStream<Uint8Array>({
+								start(controller) {
+									controller.enqueue(new Uint8Array([1, 2, 3]));
+									controller.close();
+								},
+							}),
+					),
+				} as VoiceRuntime["elevenlabs"],
+			});
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+			const session = await engine.createSession({ roomName: "room-1", direction: "outbound" });
+
+			engine.startTwilioMediaStream({
+				sessionId: session.id,
+				streamSid: "MZ123",
+				sendMessage: (message) => outboundMessages.push(message),
+				onFinalTranscript: async () => {},
+			});
+
+			await engine.speakToSession(session.id, "hello there");
+			expect(outboundMessages).toHaveLength(1);
+			expect(outboundMessages[0].event).toBe("media");
+			expect(outboundMessages[0].streamSid).toBe("MZ123");
+		});
+
+		test("barge-in clears only active playback and later speech can resume", async () => {
+			const outboundMessages: Array<Record<string, unknown>> = [];
+			let releaseFirstStream: (() => void) | undefined;
+			let invocation = 0;
+			const runtime = makeRuntime({
+				elevenlabs: {
+					client: {} as VoiceRuntime["elevenlabs"]["client"],
+					resolveVoiceId: mock(() => "voice-123"),
+					streamSpeech: mock(async () => {
+						invocation += 1;
+						if (invocation === 1) {
+							return new ReadableStream<Uint8Array>({
+								async start(controller) {
+									controller.enqueue(new Uint8Array([1, 2, 3]));
+									await new Promise<void>((resolve) => {
+										releaseFirstStream = resolve;
+									});
+									controller.close();
+								},
+							});
+						}
+
+						return new ReadableStream<Uint8Array>({
+							start(controller) {
+								controller.enqueue(new Uint8Array([4, 5, 6]));
+								controller.close();
+							},
+						});
+					}),
+				} as VoiceRuntime["elevenlabs"],
+			});
+			const engine = new VoiceEngine({ config: makeConfig(fullyEnabledYaml), runtime });
+			await engine.start();
+			const session = await engine.createSession({ roomName: "room-1", direction: "outbound" });
+
+			engine.startTwilioMediaStream({
+				sessionId: session.id,
+				streamSid: "MZ123",
+				sendMessage: (message) => outboundMessages.push(message),
+				onFinalTranscript: async () => {},
+			});
+
+			const firstSpeech = engine.speakToSession(session.id, "first response");
+			await Promise.resolve();
+			engine.handleTwilioMediaChunk(session.id, Buffer.from([7, 8, 9]).toString("base64"));
+			releaseFirstStream?.();
+			await firstSpeech;
+
+			await engine.speakToSession(session.id, "second response");
+
+			expect(outboundMessages[0]).toEqual({ event: "clear", streamSid: "MZ123" });
+			expect(outboundMessages.some((message) => message.event === "media")).toBe(true);
+			expect(outboundMessages.filter((message) => message.event === "clear")).toHaveLength(1);
+		});
+
+		test("terminal Twilio status ends the session", async () => {
+			const engine = new VoiceEngine({
+				config: makeConfig(fullyEnabledYaml),
+				runtime: makeRuntime(),
+			});
+			await engine.start();
+			const session = await engine.createSession({ roomName: "room-1", direction: "outbound" });
+
+			await engine.handleTwilioStatusCallback(session.id, {
+				CallSid: "CA123",
+				CallStatus: "completed",
+			});
+
+			expect(engine.getSession(session.id)?.status).toBe("ended");
 		});
 	});
 
 	describe("joinVideoCall", () => {
 		test("creates video session", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			const session = await engine.joinVideoCall({
@@ -268,7 +648,7 @@ describe("VoiceEngine", () => {
 	describe("stop", () => {
 		test("ends all active sessions", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 			await engine.start();
 
 			await engine.createSession({
@@ -289,7 +669,7 @@ describe("VoiceEngine", () => {
 
 		test("stop on non-started engine is a no-op", async () => {
 			const config = makeConfig(fullyEnabledYaml);
-			const engine = new VoiceEngine({ config });
+			const engine = new VoiceEngine({ config, runtime: makeRuntime() });
 
 			// Should not throw
 			await engine.stop();

@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - livekit_redis:/data
+
+  livekit:
+    image: livekit/livekit-server:v1.8.3
+    restart: unless-stopped
+    command: --config /etc/livekit/livekit.yaml
+    depends_on:
+      - redis
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./docker/voice/livekit.yaml:/etc/livekit/livekit.yaml:ro
+
+  livekit-sip:
+    image: livekit/sip:v1.0.0
+    restart: unless-stopped
+    command: --config /etc/livekit/sip.yaml
+    depends_on:
+      - redis
+      - livekit
+    ports:
+      - "5060:5060/tcp"
+      - "5060:5060/udp"
+      - "10000-10100:10000-10100/udp"
+    volumes:
+      - ./docker/voice/sip.yaml:/etc/livekit/sip.yaml:ro
+
+volumes:
+  livekit_redis:

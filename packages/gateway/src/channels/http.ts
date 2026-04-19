@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
-import { RANDAL_VERSION, createLogger } from "@randal/core";
+import { RANDAL_VERSION, createLogger, getVoiceCapability } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
 import {
@@ -13,7 +13,8 @@ import {
 } from "@randal/memory";
 import { type Runner, readLoopState, writeContext } from "@randal/runner";
 import type { Scheduler } from "@randal/scheduler";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { upgradeWebSocket } from "hono/bun";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
@@ -131,9 +132,181 @@ export interface HttpChannelOptions {
 			transcriptLength: number;
 			startedAt: string;
 		}>;
+		initiateCall?: (options: {
+			to: string;
+			reason?: string;
+			script?: string;
+			maxDuration?: number;
+		}) => Promise<{
+			id: string;
+			callSid?: string;
+			roomName: string;
+			status: string;
+			callDirection?: "inbound" | "outbound";
+			phoneNumber?: string;
+		}>;
+		buildOutboundTwiml?: (sessionId: string) => string;
+	};
+	voiceService?: {
+		initiateCall(options: {
+			to: string;
+			reason?: string;
+			script?: string;
+			maxDuration?: number;
+		}): Promise<{
+			id: string;
+			callSid?: string;
+			roomName: string;
+			status: string;
+			callDirection?: "inbound" | "outbound";
+			phoneNumber?: string;
+		}>;
+		bootstrapInboundCall(options: { callSid: string; from?: string }): Promise<{
+			id: string;
+			callSid?: string;
+			roomName: string;
+			status: string;
+			callDirection?: "inbound" | "outbound";
+			phoneNumber?: string;
+		}>;
+		buildOutboundTwiml(sessionId: string): string;
+		buildInboundTwiml(sessionId: string): string;
+		getSession(sessionId: string):
+			| {
+					phoneNumber?: string;
+			  }
+			| undefined;
+		validateTwilioRequest(signature: string, url: string, params: Record<string, string>): boolean;
+		startTwilioMediaStream(options: {
+			sessionId: string;
+			streamSid: string;
+			callSid?: string;
+			sendMessage: (message: Record<string, unknown>) => void;
+			onFinalTranscript: (text: string) => Promise<void>;
+		}): void;
+		handleTwilioMediaChunk(sessionId: string, payloadBase64: string): void;
+		stopTwilioMediaStream(sessionId: string): void;
+		speakToSession(sessionId: string, text: string): Promise<void>;
+		handleTwilioStatusCallback(
+			sessionId: string,
+			payload: { CallSid?: string; CallStatus?: string },
+		): Promise<unknown>;
+		handleTwilioStreamStatus(
+			sessionId: string,
+			payload: { StreamEvent?: string },
+		): Promise<unknown>;
 	};
 	/** Channel adapter registry for internal API dispatch. */
 	channelAdapters?: ChannelAdapter[];
+}
+
+interface VoiceStatusSession {
+	id: string;
+	callId: string;
+	status: string;
+	duration: number;
+	transcriptLength: number;
+	startedAt: string;
+}
+
+interface VoiceStatusAdapter extends ChannelAdapter {
+	getActiveSessions(): Array<{
+		sessionId: string;
+		startedAt: number;
+	}>;
+}
+
+function isVoiceStatusAdapter(adapter: ChannelAdapter): adapter is VoiceStatusAdapter {
+	return adapter.name === "voice" && "getActiveSessions" in adapter;
+}
+
+function mapVoiceSessions(
+	sessions: Array<{
+		sessionId: string;
+		startedAt: number;
+	}>,
+): VoiceStatusSession[] {
+	return sessions.map((session) => ({
+		id: session.sessionId,
+		callId: session.sessionId,
+		status: "active",
+		duration: Math.max(0, Math.round((Date.now() - session.startedAt) / 1000)),
+		transcriptLength: 0,
+		startedAt: new Date(session.startedAt).toISOString(),
+	}));
+}
+
+function resolveVoiceStatus(options: {
+	voiceManager?: {
+		isEnabled(): boolean;
+		getSessions(): VoiceStatusSession[];
+	};
+	channelAdapters?: ChannelAdapter[];
+}): { enabled: boolean; sessions: VoiceStatusSession[] } {
+	if (options.voiceManager) {
+		return {
+			enabled: options.voiceManager.isEnabled(),
+			sessions: options.voiceManager.getSessions(),
+		};
+	}
+
+	const adapter = options.channelAdapters?.find(isVoiceStatusAdapter);
+	if (!adapter) {
+		return { enabled: false, sessions: [] };
+	}
+
+	return {
+		enabled: true,
+		sessions: mapVoiceSessions(adapter.getActiveSessions()),
+	};
+}
+
+function isTwilioPublicPath(path: string): boolean {
+	return /^\/voice\/(twiml\/(outbound\/[^/]+|inbound)|twilio\/(status|stream-status)\/[^/]+|media-stream\/[^/]+)$/.test(
+		path,
+	);
+}
+
+interface VoiceTransportAdapter extends ChannelAdapter {
+	registerSession(
+		sessionId: string,
+		phoneNumber: string,
+		ttsCallback: (text: string) => Promise<void>,
+	): void;
+	unregisterSession(sessionId: string): Promise<void>;
+	handleSttInput(sessionId: string, text: string): Promise<void>;
+}
+
+function isVoiceTransportAdapter(adapter: ChannelAdapter): adapter is VoiceTransportAdapter {
+	return (
+		adapter.name === "voice" &&
+		"registerSession" in adapter &&
+		"unregisterSession" in adapter &&
+		"handleSttInput" in adapter
+	);
+}
+
+function getVoiceTransportAdapter(
+	channelAdapters?: ChannelAdapter[],
+): VoiceTransportAdapter | undefined {
+	return channelAdapters?.find(isVoiceTransportAdapter);
+}
+
+async function parseTwilioForm(c: Context): Promise<Record<string, string>> {
+	const text = await c.req.text();
+	const form = new URLSearchParams(text);
+	return Object.fromEntries(form.entries());
+}
+
+function validateTwilioRequest(options: {
+	voiceService?: HttpChannelOptions["voiceService"];
+	signature: string | undefined;
+	url: string;
+	params: Record<string, string>;
+}): boolean {
+	if (!options.voiceService) return false;
+	if (!options.signature) return false;
+	return options.voiceService.validateTwilioRequest(options.signature, options.url, options.params);
 }
 
 /** Active delegation trackers for posse-routed jobs. Exported for gateway recovery. */
@@ -153,6 +326,8 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 		analyticsEngine,
 		meshCoordinator,
 		voiceManager,
+		voiceService,
+		channelAdapters,
 	} = options;
 	const app = new Hono();
 
@@ -211,7 +386,8 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 			path === "/" ||
 			path === "/health" ||
 			path.startsWith("/assets/") ||
-			path.startsWith("/_internal/")
+			path.startsWith("/_internal/") ||
+			isTwilioPublicPath(path)
 		) {
 			return next();
 		}
@@ -1401,13 +1577,309 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 
 	// Voice session status
 	app.get("/voice/status", (c) => {
-		if (!voiceManager) {
-			return c.json({ enabled: false, sessions: [] });
+		const capability = getVoiceCapability(config);
+		if (!capability.available) {
+			return c.json({
+				error: "voice unavailable",
+				code: "VOICE_UNAVAILABLE",
+				available: false,
+				enabled: capability.enabled,
+				reason: capability.reason,
+				missing: capability.missing,
+				sessions: [],
+			});
 		}
 
+		const voiceStatus = resolveVoiceStatus({ voiceManager, channelAdapters });
+
 		return c.json({
-			enabled: voiceManager.isEnabled(),
-			sessions: voiceManager.getSessions(),
+			available: true,
+			enabled: voiceStatus.enabled || capability.enabled,
+			reason: capability.reason,
+			missing: capability.missing,
+			sessions: voiceStatus.sessions,
+		});
+	});
+
+	app.post("/voice/call", async (c) => {
+		const capability = getVoiceCapability(config);
+		if (!capability.available) {
+			return c.json(
+				{
+					error: "voice unavailable",
+					code: "VOICE_UNAVAILABLE",
+					available: false,
+					enabled: capability.enabled,
+					reason: capability.reason,
+					missing: capability.missing,
+				},
+				503,
+			);
+		}
+
+		if (!voiceService) {
+			return c.json(
+				{
+					error: "voice runtime unavailable",
+					code: "VOICE_RUNTIME_UNAVAILABLE",
+				},
+				503,
+			);
+		}
+
+		const body = await c.req.json<{
+			to?: string;
+			reason?: string;
+			script?: string;
+			maxDuration?: number;
+		}>();
+		if (!body.to) {
+			return c.json({ error: "to required" }, 400);
+		}
+		if (!/^\+[1-9]\d{7,14}$/.test(body.to)) {
+			return c.json({ error: "to must be an E.164 phone number" }, 400);
+		}
+		if (
+			body.maxDuration !== undefined &&
+			(!Number.isFinite(body.maxDuration) || body.maxDuration <= 0)
+		) {
+			return c.json({ error: "maxDuration must be a positive number" }, 400);
+		}
+
+		try {
+			const session = await voiceService.initiateCall({
+				to: body.to,
+				reason: body.reason,
+				script: body.script,
+				maxDuration: body.maxDuration,
+			});
+
+			return c.json({
+				callSid: session.callSid,
+				sessionId: session.id,
+				roomName: session.roomName,
+				status: session.status,
+			});
+		} catch (err) {
+			httpLogger.error("Voice call initiation failed", {
+				error: err instanceof Error ? err.message : String(err),
+			});
+			return c.json(
+				{
+					error: "voice call failed",
+					code: "VOICE_CALL_FAILED",
+					message: err instanceof Error ? err.message : String(err),
+				},
+				502,
+			);
+		}
+	});
+
+	app.post("/voice/twiml/outbound/:sessionId", async (c) => {
+		if (!voiceService) {
+			return c.text("Voice runtime unavailable", 503);
+		}
+		const form = await parseTwilioForm(c);
+		const valid = validateTwilioRequest({
+			voiceService,
+			signature: c.req.header("X-Twilio-Signature"),
+			url: c.req.url,
+			params: form,
+		});
+		if (!valid) {
+			return c.text("Invalid Twilio signature", 401);
+		}
+
+		const xml = voiceService.buildOutboundTwiml(c.req.param("sessionId"));
+		return new Response(xml, {
+			headers: { "Content-Type": "text/xml" },
+		});
+	});
+
+	app.post("/voice/twiml/inbound", async (c) => {
+		if (!voiceService) {
+			return c.text("Voice runtime unavailable", 503);
+		}
+
+		const form = await parseTwilioForm(c);
+		const valid = validateTwilioRequest({
+			voiceService,
+			signature: c.req.header("X-Twilio-Signature"),
+			url: c.req.url,
+			params: form,
+		});
+		if (!valid) {
+			return c.text("Invalid Twilio signature", 401);
+		}
+		if (!form.CallSid) {
+			return c.text("CallSid required", 400);
+		}
+
+		const session = await voiceService.bootstrapInboundCall({
+			callSid: form.CallSid,
+			from: form.From,
+		});
+		const xml = voiceService.buildInboundTwiml(session.id);
+		return new Response(xml, {
+			headers: { "Content-Type": "text/xml" },
+		});
+	});
+
+	app.post("/voice/twilio/status/:sessionId", async (c) => {
+		const form = await parseTwilioForm(c);
+		const valid = validateTwilioRequest({
+			voiceService,
+			signature: c.req.header("X-Twilio-Signature"),
+			url: c.req.url,
+			params: form,
+		});
+		if (!valid) {
+			return c.json({ error: "Invalid Twilio signature" }, 401);
+		}
+
+		const sessionId = c.req.param("sessionId");
+		const updated = await voiceService?.handleTwilioStatusCallback(sessionId, {
+			CallSid: form.CallSid,
+			CallStatus: form.CallStatus,
+		});
+		if ((updated as { status?: string } | undefined)?.status === "ended") {
+			const voiceAdapter = getVoiceTransportAdapter(channelAdapters);
+			if (voiceAdapter) {
+				await voiceAdapter.unregisterSession(sessionId);
+			}
+		}
+		return c.json({ ok: true, sessionId });
+	});
+
+	app.post("/voice/twilio/stream-status/:sessionId", async (c) => {
+		const form = await parseTwilioForm(c);
+		const valid = validateTwilioRequest({
+			voiceService,
+			signature: c.req.header("X-Twilio-Signature"),
+			url: c.req.url,
+			params: form,
+		});
+		if (!valid) {
+			return c.json({ error: "Invalid Twilio signature" }, 401);
+		}
+
+		await voiceService?.handleTwilioStreamStatus(c.req.param("sessionId"), {
+			StreamEvent: form.StreamEvent,
+		});
+		return c.json({ ok: true, sessionId: c.req.param("sessionId") });
+	});
+
+	app.get("/voice/media-stream/:sessionId", async (c) => {
+		const valid = validateTwilioRequest({
+			voiceService,
+			signature: c.req.header("X-Twilio-Signature"),
+			url: c.req.url,
+			params: {},
+		});
+		if (!valid) {
+			return c.json({ error: "Invalid Twilio signature" }, 401);
+		}
+
+		return upgradeWebSocket(c, {
+			onMessage(event, ws) {
+				const voiceAdapter = getVoiceTransportAdapter(channelAdapters);
+				if (!voiceService || !voiceAdapter) {
+					ws.close();
+					return;
+				}
+
+				const sessionId = c.req.param("sessionId");
+				let message:
+					| {
+							event?: string;
+							start?: {
+								streamSid?: string;
+								callSid?: string;
+								customParameters?: Record<string, string>;
+							};
+							media?: { payload?: string };
+							stop?: Record<string, unknown>;
+					  }
+					| undefined;
+
+				try {
+					const raw =
+						typeof event.data === "string" ? event.data : Buffer.from(event.data).toString();
+					message = JSON.parse(raw) as {
+						event?: string;
+						start?: {
+							streamSid?: string;
+							callSid?: string;
+							customParameters?: Record<string, string>;
+						};
+						media?: { payload?: string };
+						stop?: Record<string, unknown>;
+					};
+				} catch {
+					httpLogger.warn("Closing voice media websocket on malformed JSON", { sessionId });
+					voiceService.stopTwilioMediaStream(sessionId);
+					void voiceAdapter.unregisterSession(sessionId);
+					ws.close(1003, "Malformed JSON");
+					return;
+				}
+
+				if (!message?.event) {
+					httpLogger.warn("Closing voice media websocket on malformed frame", { sessionId });
+					voiceService.stopTwilioMediaStream(sessionId);
+					void voiceAdapter.unregisterSession(sessionId);
+					ws.close(1003, "Malformed frame");
+					return;
+				}
+
+				if (message.event === "start" && message.start?.streamSid) {
+					voiceAdapter.registerSession(
+						sessionId,
+						voiceService.getSession(sessionId)?.phoneNumber ?? "twilio-call",
+						async (text) => {
+							await voiceService.speakToSession(sessionId, text);
+						},
+					);
+					voiceService.startTwilioMediaStream({
+						sessionId,
+						streamSid: message.start.streamSid,
+						callSid: message.start.callSid,
+						sendMessage: (payload) => ws.send(JSON.stringify(payload)),
+						onFinalTranscript: async (text) => {
+							await voiceAdapter.handleSttInput(sessionId, text);
+						},
+					});
+					return;
+				}
+
+				if (message.event === "media" && message.media?.payload) {
+					voiceService.handleTwilioMediaChunk(sessionId, message.media.payload);
+					return;
+				}
+
+				if (message.event === "stop") {
+					voiceService.stopTwilioMediaStream(sessionId);
+					void voiceAdapter.unregisterSession(sessionId);
+					ws.close();
+					return;
+				}
+
+				httpLogger.warn("Closing voice media websocket on unsupported frame", {
+					sessionId,
+					event: message.event,
+				});
+				voiceService.stopTwilioMediaStream(sessionId);
+				void voiceAdapter.unregisterSession(sessionId);
+				ws.close(1003, "Unsupported frame");
+			},
+			onClose() {
+				const voiceAdapter = getVoiceTransportAdapter(channelAdapters);
+				if (!voiceService || !voiceAdapter) {
+					return;
+				}
+				const sessionId = c.req.param("sessionId");
+				voiceService.stopTwilioMediaStream(sessionId);
+				void voiceAdapter.unregisterSession(sessionId);
+			},
 		});
 	});
 

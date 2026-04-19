@@ -128,6 +128,51 @@ jobs:
             echo "✓ Set ELEVENLABS_API_KEY"
           fi
 
+          if [[ -n "${{ secrets.ELEVENLABS_VOICE_ID }}" ]]; then
+            railway variable set ELEVENLABS_VOICE_ID="${{ secrets.ELEVENLABS_VOICE_ID }}"
+            echo "✓ Set ELEVENLABS_VOICE_ID"
+          fi
+
+          if [[ -n "${{ secrets.RANDAL_VOICE_PUBLIC_URL }}" ]]; then
+            railway variable set RANDAL_VOICE_PUBLIC_URL="${{ secrets.RANDAL_VOICE_PUBLIC_URL }}"
+            echo "✓ Set RANDAL_VOICE_PUBLIC_URL"
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_URL }}" ]]; then
+            railway variable set LIVEKIT_URL="${{ secrets.LIVEKIT_URL }}"
+            echo "✓ Set LIVEKIT_URL"
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_API_KEY }}" ]]; then
+            railway variable set LIVEKIT_API_KEY="${{ secrets.LIVEKIT_API_KEY }}"
+            echo "✓ Set LIVEKIT_API_KEY"
+          fi
+
+          if [[ -n "${{ secrets.LIVEKIT_API_SECRET }}" ]]; then
+            railway variable set LIVEKIT_API_SECRET="${{ secrets.LIVEKIT_API_SECRET }}"
+            echo "✓ Set LIVEKIT_API_SECRET"
+          fi
+
+          if [[ -n "${{ secrets.DEEPGRAM_API_KEY }}" ]]; then
+            railway variable set DEEPGRAM_API_KEY="${{ secrets.DEEPGRAM_API_KEY }}"
+            echo "✓ Set DEEPGRAM_API_KEY"
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_ACCOUNT_SID }}" ]]; then
+            railway variable set TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}"
+            echo "✓ Set TWILIO_ACCOUNT_SID"
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_AUTH_TOKEN }}" ]]; then
+            railway variable set TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}"
+            echo "✓ Set TWILIO_AUTH_TOKEN"
+          fi
+
+          if [[ -n "${{ secrets.TWILIO_PHONE_NUMBER }}" ]]; then
+            railway variable set TWILIO_PHONE_NUMBER="${{ secrets.TWILIO_PHONE_NUMBER }}"
+            echo "✓ Set TWILIO_PHONE_NUMBER"
+          fi
+
           echo "Environment variables set successfully!"
 
       # Deploy to Railway

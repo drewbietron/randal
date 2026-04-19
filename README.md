@@ -308,6 +308,16 @@ One command. Meilisearch is bundled in the image. Mount your config:
 docker compose up --build
 ```
 
+For the phone/media voice stack, start the dedicated overlay:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+```
+
+This launches Redis, LiveKit, and the LiveKit SIP bridge for local voice testing.
+It does not start the Randal gateway itself; run `randal serve` separately so the
+HTTP/WebSocket voice routes are available to Twilio or your tunnel.
+
 </details>
 
 ---

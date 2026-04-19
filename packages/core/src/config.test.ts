@@ -232,6 +232,21 @@ describe("substituteEnvVars", () => {
 		process.env.TEST_ARR = undefined;
 	});
 
+	test("normalizes empty optional ElevenLabs voice id to undefined", () => {
+		process.env.ELEVENLABS_VOICE_ID = "";
+		const result = parseConfig(`
+name: test-agent
+runner:
+  workdir: /tmp/test
+voice:
+  enabled: true
+  tts:
+    voice: \${ELEVENLABS_VOICE_ID}
+`);
+		process.env.ELEVENLABS_VOICE_ID = undefined;
+		expect(result.voice.tts.voice).toBeUndefined();
+	});
+
 	test("replaces missing vars with empty string", () => {
 		expect(substituteEnvVars("${NONEXISTENT_VAR_XYZ}")).toBe("");
 	});

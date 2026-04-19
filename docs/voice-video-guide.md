@@ -54,6 +54,21 @@ For production, see the [LiveKit deployment docs](https://docs.livekit.io/home/s
 The default dev server uses `APIxxxxxxxx` / `xxxxxxxxxxxxxxxxxxxxxxxx` as
 key/secret.
 
+For the full phone/media development stack in this repo, run:
+
+```bash
+docker compose -f docker-compose.voice.yml up -d
+```
+
+This starts:
+
+- Redis
+- LiveKit server
+- LiveKit SIP bridge
+
+Use `docker/voice/livekit.yaml` and `docker/voice/sip.yaml` as the local reference configs.
+This compose file does **not** start the Randal gateway; run `randal serve` separately.
+
 ---
 
 ## Twilio SIP trunk configuration
@@ -82,6 +97,9 @@ voice:
     authToken: ${TWILIO_AUTH_TOKEN}
     phoneNumber: ${TWILIO_PHONE_NUMBER}
 ```
+
+For a Railway deployment, keep the gateway/runner on Railway and point `RANDAL_VOICE_PUBLIC_URL`
+at a public voice/media host that Twilio can reach. See `docs/voice-deployment-split.md`.
 
 ---
 

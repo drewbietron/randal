@@ -50,7 +50,7 @@ voice:
   tts:
     provider: elevenlabs
     apiKey: ${ELEVENLABS_API_KEY}
-    voice: pNInz6obpgDQGcFmaJgB
+    voice: ${ELEVENLABS_VOICE_ID}
 
   turnDetection:
     mode: auto
@@ -72,4 +72,5 @@ credentials:
     - TWILIO_PHONE_NUMBER
     - DEEPGRAM_API_KEY
     - ELEVENLABS_API_KEY
+    - ELEVENLABS_VOICE_ID
     - API_TOKEN

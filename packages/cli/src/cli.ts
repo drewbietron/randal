@@ -48,6 +48,7 @@ function printHelp(): void {
     \x1b[36mmesh\x1b[0m <sub>             🌐 Mesh operations (status, route)
     \x1b[36manalytics\x1b[0m <sub>        📈 Analytics (scores, recommendations)
     \x1b[36mvoice\x1b[0m <sub>            🎙️  Voice sessions (status)
+    \x1b[36mcall\x1b[0m <to>              📞 Start an outbound voice call
     \x1b[36mgateway\x1b[0m <sub>           🚦 Gateway management (status, kill, restart, token)
     \x1b[36maudit\x1b[0m                   🔍 Audit ambient host auth (--json)
     \x1b[36msetup\x1b[0m                   🔩 Generate opencode.json and configure runtime
@@ -166,6 +167,7 @@ export async function run(argv: string[]): Promise<void> {
 				"mesh",
 				"analytics",
 				"voice",
+				"call",
 				"gateway",
 			].includes(command)
 		) {
@@ -262,6 +264,11 @@ export async function run(argv: string[]): Promise<void> {
 		case "voice": {
 			const { voiceCommand } = await import("./commands/voice.js");
 			await voiceCommand(args.slice(1), ctx);
+			break;
+		}
+		case "call": {
+			const { voiceCommand } = await import("./commands/voice.js");
+			await voiceCommand(["call", ...args.slice(1)], ctx);
 			break;
 		}
 		case "gateway": {

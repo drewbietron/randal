@@ -9,6 +9,12 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@randal/core": "workspace:*"
+		"@deepgram/sdk": "^4.9.0",
+		"@elevenlabs/elevenlabs-js": "^2.19.0",
+		"@randal/core": "workspace:*",
+		"@ricky0123/vad-node": "^0.0.3",
+		"livekit-server-sdk": "^2.13.1",
+		"onnxruntime-node": "^1.22.0",
+		"twilio": "^5.8.0"
 	}
 }

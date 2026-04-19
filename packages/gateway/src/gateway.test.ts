@@ -1,10 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { type RunnerEvent, parseConfig } from "@randal/core";
 import { Runner } from "@randal/runner";
 import { createHttpApp } from "./channels/http.js";
+import { VoiceChannel } from "./channels/voice.js";
 import { EventBus } from "./events.js";
 
-function makeTestApp() {
+function makeTestApp(overrides: Record<string, unknown> = {}) {
 	const config = parseConfig(`
 name: test-gateway
 runner:
@@ -26,8 +27,40 @@ gateway:
 		onEvent: (e) => eventBus.emit(e),
 	});
 
-	const app = createHttpApp({ config, runner, eventBus });
+	const app = createHttpApp({ config, runner, eventBus, ...overrides });
 	return { app, config, runner, eventBus };
+}
+
+function makeMockVoiceService(overrides: Record<string, unknown> = {}) {
+	return {
+		initiateCall: mock(async () => ({
+			id: "session-1",
+			callSid: "TEST_CALL_ID_123",
+			roomName: "call-1",
+			status: "queued",
+			callDirection: "outbound" as const,
+			phoneNumber: "+15557654321",
+		})),
+		bootstrapInboundCall: mock(async () => ({
+			id: "session-inbound-1",
+			callSid: "INBOUND_TEST_CALL_ID",
+			roomName: "inbound-INBOUND_TEST_CALL_ID",
+			status: "active",
+			callDirection: "inbound" as const,
+			phoneNumber: "+15557654321",
+		})),
+		buildOutboundTwiml: mock(() => "<Response><Connect /></Response>"),
+		buildInboundTwiml: mock(() => "<Response><Connect /></Response>"),
+		getSession: mock(() => ({ phoneNumber: "+15557654321" })),
+		validateTwilioRequest: mock(() => true),
+		startTwilioMediaStream: mock(() => {}),
+		handleTwilioMediaChunk: mock(() => {}),
+		stopTwilioMediaStream: mock(() => {}),
+		speakToSession: mock(async () => {}),
+		handleTwilioStatusCallback: mock(async () => ({})),
+		handleTwilioStreamStatus: mock(async () => ({})),
+		...overrides,
+	};
 }
 
 describe("HTTP API", () => {
@@ -154,6 +187,520 @@ describe("HTTP API", () => {
 			headers: { Authorization: "Bearer test-token" },
 		});
 		expect(res.status).toBe(400);
+	});
+
+	test("GET /voice/status returns structured unavailable response when voice is off", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/voice/status", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.error).toBe("voice unavailable");
+		expect(data.code).toBe("VOICE_UNAVAILABLE");
+		expect(data.reason).toBe("voice disabled");
+		expect(data.available).toBe(false);
+		expect(data.sessions).toEqual([]);
+	});
+
+	test("GET /voice/status reports missing voice config when channel is enabled but incomplete", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const app = createHttpApp({ config, runner, eventBus });
+
+		const res = await app.request("/voice/status", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.reason).toBe("voice config incomplete");
+		expect(data.missing).toContain("voice.livekit.url");
+		expect(data.missing).toContain("voice.twilio.accountSid");
+		expect(data.missing).toContain("voice.stt.apiKey");
+		expect(data.missing).toContain("voice.tts.apiKey");
+	});
+
+	test("GET /voice/status reflects live voice adapter sessions via adapter registry", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+  twilio:
+    accountSid: twilio-test-account-id
+    authToken: twilio-test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const channelAdapters: unknown[] = [];
+		const app = createHttpApp({
+			config,
+			runner,
+			eventBus,
+			channelAdapters: channelAdapters as never,
+		});
+
+		const voiceChannel = new VoiceChannel(
+			{ type: "voice" },
+			{
+				config,
+				runner,
+				eventBus,
+			},
+		);
+		voiceChannel.registerSession(
+			"session-1",
+			"+15551234567",
+			mock(() => {}),
+		);
+		channelAdapters.push(voiceChannel);
+
+		const res = await app.request("/voice/status", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.available).toBe(true);
+		expect(data.enabled).toBe(true);
+		expect(data.sessions).toHaveLength(1);
+		expect(data.sessions[0].id).toBe("session-1");
+		expect(data.sessions[0].callId).toBe("session-1");
+	});
+
+	test("GET /voice/status reflects provider-backed voice lifecycle sessions", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+  twilio:
+    accountSid: twilio-test-account-id
+    authToken: twilio-test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const app = createHttpApp({
+			config,
+			runner,
+			eventBus,
+			voiceManager: {
+				isEnabled: () => true,
+				getSessions: () => [
+					{
+						id: "session-provider-1",
+						callId: "TEST_CALL_ID_123",
+						status: "active",
+						duration: 42,
+						transcriptLength: 3,
+						startedAt: new Date("2026-04-19T00:00:00.000Z").toISOString(),
+					},
+				],
+			},
+		});
+
+		const res = await app.request("/voice/status", {
+			headers: { Authorization: "Bearer test-token" },
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.available).toBe(true);
+		expect(data.sessions).toEqual([
+			{
+				id: "session-provider-1",
+				callId: "TEST_CALL_ID_123",
+				status: "active",
+				duration: 42,
+				transcriptLength: 3,
+				startedAt: "2026-04-19T00:00:00.000Z",
+			},
+		]);
+	});
+
+	test("POST /voice/call returns structured unavailable response when voice is off", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/voice/call", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" },
+			body: JSON.stringify({ to: "+15551234567" }),
+		});
+		expect(res.status).toBe(503);
+		const data = await res.json();
+		expect(data.code).toBe("VOICE_UNAVAILABLE");
+	});
+
+	test("POST /voice/call delegates to voice service when available", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+  twilio:
+    accountSid: twilio-test-account-id
+    authToken: twilio-test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const voiceService = makeMockVoiceService();
+		const app = createHttpApp({
+			config,
+			runner,
+			eventBus,
+			voiceService,
+		});
+
+		const res = await app.request("/voice/call", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" },
+			body: JSON.stringify({ to: "+15557654321", reason: "Test" }),
+		});
+		expect(res.status).toBe(200);
+		const data = await res.json();
+		expect(data.callSid).toBe("TEST_CALL_ID_123");
+		expect(data.sessionId).toBe("session-1");
+		expect(voiceService.initiateCall).toHaveBeenCalledTimes(1);
+	});
+
+	test("POST /voice/twiml/outbound/:sessionId returns TwiML with valid Twilio signature", async () => {
+		const voiceService = makeMockVoiceService();
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/twiml/outbound/session-1", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "CallSid=TEST_CALL_ID_123&CallStatus=ringing",
+		});
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toContain("text/xml");
+		expect(await res.text()).toContain("<Response>");
+		expect(voiceService.validateTwilioRequest).toHaveBeenCalledTimes(1);
+		expect(voiceService.validateTwilioRequest.mock.calls[0]?.[2]).toEqual({
+			CallSid: "TEST_CALL_ID_123",
+			CallStatus: "ringing",
+		});
+	});
+
+	test("POST /voice/twiml/outbound/:sessionId rejects invalid Twilio signatures", async () => {
+		const voiceService = makeMockVoiceService({ validateTwilioRequest: mock(() => false) });
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/twiml/outbound/session-1", { method: "POST" });
+		expect(res.status).toBe(401);
+	});
+
+	test("POST /voice/twiml/inbound bootstraps an inbound session and returns TwiML", async () => {
+		const voiceService = makeMockVoiceService();
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/twiml/inbound", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "CallSid=INBOUND_TEST_CALL_ID&From=%2B15557654321",
+		});
+
+		expect(res.status).toBe(200);
+		expect(await res.text()).toContain("<Response>");
+		expect(voiceService.bootstrapInboundCall).toHaveBeenCalledTimes(1);
+		expect(voiceService.bootstrapInboundCall.mock.calls[0]?.[0]).toEqual({
+			callSid: "INBOUND_TEST_CALL_ID",
+			from: "+15557654321",
+		});
+		expect(voiceService.buildInboundTwiml).toHaveBeenCalledWith("session-inbound-1");
+	});
+
+	test("inbound sessions clean up through the shared Twilio status callback route", async () => {
+		const voiceService = makeMockVoiceService({
+			handleTwilioStatusCallback: mock(async () => ({ status: "ended" })),
+		});
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/twilio/status/session-inbound-1", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "CallSid=INBOUND_TEST_CALL_ID&CallStatus=completed",
+		});
+
+		expect(res.status).toBe(200);
+		expect(voiceService.handleTwilioStatusCallback).toHaveBeenCalledTimes(1);
+	});
+
+	test("POST /voice/twiml/inbound requires CallSid", async () => {
+		const voiceService = makeMockVoiceService();
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/twiml/inbound", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "From=%2B15557654321",
+		});
+
+		expect(res.status).toBe(400);
+		expect(voiceService.bootstrapInboundCall).not.toHaveBeenCalled();
+	});
+
+	test("Twilio callback routes are public but signature-validated", async () => {
+		const voiceService = makeMockVoiceService();
+		const { app } = makeTestApp({ voiceService });
+
+		const statusRes = await app.request("/voice/twilio/status/session-1", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "CallSid=TEST_CALL_ID_123&CallStatus=completed",
+		});
+		expect(statusRes.status).toBe(200);
+		expect(voiceService.handleTwilioStatusCallback).toHaveBeenCalledTimes(1);
+
+		const streamStatusRes = await app.request("/voice/twilio/stream-status/session-1", {
+			method: "POST",
+			headers: {
+				"X-Twilio-Signature": "valid",
+				"Content-Type": "application/x-www-form-urlencoded",
+			},
+			body: "StreamEvent=stream-stopped",
+		});
+		expect(streamStatusRes.status).toBe(200);
+		expect(voiceService.handleTwilioStreamStatus).toHaveBeenCalledTimes(1);
+	});
+
+	test("GET /voice/media-stream/:sessionId rejects missing Twilio signature", async () => {
+		const voiceService = makeMockVoiceService({ validateTwilioRequest: mock(() => false) });
+		const { app } = makeTestApp({ voiceService });
+
+		const res = await app.request("/voice/media-stream/session-1");
+		expect(res.status).toBe(401);
+	});
+
+	test("non-public voice routes still require bearer auth", async () => {
+		const { app } = makeTestApp();
+		const res = await app.request("/voice/status");
+		expect(res.status).toBe(401);
+	});
+
+	test("POST /voice/call validates E.164 phone numbers", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+  twilio:
+    accountSid: twilio-test-account-id
+    authToken: twilio-test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const app = createHttpApp({
+			config,
+			runner,
+			eventBus,
+			voiceService: makeMockVoiceService(),
+		});
+
+		const res = await app.request("/voice/call", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" },
+			body: JSON.stringify({ to: "5551234567" }),
+		});
+		expect(res.status).toBe(400);
+		const data = await res.json();
+		expect(data.error).toContain("E.164");
+	});
+
+	test("POST /voice/call returns structured upstream failures", async () => {
+		const config = parseConfig(`
+name: test-gateway
+runner:
+  workdir: /tmp
+  defaultAgent: mock
+credentials:
+  allow: []
+  inherit: [PATH, HOME, SHELL]
+gateway:
+  channels:
+    - type: http
+      port: 7600
+      auth: test-token
+    - type: voice
+voice:
+  enabled: true
+  livekit:
+    url: wss://livekit.example.com
+    apiKey: livekit-key
+    apiSecret: livekit-secret
+  twilio:
+    accountSid: twilio-test-account-id
+    authToken: twilio-test-auth-token
+    phoneNumber: "+15551234567"
+  stt:
+    provider: deepgram
+    apiKey: deepgram-key
+  tts:
+    provider: elevenlabs
+    apiKey: elevenlabs-key
+`);
+
+		const eventBus = new EventBus();
+		const runner = new Runner({
+			config,
+			onEvent: (e) => eventBus.emit(e),
+		});
+		const app = createHttpApp({
+			config,
+			runner,
+			eventBus,
+			voiceService: makeMockVoiceService({
+				initiateCall: mock(async () => {
+					throw new Error("twilio unavailable");
+				}),
+			}),
+		});
+
+		const res = await app.request("/voice/call", {
+			method: "POST",
+			headers: { Authorization: "Bearer test-token", "Content-Type": "application/json" },
+			body: JSON.stringify({ to: "+15557654321" }),
+		});
+		expect(res.status).toBe(502);
+		const data = await res.json();
+		expect(data.code).toBe("VOICE_CALL_FAILED");
 	});
 });
 

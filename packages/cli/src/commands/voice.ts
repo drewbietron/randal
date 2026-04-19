@@ -9,6 +9,7 @@ export async function voiceCommand(args: string[], ctx: CliContext): Promise<voi
 		console.log(`
 Usage:
   randal voice status     Show active voice sessions
+  randal voice call <to>  Start an outbound voice call
 `);
 		return;
 	}
@@ -19,28 +20,99 @@ Usage:
 	};
 
 	switch (sub) {
+		case "call": {
+			const to = args[1];
+			if (!to || to === "--help" || to === "-h") {
+				console.error("Usage: randal voice call <to> [--reason text] [--script text]");
+				if (!to || to === "--help" || to === "-h") {
+					return;
+				}
+				process.exit(1);
+			}
+
+			const reasonFlag = args.indexOf("--reason");
+			const scriptFlag = args.indexOf("--script");
+			const reason = reasonFlag !== -1 ? args[reasonFlag + 1] : undefined;
+			const script = scriptFlag !== -1 ? args[scriptFlag + 1] : undefined;
+
+			try {
+				const res = await fetch(`${url}/voice/call`, {
+					method: "POST",
+					headers,
+					body: JSON.stringify({ to, reason, script }),
+				});
+				const data = (await res.json()) as
+					| {
+							sessionId: string;
+							callSid?: string;
+							roomName: string;
+							status: string;
+							phoneNumber?: string;
+					  }
+					| { error: string; code?: string; reason?: string; missing?: string[] };
+
+				if (!res.ok) {
+					console.error(`Voice call failed: ${data.error}`);
+					if ("reason" in data && data.reason) {
+						console.error(`Reason: ${data.reason}`);
+					}
+					if ("missing" in data && data.missing && data.missing.length > 0) {
+						console.error(`Missing config: ${data.missing.join(", ")}`);
+					}
+					process.exit(1);
+				}
+
+				console.log(`Voice call queued: ${data.sessionId}`);
+				if (data.callSid) {
+					console.log(`Twilio Call SID: ${data.callSid}`);
+				}
+				console.log(`Room: ${data.roomName}`);
+				console.log(`Status: ${data.status}`);
+			} catch (err) {
+				console.error(`Failed to connect: ${err instanceof Error ? err.message : err}`);
+				process.exit(1);
+			}
+			break;
+		}
+
 		case "status": {
 			try {
 				const res = await fetch(`${url}/voice/status`, { headers });
-				if (!res.ok) {
+				const data = (await res.json()) as
+					| {
+							available: true;
+							enabled: boolean;
+							reason: string;
+							missing: string[];
+							sessions: Array<{
+								id: string;
+								callId: string;
+								status: string;
+								duration: number;
+								transcriptLength: number;
+								startedAt: string;
+							}>;
+					  }
+					| {
+							available: false;
+							enabled: boolean;
+							error: string;
+							code: string;
+							reason: string;
+							missing: string[];
+							sessions: [];
+					  };
+
+				if (!res.ok && data.available !== false) {
 					console.error(`Error: ${res.status} ${res.statusText}`);
 					process.exit(1);
 				}
 
-				const data = (await res.json()) as {
-					enabled: boolean;
-					sessions: Array<{
-						id: string;
-						callId: string;
-						status: string;
-						duration: number;
-						transcriptLength: number;
-						startedAt: string;
-					}>;
-				};
-
-				if (!data.enabled) {
-					console.log("Voice channel is not enabled.");
+				if (!data.available) {
+					console.log(`Voice unavailable: ${data.reason}.`);
+					if (data.missing.length > 0) {
+						console.log(`Missing config: ${data.missing.join(", ")}`);
+					}
 					return;
 				}
 
@@ -69,7 +141,7 @@ Usage:
 
 		default:
 			console.error(`Unknown voice subcommand: ${sub}`);
-			console.log("Usage: randal voice <status>");
+			console.log("Usage: randal voice <status|call>");
 			process.exit(1);
 	}
 }
