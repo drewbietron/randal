@@ -14,7 +14,9 @@ describe("serve Meilisearch bootstrap helpers", () => {
 	test("preserves an explicit local override port", () => {
 		const target = getLocalMeilisearchTarget("http://127.0.0.1:7700");
 		expect(target?.host).toBe("127.0.0.1:7700");
-		expect(getLocalMeilisearchDockerPortBinding("http://127.0.0.1:7700")).toBe("7700:7700");
+		expect(getLocalMeilisearchDockerPortBinding("http://127.0.0.1:7700")).toBe(
+			"127.0.0.1:7700:7700",
+		);
 	});
 
 	test("treats explicit hosted URLs as non-local", () => {

@@ -5,7 +5,7 @@ import type { Plugin } from "@opencode-ai/plugin";
 // ---------------------------------------------------------------------------
 
 const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
-const MEILI_KEY = process.env.MEILI_MASTER_KEY || "";
+const MEILI_KEY = process.env.MEILI_MASTER_KEY || process.env.MEILI_API_KEY || "";
 const INDEX = "messages-randal";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";

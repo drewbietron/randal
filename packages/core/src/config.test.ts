@@ -80,7 +80,7 @@ describe("configSchema", () => {
 				channels: [{ type: "http" as const, port: 7600, auth: "secret" }],
 			},
 			memory: {
-				url: "http://localhost:7700",
+				url: "http://localhost:7701",
 				apiKey: "master-key",
 				index: "memory-support",
 				embedder: { type: "builtin" as const },

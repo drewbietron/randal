@@ -12,7 +12,7 @@ import { execSync } from "node:child_process";
 // ---------------------------------------------------------------------------
 
 export const MEILI_URL = process.env.MEILI_URL || "http://localhost:7701";
-export const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || "";
+export const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY || process.env.MEILI_API_KEY || "";
 export const MEILI_INDEX = process.env.MEILI_INDEX || "memory-randal";
 export const MEILI_DUMP_INTERVAL_MS = Number.parseInt(
 	process.env.MEILI_DUMP_INTERVAL_MS || String(6 * 60 * 60 * 1000),
@@ -121,7 +121,8 @@ export function buildMcpServerConfig(): McpServerConfig {
 export const GLOBAL_SCOPE_CATEGORIES = new Set(["preference", "fact"]);
 
 /** Standard hint for Meilisearch connectivity issues. */
-export const MEILI_HINT = "Check MEILI_URL and MEILI_MASTER_KEY environment variables";
+export const MEILI_HINT =
+	"Check MEILI_URL and MEILI_MASTER_KEY environment variables (MEILI_API_KEY is legacy-only)";
 
 /**
  * Auto-detected project scope from git root.

@@ -16,6 +16,7 @@ import {
 import { configSchema } from "@randal/core";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
+import { resolveLocalMeilisearchTarget } from "./serve.js";
 
 // ── Agent / Model Definitions ───────────────────────────────────────────
 
@@ -73,9 +74,9 @@ function detectAgentCLIs(): { name: string; found: boolean }[] {
 	});
 }
 
-async function detectMeilisearch(): Promise<boolean> {
+async function detectMeilisearch(url = "http://localhost:7701"): Promise<boolean> {
 	try {
-		const res = await fetch("http://localhost:7701/health", {
+		const res = await fetch(`${url}/health`, {
 			signal: AbortSignal.timeout(2000),
 		});
 		return res.ok;
@@ -152,22 +153,29 @@ async function installBlueBubblesDMG(): Promise<boolean> {
 	}
 }
 
-async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string }> {
+async function ensureMeilisearch(
+	url = "http://localhost:7701",
+): Promise<{ started: boolean; apiKey?: string; url: string }> {
+	const localTarget = resolveLocalMeilisearchTarget(url);
+	if (!localTarget) {
+		return { started: false, url };
+	}
+
 	// Already running?
-	if (await detectMeilisearch()) {
-		return { started: true };
+	if (await detectMeilisearch(url)) {
+		return { started: true, url };
 	}
 
 	// Need Docker
 	const dockerCheck = Bun.spawnSync(["which", "docker"]);
 	if (dockerCheck.exitCode !== 0) {
-		return { started: false };
+		return { started: false, url };
 	}
 
 	// Generate a master key
 	const keyProc = Bun.spawnSync(["openssl", "rand", "-hex", "16"]);
 	const apiKey = keyProc.stdout.toString().trim();
-	if (!apiKey) return { started: false };
+	if (!apiKey) return { started: false, url };
 
 	// Create data directory
 	const dataDir = resolve(process.env.HOME ?? "~", ".randal", "meili-data");
@@ -186,7 +194,7 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 		"--restart",
 		"unless-stopped",
 		"-p",
-		"7701:7700",
+		localTarget.dockerPublish,
 		"-v",
 		`${dataDir}:/meili_data`,
 		"-e",
@@ -194,15 +202,15 @@ async function ensureMeilisearch(): Promise<{ started: boolean; apiKey?: string 
 		"getmeili/meilisearch:v1.12",
 	]);
 
-	if (proc.exitCode !== 0) return { started: false };
+	if (proc.exitCode !== 0) return { started: false, url };
 
 	// Wait for healthy
 	for (let i = 0; i < 10; i++) {
 		await new Promise((r) => setTimeout(r, 1000));
-		if (await detectMeilisearch()) return { started: true, apiKey };
+		if (await detectMeilisearch(url)) return { started: true, apiKey, url };
 	}
 
-	return { started: false };
+	return { started: false, url };
 }
 
 /**
@@ -613,7 +621,7 @@ async function detectEnvironment(): Promise<EnvDetection> {
 
 	detectionLines.push("");
 	detectionLines.push(
-		`Meilisearch:  ${hasMeili ? "✅ running on :7700" : "⬚  not detected (will auto-install on first `randal serve`)"}`,
+		`Meilisearch:  ${hasMeili ? "✅ running on :7701" : "⬚  not detected (will auto-install on first `randal serve`)"}`,
 	);
 
 	note(detectionLines.join("\n"), "🔍 Detection Results");
@@ -1037,7 +1045,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 	// ── Memory ──
 
 	note(
-		`Memory is backed by Meilisearch — full-text search, cross-agent sharing, and auto-injection.\n${env.hasMeili ? "✅ Detected on :7700" : "Auto-installed on first `randal serve`"}`,
+		`Memory is backed by Meilisearch — full-text search, cross-agent sharing, and auto-injection.\n${env.hasMeili ? "✅ Detected on :7701" : "Auto-installed on first `randal serve`"}`,
 		"🧠 Memory",
 	);
 
@@ -1181,7 +1189,7 @@ async function writeConfig(opts: {
 	ms.start("Starting Meilisearch...");
 	const result = await ensureMeilisearch();
 	if (result.started) {
-		ms.stop("Meilisearch running on :7700");
+		ms.stop(`Meilisearch running at ${result.url}`);
 		if (result.apiKey) {
 			appendEnvValues(envPath, { MEILI_MASTER_KEY: result.apiKey });
 		}

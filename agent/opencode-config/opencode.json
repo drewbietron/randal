@@ -2,8 +2,12 @@
 	"$schema": "https://opencode.ai/config.json",
 	"plugin": [],
 	"agent": {
-		"build": { "disable": true },
-		"plan": { "disable": true }
+		"build": {
+			"disable": true
+		},
+		"plan": {
+			"disable": true
+		}
 	},
 	"mcp": {
 		"tavily": {
@@ -16,6 +20,8 @@
 			"command": ["bun", "run", "/Users/drewbie/dev/randal/tools/mcp-memory/index.ts"],
 			"environment": {
 				"MEILI_URL": "http://localhost:7701",
+				"MEILI_MASTER_KEY": "{env:MEILI_MASTER_KEY}",
+				"MEILI_API_KEY": "{env:MEILI_API_KEY}",
 				"SUMMARY_MODEL": "anthropic/claude-haiku-3"
 			},
 			"enabled": true
