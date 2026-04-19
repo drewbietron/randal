@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type RunnerEvent, parseConfig } from "@randal/core";
 import { Runner } from "@randal/runner";
 import type { ChannelAdapter } from "./channels/channel.js";
-import { createHttpApp, type HttpChannelOptions } from "./channels/http.js";
+import { type HttpChannelOptions, createHttpApp } from "./channels/http.js";
 import { EventBus } from "./events.js";
 
 function makeTestApp(
@@ -235,7 +235,8 @@ describe("HTTP API", () => {
 				isPstnVoiceReady: () => false,
 				getSessions: () => [],
 				issueBrowserToken: async ({ participantName, roomName }) => ({
-					token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkta2V5Iiwic3ViIjoiYnJvd3Nlci11c2VyIiwidmlkZW8iOnsicm9vbSI6ImJyb3dzZXItcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.signature",
+					token:
+						"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcGkta2V5Iiwic3ViIjoiYnJvd3Nlci11c2VyIiwidmlkZW8iOnsicm9vbSI6ImJyb3dzZXItcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.signature",
 					sessionId: "browser-session-2",
 					roomName: roomName ?? "browser-room",
 					participantName,

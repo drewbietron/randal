@@ -237,7 +237,7 @@ describe("Trigger env vars", () => {
 			expect(envData.tavily).toBe("");
 		} finally {
 			if (originalTavilyKey === undefined) {
-				delete process.env.TAVILY_API_KEY;
+				process.env.TAVILY_API_KEY = "";
 			} else {
 				process.env.TAVILY_API_KEY = originalTavilyKey;
 			}

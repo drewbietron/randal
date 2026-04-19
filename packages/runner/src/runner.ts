@@ -3,8 +3,8 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
-	readdirSync,
 	readFileSync,
+	readdirSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -23,11 +23,11 @@ import type {
 	VoiceSessionAccess,
 } from "@randal/core";
 import {
+	type RandalConfig,
 	applyVoiceSessionAccessToOpenCodeConfig,
 	compileOpenCodeConfig,
 	createLogger,
 	parseVoiceSessionAccess,
-	type RandalConfig,
 } from "@randal/core";
 import { buildProcessEnv, cleanupTempHome } from "@randal/credentials";
 import { getAdapter } from "./agents/index.js";
@@ -127,7 +127,7 @@ function applyVoiceSessionPolicy(options: {
 	}
 
 	if (!access.capabilities.grants.includes("search")) {
-		delete options.env.TAVILY_API_KEY;
+		options.env.TAVILY_API_KEY = "";
 	}
 
 	if (options.agentName !== "opencode") {

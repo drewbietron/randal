@@ -1,11 +1,11 @@
 import {
-	VOICE_ACCESS_METADATA_KEY,
-	createLogger,
-	serializeVoiceSessionAccess,
 	type RandalConfig,
 	type RunnerEvent,
+	VOICE_ACCESS_METADATA_KEY,
 	type VoiceAccessClass,
 	type VoiceSessionAccess,
+	createLogger,
+	serializeVoiceSessionAccess,
 } from "@randal/core";
 import { type ChannelAdapter, type ChannelDeps, formatEvent, handleCommand } from "./channel.js";
 import { normalizePhone } from "./utils.js";

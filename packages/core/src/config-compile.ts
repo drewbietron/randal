@@ -350,21 +350,26 @@ export function applyVoiceSessionAccessToOpenCodeConfig(
 
 	const grants = new Set(access.capabilities.grants);
 	const next = structuredClone(config);
+	const filteredMcp = Object.fromEntries(
+		Object.entries(next.mcp).filter(([key]) => {
+			if (key === "scheduler") return grants.has("scheduler");
+			if (key === "tavily") return grants.has("search");
+			if (key === "video") return grants.has("video");
+			if (key === "image-gen") return grants.has("image-gen");
+			return true;
+		}),
+	);
+	const filteredTools = Object.fromEntries(
+		Object.entries(next.tools).filter(([key]) => {
+			if (key === "video_*") return grants.has("video");
+			if (key === "image-gen_*") return grants.has("image-gen");
+			return true;
+		}),
+	);
 
-	if (!grants.has("scheduler")) {
-		delete next.mcp.scheduler;
-	}
-	if (!grants.has("search")) {
-		delete next.mcp.tavily;
-	}
-	if (!grants.has("video")) {
-		delete next.mcp.video;
-		delete next.tools["video_*"];
-	}
-	if (!grants.has("image-gen")) {
-		delete next.mcp["image-gen"];
-		delete next.tools["image-gen_*"];
-	}
-
-	return next;
+	return {
+		...next,
+		mcp: filteredMcp,
+		tools: filteredTools,
+	};
 }
