@@ -1,17 +1,20 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 cd "$(dirname "$0")/.."
+
+LOCAL_MEILI_URL="http://localhost:7701"
+COMPOSE_FILE="docker-compose.meili.yml"
 
 echo "Starting Meilisearch (docker compose)..."
 mkdir -p meili-data
 MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-randal-local-key} \
-  docker compose -f docker-compose.meili.yml up -d
+  docker compose -f "$COMPOSE_FILE" up -d
 
 # Wait for health
 HEALTHY=false
 for i in {1..10}; do
-  if curl -sf http://localhost:7701/health > /dev/null 2>&1; then
-    echo "Meilisearch is running on http://localhost:7701"
+  if curl -sf "$LOCAL_MEILI_URL/health" > /dev/null 2>&1; then
+    echo "Meilisearch is running on $LOCAL_MEILI_URL"
     HEALTHY=true
     break
   fi
@@ -21,7 +24,7 @@ done
 
 if [ "$HEALTHY" != "true" ]; then
   echo "❌ Meilisearch did not become healthy. Check logs:"
-  docker compose -f docker-compose.meili.yml logs --tail=50
+  docker compose -f "$COMPOSE_FILE" logs --tail=50
   exit 1
 fi
 
@@ -30,7 +33,7 @@ echo "Validating API key..."
 MEILI_KEY="${MEILI_MASTER_KEY:-randal-local-key}"
 HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $MEILI_KEY" \
-  "http://localhost:7701/indexes" 2>/dev/null || true)
+  "$LOCAL_MEILI_URL/indexes" 2>/dev/null || true)
 
 if [ "$HTTP_CODE" = "200" ]; then
   echo "✅ API key validated — Meilisearch is ready"
@@ -49,9 +52,9 @@ elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
 else
   echo "❌ API key validation failed (HTTP $HTTP_CODE — unexpected response)"
   echo ""
-  echo "   Could not verify API key against http://localhost:7701/indexes"
+  echo "   Could not verify API key against $LOCAL_MEILI_URL/indexes"
   echo "   Expected HTTP 200, got: ${HTTP_CODE:-no response}"
   echo ""
-  echo "   Check Meilisearch logs: docker compose -f docker-compose.meili.yml logs --tail=50"
+  echo "   Check Meilisearch logs: docker compose -f $COMPOSE_FILE logs --tail=50"
   exit 1
 fi

@@ -2,6 +2,8 @@ import { type RandalConfig, loadConfig } from "@randal/core";
 import { type CliContext, requireConfig } from "../cli.js";
 import { detectOpenCode, installOpenCode } from "../utils/opencode.js";
 
+export const DEFAULT_LOCAL_MEILI_URL = "http://localhost:7701";
+
 export interface LocalMeilisearchTarget {
 	hostname: "localhost" | "127.0.0.1";
 	port: number;
@@ -38,6 +40,21 @@ export function resolveLocalMeilisearchTarget(url: string): LocalMeilisearchTarg
 	};
 }
 
+export function getLocalMeilisearchTarget(url: string): URL | null {
+	const localTarget = resolveLocalMeilisearchTarget(url);
+	if (!localTarget) return null;
+	try {
+		return new URL(url);
+	} catch {
+		return null;
+	}
+}
+
+export function getLocalMeilisearchDockerPortBinding(url: string): string | null {
+	const localTarget = resolveLocalMeilisearchTarget(url);
+	return localTarget?.dockerPublish ?? null;
+}
+
 /**
  * Auto-start Meilisearch if the config uses it and it's not already running.
  * Generates MEILI_MASTER_KEY in .env if missing.
@@ -52,19 +69,27 @@ export async function ensureMeilisearch(
 	// Skip if explicitly disabled (e.g., Railway agent connecting to external Meilisearch)
 	if (process.env.RANDAL_SKIP_MEILISEARCH === "true") return false;
 
-	const url = config.memory.url || "http://localhost:7701";
+	const url = config.memory.url || DEFAULT_LOCAL_MEILI_URL;
 	const localTarget = resolveLocalMeilisearchTarget(url);
 	let envModified = false;
 
 	if (!localTarget) {
 		console.log(
-			`\x1b[33m  ! Meilisearch at ${url} is not a local localhost endpoint; skipping local auto-start\x1b[0m`,
+			`[33m  ! Meilisearch at ${url} is not a local localhost endpoint; skipping local auto-start[0m`,
 		);
 		return envModified;
 	}
 
-	// Resolve master key: check env, generate if missing
-	let masterKey = process.env.MEILI_MASTER_KEY;
+	// Check if already running before generating any local key material.
+	try {
+		const res = await fetch(`${url}/health`);
+		if (res.ok) return envModified;
+	} catch {
+		// Not running — start it
+	}
+
+	// Resolve master key only when we are about to start a local instance.
+	let masterKey = process.env.MEILI_MASTER_KEY || config.memory.apiKey;
 	if (!masterKey) {
 		const { randomBytes } = await import("node:crypto");
 		masterKey = randomBytes(16).toString("hex");
@@ -87,20 +112,14 @@ export async function ensureMeilisearch(
 				`MEILI_MASTER_KEY=${masterKey}`,
 			);
 		} else {
-			envContent += `\nMEILI_MASTER_KEY=${masterKey}\n`;
+			envContent += `
+MEILI_MASTER_KEY=${masterKey}
+`;
 		}
 		fs.writeFileSync(envPath, envContent);
 		process.env.MEILI_MASTER_KEY = masterKey;
 		envModified = true;
 		console.log("  + Generated MEILI_MASTER_KEY in .env");
-	}
-
-	// Check if already running
-	try {
-		const res = await fetch(`${url}/health`);
-		if (res.ok) return envModified;
-	} catch {
-		// Not running — start it
 	}
 
 	const { mkdirSync } = await import("node:fs");
@@ -139,7 +158,6 @@ export async function ensureMeilisearch(
 		);
 		proc.unref();
 
-		// Wait for it to be ready (up to 5s)
 		for (let i = 0; i < 25; i++) {
 			await Bun.sleep(200);
 			try {
@@ -152,11 +170,10 @@ export async function ensureMeilisearch(
 				// Not ready yet
 			}
 		}
-		console.log("\x1b[33m  ! Meilisearch failed to start within 5s\x1b[0m");
+		console.log("[33m  ! Meilisearch failed to start within 5s[0m");
 		return envModified;
 	}
 
-	// Fallback: try Docker
 	const dockerCheck = Bun.spawnSync(["which", "docker"]);
 	if (dockerCheck.exitCode === 0) {
 		console.log("  Starting Meilisearch via Docker...");
@@ -194,11 +211,11 @@ export async function ensureMeilisearch(
 				}
 			}
 		}
-		console.log("\x1b[33m  ! Meilisearch Docker container failed to start\x1b[0m");
+		console.log("[33m  ! Meilisearch Docker container failed to start[0m");
 		return envModified;
 	}
 
-	console.log("\x1b[33m  ! Meilisearch not found. Install with: brew install meilisearch\x1b[0m");
+	console.log("[33m  ! Meilisearch not found. Install with: brew install meilisearch[0m");
 	return envModified;
 }
 

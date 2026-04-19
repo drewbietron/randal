@@ -621,7 +621,7 @@ async function detectEnvironment(): Promise<EnvDetection> {
 
 	detectionLines.push("");
 	detectionLines.push(
-		`Meilisearch:  ${hasMeili ? "✅ running on :7700" : "⬚  not detected (will auto-install on first `randal serve`)"}`,
+		`Meilisearch:  ${hasMeili ? "✅ running on :7701" : "⬚  not detected (will auto-install on first `randal serve`)"}`,
 	);
 
 	note(detectionLines.join("\n"), "🔍 Detection Results");
@@ -1045,7 +1045,7 @@ async function advancedWizardFlow(env: EnvDetection): Promise<void> {
 	// ── Memory ──
 
 	note(
-		`Memory is backed by Meilisearch — full-text search, cross-agent sharing, and auto-injection.\n${env.hasMeili ? "✅ Detected on :7700" : "Auto-installed on first `randal serve`"}`,
+		`Memory is backed by Meilisearch — full-text search, cross-agent sharing, and auto-injection.\n${env.hasMeili ? "✅ Detected on :7701" : "Auto-installed on first `randal serve`"}`,
 		"🧠 Memory",
 	);
 
