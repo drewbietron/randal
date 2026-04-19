@@ -12,6 +12,7 @@
 		"@randal/analytics": "workspace:*",
 		"@randal/core": "workspace:*",
 		"@randal/credentials": "workspace:*",
+		"@randal/dashboard": "workspace:*",
 		"@randal/memory": "workspace:*",
 		"@randal/mesh": "workspace:*",
 		"@randal/runner": "workspace:*",

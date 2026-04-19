@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { RANDAL_VERSION, createLogger } from "@randal/core";
 import type { Job, RandalConfig, RunnerEvent, RunnerEventType } from "@randal/core";
 import { auditCredentials, runAudit } from "@randal/credentials";
+import { getDashboardHtml } from "@randal/dashboard";
 import {
 	type MemoryManager,
 	type MessageManager,
@@ -550,6 +551,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	app.get("/events", (c) => {
 		return streamSSE(c, async (stream) => {
 			let eventId = 0;
+
+			// Flush an initial frame immediately so proxies keep the SSE stream open
+			// even when no runner events have fired yet.
+			await stream.writeSSE({ event: "ping", data: "" });
+
 			const unsub = eventBus.subscribe((event: RunnerEvent) => {
 				stream.writeSSE({
 					id: String(++eventId),
@@ -1476,9 +1482,11 @@ export function createHttpApp(options: HttpChannelOptions): Hono {
 	// Dashboard - serve static HTML at root
 	app.get("/", (c) => {
 		try {
-			const { getDashboardHtml } = require("@randal/dashboard");
 			return c.html(getDashboardHtml());
-		} catch {
+		} catch (error) {
+			httpLogger.error("Failed to render bundled dashboard HTML", {
+				error: error instanceof Error ? error.message : String(error),
+			});
 			const safeName = escapeHtml(config.name);
 			return c.html(buildFallbackDashboard(safeName, RANDAL_VERSION));
 		}
